@@ -11,6 +11,8 @@ Legend: **S** = supported · **P** = partial · **N** = not in Phase-1 · **D** 
 | `FunctionTool` | S | Manual schema or `#[function_tool]` |
 | `@function_tool` / proc-macro | S | D-002: type→schema, not docstring |
 | `ScriptedModel` | S | Parity with `agents.testing.ScriptedModel` core |
+| `MockResponses` / `MockCompletions` | S | Feature `testing`: queued HTTP mocks of `/v1/responses` and `/v1/chat/completions` |
+| Parallel function tools | S | `try_join_all`; order matches model tool-call order |
 | OpenAI Responses API model | S | via `async-openai` + raw HTTP for Responses |
 | OpenAI Chat Completions model | S | via `async-openai` |
 | Default API = Responses | S | `set_default_openai_api` |
@@ -24,5 +26,5 @@ Legend: **S** = supported · **P** = partial · **N** = not in Phase-1 · **D** 
 ## Verification layers
 
 1. `cargo test --no-default-features` — ScriptedModel behavior
-2. `cargo test --features openai` — wiremock OpenAI request shape
+2. `cargo test --features testing` — OpenAI HTTP mocks (`MockResponses` / `MockCompletions`) + wiremock contracts
 3. `python scripts/run_parity.py` + Rust parity tests — Python oracle golden

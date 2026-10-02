@@ -16,5 +16,5 @@ jobs:
           bash scripts/sync_vendor.sh --check
       - name: Behavior tests (no openai)
         run: cargo test --no-default-features
-      - name: OpenAI wiremock + parity tests
-        run: cargo test --features openai
+      - name: OpenAI wiremock, mock framework, parity
+        run: cargo test --features testing

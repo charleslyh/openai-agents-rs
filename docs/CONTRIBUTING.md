@@ -29,7 +29,7 @@ This convention is also enforced for agents via [`.cursor/rules/commit-messages.
 ```bash
 bash scripts/sync_vendor.sh --check
 cargo test --no-default-features
-cargo test --features openai
+cargo test --features testing
 ```
 
 Optional Python oracle:

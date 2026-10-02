@@ -416,25 +416,29 @@ async fn run_loop(
             continue;
         }
 
-        let mut tool_results: Vec<(FunctionTool, Value, String)> = Vec::new();
-        for call in &function_calls {
-            let (name, arguments, call_id) = function_call_parts(call)
-                .ok_or_else(|| ModelError::Behavior("malformed function_call item".into()))?;
-            let tool = tools
-                .iter()
-                .find(|t| t.name == name)
-                .cloned()
-                .ok_or_else(|| UserError::new(format!("Tool not found: {name}")))?;
-
-            let _fs = function_span(&name);
-            let ctx = ToolContext {
-                tool_name: name.clone(),
-                tool_call_id: call_id.clone(),
-                tool_arguments: arguments.clone(),
-            };
-            let output = (tool.on_invoke_tool)(ctx, arguments).await?;
-            tool_results.push((tool, output, call_id));
-        }
+        // Parallel function tools, matching Python `asyncio.gather` default (order preserved).
+        let tool_futs = function_calls.iter().map(|call| {
+            let tools = tools.clone();
+            let call = call.clone();
+            async move {
+                let (name, arguments, call_id) = function_call_parts(&call)
+                    .ok_or_else(|| ModelError::Behavior("malformed function_call item".into()))?;
+                let tool = tools
+                    .iter()
+                    .find(|t| t.name == name)
+                    .cloned()
+                    .ok_or_else(|| UserError::new(format!("Tool not found: {name}")))?;
+                let _fs = function_span(&name);
+                let ctx = ToolContext {
+                    tool_name: name.clone(),
+                    tool_call_id: call_id.clone(),
+                    tool_arguments: arguments.clone(),
+                };
+                let output = (tool.on_invoke_tool)(ctx, arguments).await?;
+                Ok::<_, AgentsError>((tool, output, call_id))
+            }
+        });
+        let tool_results = futures::future::try_join_all(tool_futs).await?;
 
         match &current_agent.tool_use_behavior {
             ToolUseBehavior::StopOnFirstTool => {

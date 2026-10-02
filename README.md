@@ -26,7 +26,7 @@ OpenAI (requires feature `openai`, default on):
 ```bash
 export OPENAI_API_KEY=sk-...
 cargo run --example hello_agent --features openai
-cargo run --example chat_completions_agent --features openai
+cargo run --example mock_framework --features testing
 ```
 
 ## Standard reference
@@ -44,7 +44,7 @@ bash scripts/sync_vendor.sh --check
 | Layer | Command |
 |-------|---------|
 | 1. ScriptedModel behavior | `cargo test --no-default-features` |
-| 2. async-openai + wiremock | `cargo test --features openai` |
+| 2. async-openai + MockResponses/MockCompletions | `cargo test --features testing` |
 | 3. Python oracle parity | `.venv/bin/python scripts/run_parity.py --write-golden` then `cargo test --test parity_scenarios` |
 
 Shared scenarios live in [`tests/parity/scenarios/`](./tests/parity/scenarios/).

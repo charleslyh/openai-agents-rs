@@ -16,6 +16,7 @@ categories = ["api-bindings", "asynchronous"]
 [features]
 default = ["openai"]
 openai = ["dep:async-openai", "dep:reqwest"]
+testing = ["openai", "dep:wiremock"]
 
 [dependencies]
 async-trait = "0.1"
@@ -31,6 +32,7 @@ uuid = { version = "1", features = ["v4"] }
 # Optional OpenAI HTTP client (third-party Rust client — verification layer 2)
 async-openai = { version = "0.42", optional = true, default-features = false, features = ["chat-completion", "responses"] }
 reqwest = { version = "0.12", optional = true, default-features = false, features = ["json", "rustls-tls"] }
+wiremock = { version = "0.6", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util"] }
@@ -44,6 +46,10 @@ required-features = ["openai"]
 [[example]]
 name = "chat_completions_agent"
 required-features = ["openai"]
+
+[[example]]
+name = "mock_framework"
+required-features = ["testing"]
 
 [package.metadata.docs.rs]
 all-features = true
