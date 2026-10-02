@@ -78,6 +78,26 @@ impl<'a> ModelInput<'a> {
 /// Provider-neutral model interface.
 #[async_trait]
 pub trait Model: Send + Sync {
-    /// Get a complete model response.
+    /// Get a complete model response (non-streaming).
     async fn get_response(&self, request: ModelRequest<'_>) -> Result<ModelResponse, ModelError>;
+
+    /// Stream raw JSON events (e.g. text deltas), then return the assembled response.
+    ///
+    /// Default: call [`Self::get_response`] and emit a single synthetic `response.completed`.
+    /// Chat Completions overrides this for token-level `output_text.delta` events.
+    async fn stream_response(
+        &self,
+        request: ModelRequest<'_>,
+        raw_tx: tokio::sync::mpsc::Sender<serde_json::Value>,
+    ) -> Result<ModelResponse, ModelError> {
+        let response = self.get_response(request).await?;
+        let _ = raw_tx
+            .send(serde_json::json!({
+                "type": "response.completed",
+                "response_id": response.response_id,
+                "output": response.output,
+            }))
+            .await;
+        Ok(response)
+    }
 }

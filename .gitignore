@@ -1,11 +1,12 @@
-/target
-/Cargo.lock
-.DS_Store
-*.swp
-.env
-.venv/
-__pycache__/
-*.pyc
-.pytest_cache/
 # Large Python tree — restore with: bash scripts/sync_vendor.sh
+*.pyc
+*.swp
+.DS_Store
+.cache/
+.env
+.pytest_cache/
+.venv/
+/Cargo.lock
+/target
 /vendor/openai-agents-python/
+__pycache__/

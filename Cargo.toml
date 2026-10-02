@@ -31,7 +31,7 @@ uuid = { version = "1", features = ["v4"] }
 
 # Optional OpenAI HTTP client (third-party Rust client — verification layer 2)
 async-openai = { version = "0.42", optional = true, default-features = false, features = ["chat-completion", "responses"] }
-reqwest = { version = "0.12", optional = true, default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", optional = true, default-features = false, features = ["json", "rustls-tls", "stream"] }
 wiremock = { version = "0.6", optional = true }
 
 [dev-dependencies]
@@ -40,15 +40,35 @@ wiremock = "0.6"
 serde_json = "1"
 
 [[example]]
-name = "hello_agent"
+name = "01_hello_agent"
 required-features = ["openai"]
 
 [[example]]
-name = "chat_completions_agent"
+name = "02_tools_agent"
 required-features = ["openai"]
 
 [[example]]
-name = "mock_framework"
+name = "03_streamed_agent"
+required-features = ["openai"]
+
+[[example]]
+name = "04_handoff_agent"
+required-features = ["openai"]
+
+[[example]]
+name = "05_agents_as_tools"
+required-features = ["openai"]
+
+[[example]]
+name = "06_human_in_the_loop"
+required-features = ["openai"]
+
+[[example]]
+name = "07_always_approve"
+required-features = ["openai"]
+
+[[example]]
+name = "08_mock_framework"
 required-features = ["testing"]
 
 [package.metadata.docs.rs]

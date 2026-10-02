@@ -37,8 +37,11 @@ impl RunItemStreamName {
 pub enum StreamEvent {
     /// Raw model stream / response payload (JSON).
     ///
-    /// When the model only supports `get_response`, this is a synthetic completed-response
-    /// object (see D-011), not token deltas.
+    /// Chat Completions streaming emits:
+    /// - `{"type":"reasoning_text.delta","delta":"..."}` (optional; DeepSeek-style CoT)
+    /// - `{"type":"output_text.delta","delta":"..."}` visible tokens
+    /// - then a `response.completed` object.
+    /// Scripted / Responses models may only emit completed.
     RawResponse {
         /// Payload data.
         data: Value,

@@ -369,19 +369,36 @@ async fn run_loop(
                         previous_response_id: previous_response_id.as_deref(),
                         conversation_id: options.conversation_id.as_deref(),
                     };
-                    model.get_response(req).await?
+                    if events.is_some() {
+                        let (raw_tx, mut raw_rx) = mpsc::channel::<Value>(64);
+                        let forward = {
+                            let events = events.clone();
+                            tokio::spawn(async move {
+                                while let Some(data) = raw_rx.recv().await {
+                                    emit(&events, StreamEvent::RawResponse { data }).await;
+                                }
+                            })
+                        };
+                        let response = model.stream_response(req, raw_tx).await?;
+                        let _ = forward.await;
+                        response
+                    } else {
+                        model.get_response(req).await?
+                    }
                 };
-                emit(
-                    &events,
-                    StreamEvent::RawResponse {
-                        data: json!({
-                            "type": "response.completed",
-                            "response_id": response.response_id,
-                            "output": response.output,
-                        }),
-                    },
-                )
-                .await;
+                if events.is_none() {
+                    emit(
+                        &events,
+                        StreamEvent::RawResponse {
+                            data: json!({
+                                "type": "response.completed",
+                                "response_id": response.response_id,
+                                "output": response.output,
+                            }),
+                        },
+                    )
+                    .await;
+                }
                 if let Some(id) = &response.response_id {
                     previous_response_id = Some(id.clone());
                 }

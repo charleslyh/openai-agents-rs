@@ -1,7 +1,7 @@
-//! Exercise the agent loop against MockResponses and MockCompletions.
+//! 08 — HTTP mock framework (testing)
 //!
 //! ```bash
-//! cargo run --example mock_framework --features testing
+//! cargo run --example 08_mock_framework --features testing
 //! ```
 
 use std::sync::Arc;

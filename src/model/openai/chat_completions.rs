@@ -39,17 +39,8 @@ impl OpenAIChatCompletionsModel {
 #[async_trait]
 impl Model for OpenAIChatCompletionsModel {
     async fn get_response(&self, request: ModelRequest<'_>) -> Result<ModelResponse, ModelError> {
-        let messages = input_to_chat_messages(request.system_instructions, &request.input);
-        let mut body = json!({
-            "model": self.model,
-            "messages": messages,
-        });
-        let tools = tools_as_chat(request.tools);
-        if !tools.is_empty() {
-            body["tools"] = Value::Array(tools);
-        }
-        apply_model_settings_chat(&mut body, request.model_settings);
-
+        let body = build_chat_body(&self.model, &request);
+        // non-stream
         let resp = self
             .endpoint
             .http
@@ -70,6 +61,213 @@ impl Model for OpenAIChatCompletionsModel {
 
         chat_payload_to_model_response(payload)
     }
+
+    async fn stream_response(
+        &self,
+        request: ModelRequest<'_>,
+        raw_tx: tokio::sync::mpsc::Sender<Value>,
+    ) -> Result<ModelResponse, ModelError> {
+        let mut body = build_chat_body(&self.model, &request);
+        body["stream"] = json!(true);
+        // Some providers want stream_options.include_usage
+        body["stream_options"] = json!({"include_usage": true});
+
+        let resp = self
+            .endpoint
+            .http
+            .post(self.endpoint.url("/chat/completions"))
+            .bearer_auth(self.endpoint.api_key())
+            .json(&body)
+            .send()
+            .await
+            .map_err(map_transport)?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let payload: Value = resp.json().await.unwrap_or(Value::Null);
+            return Err(ModelError::Transport(format!(
+                "chat completions stream status={status} body={payload}"
+            )));
+        }
+
+        // Wiremock / non-SSE providers may still return a full JSON body.
+        let content_type = resp
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if content_type.contains("application/json") {
+            let payload: Value = resp.json().await.map_err(map_transport)?;
+            let response = chat_payload_to_model_response(payload)?;
+            for item in &response.output {
+                if let Some(text) = crate::items::extract_message_text(item) {
+                    let _ = raw_tx
+                        .send(json!({
+                            "type": "output_text.delta",
+                            "delta": text,
+                        }))
+                        .await;
+                }
+            }
+            let _ = raw_tx
+                .send(json!({
+                    "type": "response.completed",
+                    "response_id": response.response_id,
+                    "output": response.output,
+                }))
+                .await;
+            return Ok(response);
+        }
+
+        use futures::StreamExt;
+        let mut byte_stream = resp.bytes_stream();
+        let mut buffer = String::new();
+        let mut response_id: Option<String> = None;
+        let mut text = String::new();
+        // index -> (id, name, arguments)
+        let mut tool_calls: std::collections::BTreeMap<usize, (String, String, String)> =
+            std::collections::BTreeMap::new();
+        let mut usage: Option<(u64, u64)> = None;
+
+        while let Some(chunk) = byte_stream.next().await {
+            let chunk = chunk.map_err(map_transport)?;
+            buffer.push_str(&String::from_utf8_lossy(&chunk));
+            while let Some(pos) = buffer.find('\n') {
+                let mut line = buffer[..pos].to_string();
+                buffer.drain(..=pos);
+                if line.ends_with('\r') {
+                    line.pop();
+                }
+                let line = line.trim();
+                if line.is_empty() {
+                    continue;
+                }
+                let Some(data) = line.strip_prefix("data:") else {
+                    continue;
+                };
+                let data = data.trim();
+                if data == "[DONE]" {
+                    continue;
+                }
+                let payload: Value = serde_json::from_str(data).map_err(|e| {
+                    ModelError::Behavior(format!("invalid SSE JSON: {e}; data={data}"))
+                })?;
+
+                if response_id.is_none() {
+                    response_id = payload
+                        .get("id")
+                        .and_then(|i| i.as_str())
+                        .map(str::to_string);
+                }
+
+                if let Some(u) = payload.get("usage") {
+                    let input = u.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                    let output = u
+                        .get("completion_tokens")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    usage = Some((input, output));
+                }
+
+                let delta = payload
+                    .pointer("/choices/0/delta")
+                    .cloned()
+                    .unwrap_or(Value::Null);
+
+                // DeepSeek / some gateways stream chain-of-thought as
+                // `reasoning_content` before visible `content`.
+                if let Some(reasoning) = delta.get("reasoning_content").and_then(|c| c.as_str()) {
+                    if !reasoning.is_empty() {
+                        let _ = raw_tx
+                            .send(json!({
+                                "type": "reasoning_text.delta",
+                                "delta": reasoning,
+                            }))
+                            .await;
+                    }
+                }
+
+                if let Some(content) = delta.get("content").and_then(|c| c.as_str()) {
+                    if !content.is_empty() {
+                        text.push_str(content);
+                        let _ = raw_tx
+                            .send(json!({
+                                "type": "output_text.delta",
+                                "delta": content,
+                            }))
+                            .await;
+                    }
+                }
+
+                if let Some(tcs) = delta.get("tool_calls").and_then(|t| t.as_array()) {
+                    for tc in tcs {
+                        let idx = tc.get("index").and_then(|i| i.as_u64()).unwrap_or(0) as usize;
+                        let entry = tool_calls.entry(idx).or_insert_with(|| {
+                            (
+                                String::new(),
+                                String::new(),
+                                String::new(),
+                            )
+                        });
+                        if let Some(id) = tc.get("id").and_then(|i| i.as_str()) {
+                            if !id.is_empty() {
+                                entry.0 = id.to_string();
+                            }
+                        }
+                        if let Some(name) = tc.pointer("/function/name").and_then(|n| n.as_str()) {
+                            if !name.is_empty() {
+                                entry.1.push_str(name);
+                            }
+                        }
+                        if let Some(args) =
+                            tc.pointer("/function/arguments").and_then(|a| a.as_str())
+                        {
+                            entry.2.push_str(args);
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut output: Vec<ResponseOutputItem> = Vec::new();
+        for (id, name, arguments) in tool_calls.into_values() {
+            let id = if id.is_empty() { "call".to_string() } else { id };
+            output.push(ItemHelpers::function_tool_call(name, arguments, id));
+        }
+        if !text.is_empty() {
+            output.push(ItemHelpers::text_message(text));
+        }
+
+        let response = ModelResponse {
+            output,
+            usage: merge_usage(usage),
+            response_id,
+            request_id: None,
+        };
+        let _ = raw_tx
+            .send(json!({
+                "type": "response.completed",
+                "response_id": response.response_id,
+                "output": response.output,
+            }))
+            .await;
+        Ok(response)
+    }
+}
+
+fn build_chat_body(model: &str, request: &ModelRequest<'_>) -> Value {
+    let messages = input_to_chat_messages(request.system_instructions, &request.input);
+    let mut body = json!({
+        "model": model,
+        "messages": messages,
+    });
+    let tools = tools_as_chat(request.tools);
+    if !tools.is_empty() {
+        body["tools"] = Value::Array(tools);
+    }
+    apply_model_settings_chat(&mut body, request.model_settings);
+    body
 }
 
 fn input_to_chat_messages(
