@@ -50,5 +50,5 @@ async fn macro_name_override_and_sync_fn() {
     )
     .await
     .expect("invoke");
-    assert_eq!(out, serde_json::json!("hello Ada"));
+    assert_eq!(out.output, Some(serde_json::json!("hello Ada")));
 }

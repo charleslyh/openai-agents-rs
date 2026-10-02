@@ -6,11 +6,13 @@ use tokio::sync::mpsc;
 
 use crate::agent::Agent;
 use crate::error::AgentsError;
-use crate::items::{ItemHelpers, InputLike, ModelResponse, ResponseInputItem, RunItem};
+use crate::items::{ItemHelpers, InputLike, ModelResponse, ResponseInputItem, RunItem, ToolApprovalItem};
+use crate::model_settings::ModelSettings;
+use crate::run_state::{ApprovalStore, RunState};
 use crate::stream_events::StreamEvent;
 use crate::usage::Usage;
 
-/// Result of a completed `Runner::run` (Python: `RunResult`).
+/// Result of a completed or interrupted `Runner::run` (Python: `RunResult`).
 #[derive(Debug, Clone)]
 pub struct RunResult {
     /// Original input.
@@ -19,7 +21,7 @@ pub struct RunResult {
     pub new_items: Vec<RunItem>,
     /// Raw model responses.
     pub raw_responses: Vec<ModelResponse>,
-    /// Final output (string or JSON value).
+    /// Final output (string or JSON value). `Null` when interrupted pending approval.
     pub final_output: serde_json::Value,
     /// Last agent that ran.
     pub last_agent_name: String,
@@ -27,6 +29,23 @@ pub struct RunResult {
     pub max_turns: Option<usize>,
     /// Aggregated usage across raw responses.
     pub usage: Usage,
+    /// Pending tool approvals (Python: `interruptions`). Empty when the run finished.
+    pub interruptions: Vec<ToolApprovalItem>,
+    /// Internal snapshot used by [`Self::to_state`] when interrupted.
+    pub(crate) interrupt_state: Option<InterruptSnapshot>,
+}
+
+/// Fields needed to rebuild [`RunState`] after an interruption.
+#[derive(Debug, Clone)]
+pub(crate) struct InterruptSnapshot {
+    pub(crate) starting_agent_name: String,
+    pub(crate) current_input_items: Vec<ResponseInputItem>,
+    pub(crate) turn: usize,
+    pub(crate) previous_response_id: Option<String>,
+    pub(crate) model_settings: ModelSettings,
+    pub(crate) pending_response: ModelResponse,
+    pub(crate) approvals: ApprovalStore,
+    pub(crate) nested_agent_runs: std::collections::HashMap<String, RunState>,
 }
 
 impl RunResult {
@@ -34,6 +53,11 @@ impl RunResult {
     pub fn last_agent<'a>(&self, starting: &'a Agent) -> &'a Agent {
         let _ = &self.last_agent_name;
         starting
+    }
+
+    /// Whether the run paused for human approval.
+    pub fn is_interrupted(&self) -> bool {
+        !self.interruptions.is_empty()
     }
 
     /// Convenience: last response id.
@@ -44,10 +68,14 @@ impl RunResult {
     }
 
     /// Build a continuation input list (Python: `to_input_list`).
+    ///
+    /// Skips [`RunItem::ToolApproval`] entries (they are not model inputs).
     pub fn to_input_list(&self) -> Vec<ResponseInputItem> {
         let mut items = ItemHelpers::input_to_new_input_list(&self.input);
         for item in &self.new_items {
-            items.push(item.raw_item().clone());
+            if item.is_model_input() {
+                items.push(item.raw_item().clone());
+            }
         }
         items
     }
@@ -55,6 +83,37 @@ impl RunResult {
     /// Final output as a string when possible.
     pub fn final_output_as_str(&self) -> Option<&str> {
         self.final_output.as_str()
+    }
+
+    /// Convert an interrupted result into a resumable [`RunState`] (Python: `to_state`).
+    pub fn to_state(&self) -> Result<RunState, AgentsError> {
+        let snap = self.interrupt_state.as_ref().ok_or_else(|| {
+            AgentsError::User(crate::error::UserError::new(
+                "RunResult.to_state() requires a paused run with interruptions",
+            ))
+        })?;
+        if self.interruptions.is_empty() {
+            return Err(AgentsError::User(crate::error::UserError::new(
+                "RunResult.to_state() requires non-empty interruptions",
+            )));
+        }
+        Ok(RunState {
+            input: self.input.clone(),
+            starting_agent_name: snap.starting_agent_name.clone(),
+            current_agent_name: self.last_agent_name.clone(),
+            current_input_items: snap.current_input_items.clone(),
+            generated_items: self.new_items.clone(),
+            raw_responses: self.raw_responses.clone(),
+            usage: self.usage.clone(),
+            max_turns: self.max_turns.unwrap_or(crate::run::DEFAULT_MAX_TURNS),
+            turn: snap.turn,
+            previous_response_id: snap.previous_response_id.clone(),
+            model_settings: snap.model_settings.clone(),
+            interruptions: self.interruptions.clone(),
+            pending_response: snap.pending_response.clone(),
+            approvals: snap.approvals.clone(),
+            nested_agent_runs: snap.nested_agent_runs.clone(),
+        })
     }
 }
 
@@ -75,6 +134,8 @@ pub struct StreamingSnapshot {
     pub raw_responses: Vec<ModelResponse>,
     /// Usage so far.
     pub usage: Usage,
+    /// Pending interruptions when the stream paused for HITL.
+    pub interruptions: Vec<ToolApprovalItem>,
     /// Error if the background task failed after events stopped.
     pub error: Option<String>,
 }

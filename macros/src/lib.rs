@@ -20,6 +20,7 @@ pub fn function_tool(attr: TokenStream, item: TokenStream) -> TokenStream {
     let args = parse_macro_input!(attr with Punctuated::<Meta, Token![,]>::parse_terminated);
     let mut name_override: Option<String> = None;
     let mut description: Option<String> = None;
+    let mut needs_approval = false;
     for meta in args {
         match meta {
             Meta::NameValue(nv) if nv.path.is_ident("name") => {
@@ -27,6 +28,12 @@ pub fn function_tool(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
             Meta::NameValue(nv) if nv.path.is_ident("description") => {
                 description = lit_str(&nv.value);
+            }
+            Meta::NameValue(nv) if nv.path.is_ident("needs_approval") => {
+                needs_approval = lit_bool(&nv.value).unwrap_or(false);
+            }
+            Meta::Path(p) if p.is_ident("needs_approval") => {
+                needs_approval = true;
             }
             _ => {}
         }
@@ -127,6 +134,7 @@ pub fn function_tool(attr: TokenStream, item: TokenStream) -> TokenStream {
                     }
                 },
             )
+            .with_needs_approval(#needs_approval)
         }
     };
 
@@ -137,6 +145,16 @@ fn lit_str(expr: &Expr) -> Option<String> {
     match expr {
         Expr::Lit(el) => match &el.lit {
             Lit::Str(s) => Some(s.value()),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn lit_bool(expr: &Expr) -> Option<bool> {
+    match expr {
+        Expr::Lit(el) => match &el.lit {
+            Lit::Bool(b) => Some(b.value()),
             _ => None,
         },
         _ => None,

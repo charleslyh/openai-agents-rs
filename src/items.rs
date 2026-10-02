@@ -38,6 +38,8 @@ pub enum RunItem {
     ToolCall(ToolCallItem),
     /// Tool call result sent back to the model.
     ToolCallOutput(ToolCallOutputItem),
+    /// Pending human approval for a tool call (not sent to the model as input).
+    ToolApproval(ToolApprovalItem),
 }
 
 impl RunItem {
@@ -47,16 +49,25 @@ impl RunItem {
             Self::Message(i) => &i.agent_name,
             Self::ToolCall(i) => &i.agent_name,
             Self::ToolCallOutput(i) => &i.agent_name,
+            Self::ToolApproval(i) => &i.agent_name,
         }
     }
 
     /// Underlying Responses-format JSON.
+    ///
+    /// For [`Self::ToolApproval`], returns the pending function_call raw item (not a model input).
     pub fn raw_item(&self) -> &Value {
         match self {
             Self::Message(i) => &i.raw_item,
             Self::ToolCall(i) => &i.raw_item,
             Self::ToolCallOutput(i) => &i.raw_item,
+            Self::ToolApproval(i) => &i.raw_item,
         }
+    }
+
+    /// Whether this item may be forwarded as model input (Python skips `ToolApprovalItem`).
+    pub fn is_model_input(&self) -> bool {
+        !matches!(self, Self::ToolApproval(_))
     }
 }
 
@@ -87,6 +98,28 @@ pub struct ToolCallOutputItem {
     pub raw_item: ResponseInputItem,
     /// Structured / string tool output.
     pub output: Value,
+}
+
+/// Pending tool-approval interruption (Python: `ToolApprovalItem`).
+#[derive(Debug, Clone)]
+pub struct ToolApprovalItem {
+    /// Agent that requested the tool call.
+    pub agent_name: String,
+    /// Tool name.
+    pub tool_name: String,
+    /// Model call id.
+    pub call_id: String,
+    /// Raw JSON arguments string.
+    pub arguments: String,
+    /// Underlying function_call object.
+    pub raw_item: ResponseOutputItem,
+}
+
+impl ToolApprovalItem {
+    /// Convenience alias for tool name (Python: `ToolApprovalItem.name`).
+    pub fn name(&self) -> &str {
+        &self.tool_name
+    }
 }
 
 /// Helpers for building and inspecting items (Python: `ItemHelpers`).

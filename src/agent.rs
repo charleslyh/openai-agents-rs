@@ -27,6 +27,19 @@ impl Default for ToolUseBehavior {
     }
 }
 
+/// Options for [`Agent::as_tool`] (Python: `Agent.as_tool` kwargs subset).
+#[derive(Debug, Clone, Default)]
+pub struct AsToolConfig {
+    /// Override tool name (default: sanitized agent name).
+    pub name: Option<String>,
+    /// Tool description (default: handoff_description or agent name).
+    pub description: Option<String>,
+    /// Whether the agent-tool itself needs approval before the nested run starts.
+    pub needs_approval: bool,
+    /// Max turns for the nested run.
+    pub max_turns: Option<usize>,
+}
+
 /// An agent configuration (Python: `Agent`).
 #[derive(Clone)]
 pub struct Agent {
@@ -137,5 +150,13 @@ impl Agent {
     /// Enabled tools for this run (filters `is_enabled`).
     pub fn enabled_tools(&self) -> Vec<FunctionTool> {
         self.tools.iter().filter(|t| t.is_enabled).cloned().collect()
+    }
+
+    /// Expose this agent as a function tool (Python: `Agent.as_tool`).
+    ///
+    /// Nested tool approvals surface on the outer run's `interruptions`; approve/reject on the
+    /// outer [`crate::RunState`], then resume with [`crate::Runner::run_state`].
+    pub fn as_tool(&self, config: AsToolConfig) -> FunctionTool {
+        crate::run::build_agent_as_tool(self, config)
     }
 }

@@ -20,8 +20,9 @@ Legend: **S** = supported · **P** = partial · **N** = not in Phase-1 · **D** 
 | OpenAI trace cloud export | N | D-004 |
 | Handoffs | S | Basic `handoff()` + tool transfer; D-003 filters deferred |
 | `run_streamed` / `RunResultStreaming` | S | Item + agent events; raw events synthetic (D-011) |
-| MCP / sessions / guardrails / hosted tools / sandbox / HITL | N | D-006 |
-| `Agent.as_tool` | N | D-006 |
+| HITL / function-tool approvals | S | `needs_approval`, `interruptions`, `RunState` approve/reject (`always_*`), `to_json`/`from_json` (Rust schema D-012), `Agent.as_tool` nested approvals |
+| MCP / sessions / guardrails / hosted tools / sandbox | N | D-006 |
+| `Agent.as_tool` | S | Basic nested run + HITL bubble; custom extractors/stream deferred |
 
 ## Verification layers
 

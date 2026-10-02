@@ -57,7 +57,9 @@ Shared scenarios live in [`tests/parity/scenarios/`](./tests/parity/scenarios/).
 
 ## Phase-1 out of scope (still deferred)
 
-MCP, sessions, guardrails, hosted tools, sandbox, HITL / approvals, OpenAI trace cloud export, token-level model streaming (D-011).
+MCP, sessions, guardrails, hosted tools, sandbox, OpenAI trace cloud export, token-level model streaming (D-011).
+
+HITL (`needs_approval` / `RunState` / `Agent.as_tool` nested approvals) is supported — Rust JSON schema is D-012 (not Python 1.18 wire-compatible).
 
 ## License
 

@@ -16,6 +16,7 @@ Silent behavioral forks are bugs.
 | D-009 | `function_tool` failure_error_function defaults | Tool errors returned as string results by default | Match Python default tool error surfacing | Keep aligned |
 | D-010 | Prefer git submodule for vendor | Vendored via release tarball + `vendor/PINNED_VERSION` when GitHub submodule clone is unavailable | Network / CI portability | Prefer submodule when accessible; `scripts/sync_vendor.sh` remains source of truth |
 | D-011 | Token-level `RawResponsesStreamEvent` from `Model.stream_response` | Synthetic `response.completed` JSON after each `get_response` | Token streaming deferred; ScriptedModel path stays deterministic | Add `Model::stream_response` later |
+| D-012 | Python `RunState` schema 1.18 wire format | Rust schema `openai-agents-rust/1` via `to_json`/`from_json`; sticky `always_approve`/`always_reject`; `Agent.as_tool` nested HITL | Not byte-compatible with Python snapshots; process-local + Rust JSON is enough for HITL | Optional Python-compatible exporter later |
 
 ## How to add an entry
 
