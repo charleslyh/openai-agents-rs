@@ -1,0 +1,51 @@
+{
+  "name": "single_tool_then_text",
+  "input": "use the tool",
+  "agent": {
+    "name": "assistant",
+    "instructions": null,
+    "tools": [
+      {
+        "name": "echo",
+        "description": "echo",
+        "return_value": "tool-ok"
+      }
+    ],
+    "tool_use_behavior": "run_llm_again"
+  },
+  "steps": [
+    {
+      "output": [
+        {
+          "id": "1",
+          "type": "function_call",
+          "name": "echo",
+          "arguments": "{}",
+          "call_id": "call-1"
+        }
+      ]
+    },
+    {
+      "output": [
+        {
+          "id": "1",
+          "type": "message",
+          "role": "assistant",
+          "status": "completed",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "done",
+              "annotations": [],
+              "logprobs": []
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "final_output": "done",
+    "raw_response_count": 2
+  }
+}

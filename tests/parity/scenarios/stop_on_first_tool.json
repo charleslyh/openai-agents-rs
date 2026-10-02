@@ -1,0 +1,33 @@
+{
+  "name": "stop_on_first_tool",
+  "input": "stop please",
+  "agent": {
+    "name": "assistant",
+    "instructions": null,
+    "tools": [
+      {
+        "name": "echo",
+        "description": "echo",
+        "return_value": "tool-final"
+      }
+    ],
+    "tool_use_behavior": "stop_on_first_tool"
+  },
+  "steps": [
+    {
+      "output": [
+        {
+          "id": "1",
+          "type": "function_call",
+          "name": "echo",
+          "arguments": "{}",
+          "call_id": "call-1"
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "final_output": "tool-final",
+    "raw_response_count": 1
+  }
+}

@@ -1,0 +1,120 @@
+//! Agent definition (Python: `agents.agent.Agent` Phase-1 subset).
+
+use std::sync::Arc;
+
+use crate::model::Model;
+use crate::model_settings::{get_default_model_settings, ModelSettings};
+use crate::tool::FunctionTool;
+
+/// How tool results affect the run loop (Python: `tool_use_behavior`).
+#[derive(Debug, Clone)]
+pub enum ToolUseBehavior {
+    /// Feed tool results back to the LLM (default).
+    RunLlmAgain,
+    /// Stop after the first tool and use its output as final_output.
+    StopOnFirstTool,
+    /// Stop when any of the named tools is called.
+    StopAtTools {
+        /// Tool names that finalize the run.
+        stop_at_tool_names: Vec<String>,
+    },
+}
+
+impl Default for ToolUseBehavior {
+    fn default() -> Self {
+        Self::RunLlmAgain
+    }
+}
+
+/// An agent configuration (Python: `Agent`).
+#[derive(Clone)]
+pub struct Agent {
+    /// Display / identity name.
+    pub name: String,
+    /// System instructions.
+    pub instructions: Option<String>,
+    /// Function tools.
+    pub tools: Vec<FunctionTool>,
+    /// Bound model instance (preferred for tests / custom providers).
+    pub model: Option<Arc<dyn Model>>,
+    /// Model name resolved via a provider (Phase-1: used by OpenAI helpers).
+    pub model_name: Option<String>,
+    /// Model settings.
+    pub model_settings: ModelSettings,
+    /// Tool use behavior.
+    pub tool_use_behavior: ToolUseBehavior,
+    /// Reset tool_choice after a tool turn (Python default: true).
+    pub reset_tool_choice: bool,
+}
+
+impl std::fmt::Debug for Agent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Agent")
+            .field("name", &self.name)
+            .field("instructions", &self.instructions)
+            .field("tools", &self.tools)
+            .field("model_name", &self.model_name)
+            .field("model_settings", &self.model_settings)
+            .field("tool_use_behavior", &self.tool_use_behavior)
+            .field("reset_tool_choice", &self.reset_tool_choice)
+            .field("model_bound", &self.model.is_some())
+            .finish()
+    }
+}
+
+impl Agent {
+    /// Create an agent with a name.
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            instructions: None,
+            tools: Vec::new(),
+            model: None,
+            model_name: None,
+            model_settings: get_default_model_settings(),
+            tool_use_behavior: ToolUseBehavior::default(),
+            reset_tool_choice: true,
+        }
+    }
+
+    /// Set instructions.
+    pub fn instructions(mut self, instructions: impl Into<String>) -> Self {
+        self.instructions = Some(instructions.into());
+        self
+    }
+
+    /// Set tools.
+    pub fn tools(mut self, tools: Vec<FunctionTool>) -> Self {
+        self.tools = tools;
+        self
+    }
+
+    /// Bind a model instance.
+    pub fn model(mut self, model: Arc<dyn Model>) -> Self {
+        self.model = Some(model);
+        self
+    }
+
+    /// Set a model name (resolved by OpenAI provider when no instance is bound).
+    pub fn model_name(mut self, name: impl Into<String>) -> Self {
+        self.model_name = Some(name.into());
+        self
+    }
+
+    /// Set model settings.
+    pub fn model_settings(mut self, settings: ModelSettings) -> Self {
+        self.model_settings = settings;
+        self
+    }
+
+    /// Set tool use behavior.
+    pub fn tool_use_behavior(mut self, behavior: ToolUseBehavior) -> Self {
+        self.tool_use_behavior = behavior;
+        self
+    }
+
+    /// Enabled tools for this run (Phase-1: filters `is_enabled`).
+    pub fn enabled_tools(&self) -> Vec<FunctionTool> {
+        self.tools.iter().filter(|t| t.is_enabled).cloned().collect()
+    }
+}

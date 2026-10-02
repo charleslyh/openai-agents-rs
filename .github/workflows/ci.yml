@@ -1,0 +1,20 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Sync / verify vendor pin
+        run: |
+          bash scripts/sync_vendor.sh
+          bash scripts/sync_vendor.sh --check
+      - name: Behavior tests (no openai)
+        run: cargo test --no-default-features
+      - name: OpenAI wiremock + parity tests
+        run: cargo test --features openai

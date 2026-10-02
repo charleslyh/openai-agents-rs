@@ -1,0 +1,34 @@
+---
+description: Compact git commit message format (type(module): what + why)
+alwaysApply: true
+---
+
+# Commit messages
+
+Use a **single-line compact** subject:
+
+```text
+type(module): description
+```
+
+## type
+
+One of: `feat` | `fix` | `docs` | `test` | `refactor` | `chore` | `ci` | `perf`
+
+## module
+
+Short scope for the area touched, e.g. `agents`, `runner`, `tool`, `tracing`, `openai`, `parity`, `vendor`, `ci`.
+
+## description
+
+Must state **what** changed and **why** (motivation / risk avoided), not only a file list.
+
+- Good: `feat(runner): add max_turns enforcement to match Python DEFAULT_MAX_TURNS and fail closed on loops`
+- Bad: `update run.rs` / `fix stuff` / `wip`
+
+## Rules
+
+- Prefer one logical change per commit; avoid bundling unrelated refactors.
+- Do not use `--no-verify` or skip hooks unless the user explicitly asks.
+- Body is optional; if used, keep it short and still lead with what+why in the subject.
+- When the change introduces a known Python SDK divergence, mention the `D-NNN` id from `docs/DEVIATIONS.md` in the subject or body.
