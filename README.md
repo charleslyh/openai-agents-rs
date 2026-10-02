@@ -1,6 +1,8 @@
-# OpenAI Agents SDK (Rust) — Phase-1
+# OpenAI Agents SDK (Rust)
 
-Rust port of the [OpenAI Agents Python SDK](https://github.com/openai/openai-agents-python) **v0.23.1**, covering a verified subset: **Agent**, **Runner**, **FunctionTool**, **local Tracing**, **Responses + Chat Completions**.
+Rust port of the [OpenAI Agents Python SDK](https://github.com/openai/openai-agents-python) **v0.23.1**.
+
+Supported now: **Agent**, **Runner** (`run` / `run_blocking` / `run_streamed`), **FunctionTool** (+ `#[function_tool]`), **handoffs**, **local Tracing**, **Responses + Chat Completions**.
 
 ## Quick start
 
@@ -53,9 +55,9 @@ Shared scenarios live in [`tests/parity/scenarios/`](./tests/parity/scenarios/).
 - [`docs/DEVIATIONS.md`](./docs/DEVIATIONS.md) — intentional differences from Python (must stay current)
 - [`docs/CONTRIBUTING.md`](./docs/CONTRIBUTING.md) — commit message format and verification
 
-## Phase-1 out of scope
+## Phase-1 out of scope (still deferred)
 
-Handoffs, MCP, sessions, guardrails, hosted tools, sandbox, `run_streamed`, HITL / approvals, OpenAI trace cloud export.
+MCP, sessions, guardrails, hosted tools, sandbox, HITL / approvals, OpenAI trace cloud export, token-level model streaming (D-011).
 
 ## License
 

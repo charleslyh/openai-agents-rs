@@ -6,11 +6,13 @@
 
 pub mod agent;
 pub mod error;
+pub mod handoffs;
 pub mod items;
 pub mod model;
 pub mod model_settings;
 pub mod result;
 pub mod run;
+pub mod stream_events;
 pub mod testing;
 pub mod tool;
 pub mod tracing;
@@ -18,18 +20,23 @@ pub mod usage;
 
 pub use agent::{Agent, ToolUseBehavior};
 pub use error::{AgentsError, MaxTurnsExceeded, ModelError, UserError};
+pub use handoffs::{handoff, handoff_with, Handoff};
 pub use items::{
     InputLike, ItemHelpers, MessageOutputItem, ModelResponse, ResponseInputItem, ResponseOutputItem,
     RunItem, ToolCallItem, ToolCallOutputItem,
 };
 pub use model::{Model, ModelRequest, ModelTracing};
 pub use model_settings::ModelSettings;
-pub use result::RunResult;
+pub use result::{RunResult, RunResultStreaming, StreamingSnapshot};
 pub use run::{
     set_default_openai_api, DefaultOpenAiApi, RunConfig, RunOptions, Runner, DEFAULT_MAX_TURNS,
 };
+pub use stream_events::{RunItemStreamName, StreamEvent};
 pub use tool::{FunctionTool, ToolContext};
 pub use usage::Usage;
+
+/// Attribute macro: turn a function into a [`FunctionTool`] constructor (Python: `@function_tool`).
+pub use openai_agents_macros::function_tool;
 
 #[cfg(feature = "openai")]
 pub use model::openai::{OpenAIChatCompletionsModel, OpenAIResponsesModel};

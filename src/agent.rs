@@ -1,7 +1,8 @@
-//! Agent definition (Python: `agents.agent.Agent` Phase-1 subset).
+//! Agent definition (Python: `agents.agent.Agent` subset).
 
 use std::sync::Arc;
 
+use crate::handoffs::Handoff;
 use crate::model::Model;
 use crate::model_settings::{get_default_model_settings, ModelSettings};
 use crate::tool::FunctionTool;
@@ -33,11 +34,15 @@ pub struct Agent {
     pub name: String,
     /// System instructions.
     pub instructions: Option<String>,
+    /// Description used when this agent is a handoff target.
+    pub handoff_description: Option<String>,
     /// Function tools.
     pub tools: Vec<FunctionTool>,
+    /// Handoffs to other agents.
+    pub handoffs: Vec<Handoff>,
     /// Bound model instance (preferred for tests / custom providers).
     pub model: Option<Arc<dyn Model>>,
-    /// Model name resolved via a provider (Phase-1: used by OpenAI helpers).
+    /// Model name resolved via a provider.
     pub model_name: Option<String>,
     /// Model settings.
     pub model_settings: ModelSettings,
@@ -52,7 +57,9 @@ impl std::fmt::Debug for Agent {
         f.debug_struct("Agent")
             .field("name", &self.name)
             .field("instructions", &self.instructions)
+            .field("handoff_description", &self.handoff_description)
             .field("tools", &self.tools)
+            .field("handoffs", &self.handoffs)
             .field("model_name", &self.model_name)
             .field("model_settings", &self.model_settings)
             .field("tool_use_behavior", &self.tool_use_behavior)
@@ -68,7 +75,9 @@ impl Agent {
         Self {
             name: name.into(),
             instructions: None,
+            handoff_description: None,
             tools: Vec::new(),
+            handoffs: Vec::new(),
             model: None,
             model_name: None,
             model_settings: get_default_model_settings(),
@@ -83,9 +92,21 @@ impl Agent {
         self
     }
 
+    /// Set handoff description.
+    pub fn handoff_description(mut self, description: impl Into<String>) -> Self {
+        self.handoff_description = Some(description.into());
+        self
+    }
+
     /// Set tools.
     pub fn tools(mut self, tools: Vec<FunctionTool>) -> Self {
         self.tools = tools;
+        self
+    }
+
+    /// Set handoffs.
+    pub fn handoffs(mut self, handoffs: Vec<Handoff>) -> Self {
+        self.handoffs = handoffs;
         self
     }
 
@@ -113,7 +134,7 @@ impl Agent {
         self
     }
 
-    /// Enabled tools for this run (Phase-1: filters `is_enabled`).
+    /// Enabled tools for this run (filters `is_enabled`).
     pub fn enabled_tools(&self) -> Vec<FunctionTool> {
         self.tools.iter().filter(|t| t.is_enabled).cloned().collect()
     }
