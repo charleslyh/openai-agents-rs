@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "openai-agents-macros"]
+members = [".", "macros"]
 resolver = "2"
 
 [package]
@@ -20,7 +20,7 @@ openai = ["dep:async-openai", "dep:reqwest"]
 [dependencies]
 async-trait = "0.1"
 futures = "0.3"
-openai-agents-macros = { path = "openai-agents-macros", version = "0.1.0" }
+openai-agents-macros = { path = "macros", version = "0.1.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
