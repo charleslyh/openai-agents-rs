@@ -204,24 +204,73 @@ pub(crate) fn apply_model_settings_common(body: &mut serde_json::Value, settings
     if let Some(p) = settings.parallel_tool_calls {
         body["parallel_tool_calls"] = serde_json::json!(p);
     }
-    if let Some(extra) = &settings.extra_body {
-        if let (Some(base), Some(ext)) = (body.as_object_mut(), extra.as_object()) {
-            for (k, v) in ext {
-                base.insert(k.clone(), v.clone());
-            }
+    // `extra_args` / `extra_body` are applied by the callers, after every mapped field, so that
+    // `extra_body` keeps the highest precedence (openai SDK `_merge_mappings`).
+}
+
+/// Apply `ModelSettings.extra_args`, filling only keys nothing else has set.
+///
+/// Python merges `extra_args` into the API call kwargs and raises `TypeError` when a key is
+/// already provided (`openai_chatcompletions.py:725`, `openai_responses.py:1059`). Rust has no
+/// kwargs layer, so the same collision is reported as [`ModelError::Behavior`] with Python's
+/// message. `extra_body` is applied afterwards and still wins.
+pub(crate) fn apply_extra_args(
+    body: &mut serde_json::Value,
+    settings: &ModelSettings,
+    api: &str,
+) -> Result<(), ModelError> {
+    let Some(extra) = settings.extra_args.as_ref() else {
+        return Ok(());
+    };
+    let mut duplicates: Vec<&str> = extra
+        .keys()
+        .filter(|key| body.get(key.as_str()).is_some())
+        .map(String::as_str)
+        .collect();
+    if !duplicates.is_empty() {
+        duplicates.sort_unstable();
+        let keys = duplicates
+            .iter()
+            .map(|k| format!("'{k}'"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let noun = if duplicates.len() == 1 {
+            "keyword argument"
+        } else {
+            "keyword arguments"
+        };
+        return Err(ModelError::Behavior(format!(
+            "extra_args: {api}.create() got multiple values for {noun} {keys}"
+        )));
+    }
+    if let Some(base) = body.as_object_mut() {
+        for (key, value) in extra {
+            base.insert(key.clone(), value.clone());
         }
     }
-    if let Some(extra) = &settings.extra_args {
-        if let Some(base) = body.as_object_mut() {
-            for (k, v) in extra {
-                base.entry(k.clone()).or_insert_with(|| v.clone());
-            }
+    Ok(())
+}
+
+/// Apply `ModelSettings.extra_body`, overriding whatever the request already holds.
+///
+/// Python passes this as the OpenAI SDK's nested `extra_body` argument (`docs/models/index.md`:
+/// "remains a nested `extra_body` argument"), which the SDK merges over the request body, so it
+/// has the highest precedence — above both mapped settings and [`apply_extra_args`].
+pub(crate) fn apply_extra_body(body: &mut serde_json::Value, settings: &ModelSettings) {
+    if let (Some(base), Some(serde_json::Value::Object(extra))) =
+        (body.as_object_mut(), settings.extra_body.as_ref())
+    {
+        for (key, value) in extra {
+            base.insert(key.clone(), value.clone());
         }
     }
 }
 
 /// Chat Completions mapping (Python: `OpenAIChatCompletionsModel`).
-pub(crate) fn apply_model_settings_chat(body: &mut serde_json::Value, settings: &ModelSettings) {
+pub(crate) fn apply_model_settings_chat(
+    body: &mut serde_json::Value,
+    settings: &ModelSettings,
+) -> Result<(), ModelError> {
     apply_model_settings_common(body, settings);
     if let Some(m) = settings.max_tokens {
         body["max_tokens"] = serde_json::json!(m);
@@ -235,13 +284,16 @@ pub(crate) fn apply_model_settings_chat(body: &mut serde_json::Value, settings: 
     if let Some(meta) = &settings.metadata {
         body["metadata"] = serde_json::Value::Object(meta.clone());
     }
+    apply_extra_args(body, settings, "chat.completions")?;
+    apply_extra_body(body, settings);
+    Ok(())
 }
 
 /// Responses API mapping (Python: `OpenAIResponsesModel`).
 pub(crate) fn apply_model_settings_responses(
     body: &mut serde_json::Value,
     settings: &ModelSettings,
-) {
+) -> Result<(), ModelError> {
     apply_model_settings_common(body, settings);
     // Responses API names this `max_output_tokens`.
     if let Some(m) = settings.max_tokens {
@@ -275,6 +327,9 @@ pub(crate) fn apply_model_settings_responses(
     if let Some(inc) = &settings.response_include {
         body["include"] = serde_json::json!(inc);
     }
+    apply_extra_args(body, settings, "responses")?;
+    apply_extra_body(body, settings);
+    Ok(())
 }
 
 /// Apply `timeout` / `extra_headers` to an outgoing request.

@@ -72,8 +72,21 @@ them like any other provider event, and it reads the response id out of them whe
 `response_include`, `extra_body`, `extra_headers`, `extra_args`, `timeout`. `resolve()` overlays
 non-`None` values and merges dictionaries, matching Python.
 
-Not ported: `prompt_cache_retention`, `context_management`, `prompt_cache_options`,
+Not ported: `extra_query`, `prompt_cache_retention`, `context_management`, `prompt_cache_options`,
 `preserve_raw_usage`.
+
+Request-body precedence, highest first (matching Python):
+
+1. `extra_body` — Python hands it to the OpenAI SDK as a nested argument that is merged over the
+   body, so it overrides both mapped settings and `extra_args`.
+2. mapped settings — `temperature`, `max_output_tokens`, `metadata`, `include`, …
+3. `extra_args` — fills only keys nothing else set; a key that collides with a mapped setting or
+   a request field such as `model` is an error (D-024), not a silent drop. Python additionally
+   requires these keys to be *typed* SDK parameters; arbitrary fields belong in `extra_body`
+   (D-025).
+
+`resolve()` replaces every mapping when the override is not `None`, except `extra_args`, whose
+dictionaries are merged (`model_settings.py:273`).
 
 ## Run items
 
