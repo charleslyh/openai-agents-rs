@@ -11,6 +11,8 @@ use serde_json::Value;
 
 use crate::error::ModelError;
 use crate::items::{ModelResponse, ResponseOutputItem};
+use crate::model::wire_events::{emit_response_stream, response_object};
+use crate::model::wire_events::{SCRIPTED_MODEL, SCRIPTED_RESPONSE_ID};
 use crate::model::{Model, ModelRequest};
 use crate::model_settings::ModelSettings;
 use crate::usage::Usage;
@@ -319,15 +321,21 @@ impl Model for ScriptedModel {
             request_id: step.request_id,
         };
 
-        // Python streams an exact normalized event sequence; Rust emits the same synthetic
-        // `response.completed` as the default `Model` implementation (see D-011).
-        let _ = raw_tx
-            .send(serde_json::json!({
-                "type": "response.completed",
-                "response_id": response.response_id,
-                "output": response.output,
-            }))
-            .await;
+        // Python (`testing/model.py`) expands a step into the standard Responses event sequence;
+        // Rust replays the same sequence (D-011).
+        let wire = response_object(
+            response
+                .response_id
+                .as_deref()
+                .unwrap_or(SCRIPTED_RESPONSE_ID),
+            SCRIPTED_MODEL,
+            "completed",
+            0.0,
+            &response.output,
+            &response.usage,
+            "none",
+        );
+        emit_response_stream(&raw_tx, wire).await;
 
         Ok(response)
     }

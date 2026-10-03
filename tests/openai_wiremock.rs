@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use openai_agents::{
     Agent, FunctionTool, ModelSettings, OpenAIChatCompletionsModel, OpenAIProvider,
-    OpenAIResponsesModel, RunOptions, Runner, ToolChoice, Truncation, Verbosity,
+    OpenAIResponsesModel, RunOptions, Runner, StreamEvent, ToolChoice, Truncation, Verbosity,
 };
 use serde_json::json;
 use wiremock::matchers::{method, path};
@@ -322,6 +322,272 @@ async fn chat_completions_request_shape() {
     assert!(body["tools"].as_array().unwrap().iter().any(|t| {
         t["type"] == "function" && t["function"]["name"] == "noop"
     }));
+}
+
+/// Render a `text/event-stream` body from Responses / Chat Completions SSE events.
+fn sse_body(events: &[serde_json::Value]) -> String {
+    events.iter().map(|e| format!("data: {e}\n\n")).collect()
+}
+
+fn responses_message_item(id: &str, text: &str) -> serde_json::Value {
+    json!({
+        "id": id,
+        "type": "message",
+        "role": "assistant",
+        "status": "completed",
+        "content": [{"type": "output_text", "text": text, "annotations": []}]
+    })
+}
+
+/// Collect the `delta` strings of raw events with the given type.
+fn deltas_of_kind(events: &[StreamEvent], kind: &str) -> Vec<String> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            StreamEvent::RawResponse { data } => {
+                let is_kind = data.get("type").and_then(|t| t.as_str()) == Some(kind);
+                match (is_kind, data.get("delta").and_then(|d| d.as_str())) {
+                    (true, Some(delta)) => Some(delta.to_string()),
+                    _ => None,
+                }
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// The `type` of every raw wire event, in emission order.
+fn raw_types(events: &[StreamEvent]) -> Vec<String> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            StreamEvent::RawResponse { data } => {
+                data.get("type").and_then(|t| t.as_str()).map(str::to_string)
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// `sequence_number` of every raw wire event, in emission order.
+fn sequence_numbers(events: &[StreamEvent]) -> Vec<u64> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            StreamEvent::RawResponse { data } => data
+                .get("sequence_number")
+                .and_then(|s| s.as_u64()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The `response` object carried by the terminal `response.completed` event.
+fn completed_response(events: &[StreamEvent]) -> serde_json::Value {
+    events
+        .iter()
+        .rev()
+        .find_map(|e| match e {
+            StreamEvent::RawResponse { data }
+                if data.get("type").and_then(|t| t.as_str()) == Some("response.completed") =>
+            {
+                data.get("response").cloned()
+            }
+            _ => None,
+        })
+        .expect("response.completed event")
+}
+
+/// Responses API streams token deltas, not just a synthetic `response.completed` (D-011).
+#[tokio::test]
+async fn responses_stream_emits_token_deltas() {
+    let server = MockServer::start().await;
+    let message = responses_message_item("msg_1", "Hello world");
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(sse_body(&[
+                    json!({"type": "response.created", "sequence_number": 0, "response": {"id": "resp_stream", "status": "in_progress"}}),
+                    json!({"type": "response.output_item.added", "sequence_number": 1, "output_index": 0, "item": message}),
+                    json!({"type": "response.reasoning_summary_text.delta", "sequence_number": 2, "item_id": "rs_1", "output_index": 0, "delta": "thinking"}),
+                    json!({"type": "response.output_text.delta", "sequence_number": 3, "item_id": "msg_1", "output_index": 0, "content_index": 0, "delta": "Hello"}),
+                    json!({"type": "response.output_text.delta", "sequence_number": 4, "item_id": "msg_1", "output_index": 0, "content_index": 0, "delta": " world"}),
+                    json!({"type": "response.output_item.done", "sequence_number": 5, "output_index": 0, "item": message}),
+                    json!({"type": "response.completed", "sequence_number": 6, "response": {
+                        "id": "resp_stream",
+                        "output": [message],
+                        "usage": {"input_tokens": 2, "output_tokens": 3}
+                    }}),
+                ])),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let agent = Agent::new("a").model(Arc::new(OpenAIResponsesModel::new(
+        "gpt-test",
+        "sk-test",
+        Some(&format!("{}/v1", server.uri())),
+    )));
+
+    let mut streamed = Runner::run_streamed(agent, "ping", RunOptions::default());
+    let events = streamed.collect_events().await.expect("events");
+
+    assert_eq!(
+        deltas_of_kind(&events, "response.output_text.delta"),
+        ["Hello", " world"]
+    );
+    assert_eq!(
+        deltas_of_kind(&events, "response.reasoning_summary_text.delta"),
+        ["thinking"]
+    );
+    // Events are forwarded verbatim, so the wire `type`s and `sequence_number`s survive.
+    assert_eq!(
+        raw_types(&events),
+        [
+            "response.created",
+            "response.output_item.added",
+            "response.reasoning_summary_text.delta",
+            "response.output_text.delta",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.completed",
+        ]
+    );
+    assert_eq!(sequence_numbers(&events), [0, 1, 2, 3, 4, 5, 6]);
+    assert_eq!(
+        completed_response(&events)["output"][0]["content"][0]["text"],
+        "Hello world"
+    );
+    assert_eq!(
+        streamed.final_output().and_then(|v| v.as_str().map(str::to_string)),
+        Some("Hello world".into())
+    );
+
+    let body: serde_json::Value = server.received_requests().await.expect("reqs")[0]
+        .body_json()
+        .expect("json");
+    assert_eq!(body["stream"], true);
+}
+
+/// Gateways that never send `response.completed` still yield the assembled output.
+#[tokio::test]
+async fn responses_stream_assembles_without_completed_event() {
+    let server = MockServer::start().await;
+    let message = responses_message_item("msg_1", "partial");
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(sse_body(&[
+                    json!({"type": "response.created", "response": {"id": "resp_partial"}}),
+                    json!({"type": "response.output_text.delta", "item_id": "msg_1", "output_index": 0, "delta": "partial"}),
+                    json!({"type": "response.output_item.done", "output_index": 0, "item": message}),
+                ])),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let agent = Agent::new("a").model(Arc::new(OpenAIResponsesModel::new(
+        "gpt-test",
+        "sk-test",
+        Some(&format!("{}/v1", server.uri())),
+    )));
+
+    let mut streamed = Runner::run_streamed(agent, "ping", RunOptions::default());
+    let events = streamed.collect_events().await.expect("events");
+    assert_eq!(
+        deltas_of_kind(&events, "response.output_text.delta"),
+        ["partial"]
+    );
+    // The synthesized terminal event continues the numbering of the forwarded events.
+    assert_eq!(raw_types(&events).last().map(String::as_str), Some("response.completed"));
+    assert_eq!(
+        streamed.final_output().and_then(|v| v.as_str().map(str::to_string)),
+        Some("partial".into())
+    );
+}
+
+/// Chat Completions keeps streaming token deltas over the shared SSE reader.
+#[tokio::test]
+async fn chat_stream_emits_token_deltas() {
+    let server = MockServer::start().await;
+    let chunk = |content: &str| {
+        json!({
+            "id": "chatcmpl_stream",
+            "object": "chat.completion.chunk",
+            "choices": [{"index": 0, "delta": {"content": content}}]
+        })
+    };
+    let mut events = vec![chunk("Hi"), chunk(" there")];
+    events.push(json!({
+        "id": "chatcmpl_stream",
+        "object": "chat.completion.chunk",
+        "choices": [{"index": 0, "delta": {}}],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 2}
+    }));
+    let mut body = sse_body(&events);
+    body.push_str("data: [DONE]\n\n");
+
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(body),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let agent = Agent::new("a").model(Arc::new(OpenAIChatCompletionsModel::new(
+        "gpt-test",
+        "sk-test",
+        Some(&format!("{}/v1", server.uri())),
+    )));
+
+    let mut streamed = Runner::run_streamed(agent, "ping", RunOptions::default());
+    let events = streamed.collect_events().await.expect("events");
+    assert_eq!(
+        deltas_of_kind(&events, "response.output_text.delta"),
+        ["Hi", " there"]
+    );
+    // Chat Completions synthesizes the standard Responses event sequence.
+    assert_eq!(
+        raw_types(&events),
+        [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_text.delta",
+            "response.content_part.done",
+            "response.output_item.done",
+            "response.completed",
+        ]
+    );
+    let expected: Vec<u64> = (0..raw_types(&events).len() as u64).collect();
+    assert_eq!(sequence_numbers(&events), expected);
+    let completed = completed_response(&events);
+    assert_eq!(completed["object"], "response");
+    assert_eq!(completed["status"], "completed");
+    assert_eq!(
+        completed["output"][0]["content"][0]["text"],
+        "Hi there"
+    );
+    assert_eq!(
+        streamed.final_output().and_then(|v| v.as_str().map(str::to_string)),
+        Some("Hi there".into())
+    );
+
+    let body: serde_json::Value = server.received_requests().await.expect("reqs")[0]
+        .body_json()
+        .expect("json");
+    assert_eq!(body["stream"], true);
 }
 
 /// Expanded `ModelSettings` must reach the Responses request with Responses field names.

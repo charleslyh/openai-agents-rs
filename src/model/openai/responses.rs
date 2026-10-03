@@ -1,15 +1,20 @@
 //! Responses API model via async-openai config + HTTP.
 
+use std::collections::BTreeMap;
+
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
 use crate::error::ModelError;
-use crate::items::ModelResponse;
+use crate::items::{ModelResponse, ResponseOutputItem};
+use crate::model::wire_events::{
+    emit_completed, emit_response_stream, now_seconds, response_object, FAKE_RESPONSES_ID,
+};
 use crate::model::{Model, ModelRequest};
 
 use super::{
-    apply_model_settings_responses, decorate_request, map_transport, merge_usage,
-    tools_as_responses, OpenAiEndpoint,
+    apply_model_settings_responses, decorate_request, is_json_response, map_transport, merge_usage,
+    tools_as_responses, OpenAiEndpoint, SseReader,
 };
 
 /// OpenAI Responses API model (Python: `OpenAIResponsesModel`).
@@ -39,36 +44,7 @@ impl OpenAIResponsesModel {
 #[async_trait]
 impl Model for OpenAIResponsesModel {
     async fn get_response(&self, request: ModelRequest<'_>) -> Result<ModelResponse, ModelError> {
-        let input_items = request.input.to_owned_items();
-        let mut body = json!({
-            "model": self.model,
-            "input": input_items,
-        });
-        if let Some(instr) = request.system_instructions {
-            body["instructions"] = json!(instr);
-        }
-        let tools = tools_as_responses(request.tools);
-        if !tools.is_empty() {
-            body["tools"] = Value::Array(tools);
-        }
-        if let Some(prev) = request.previous_response_id {
-            body["previous_response_id"] = json!(prev);
-        }
-        if let Some(conv) = request.conversation_id {
-            body["conversation"] = json!(conv);
-        }
-        apply_model_settings_responses(&mut body, request.model_settings);
-        // Python: structured output becomes `text.format = {type: json_schema, ...}`.
-        if let Some(schema) = request.output_schema.filter(|s| !s.is_plain_text()) {
-            body["text"] = json!({
-                "format": {
-                    "type": "json_schema",
-                    "name": schema.name(),
-                    "schema": schema.json_schema().map_err(map_transport)?,
-                    "strict": schema.is_strict_json_schema(),
-                }
-            });
-        }
+        let body = build_responses_body(&self.model, &request)?;
 
         let resp = decorate_request(
             self.endpoint.http.post(self.endpoint.url("/responses")),
@@ -90,6 +66,197 @@ impl Model for OpenAIResponsesModel {
 
         responses_payload_to_model_response(payload)
     }
+
+    /// Streams the Responses API as SSE (D-011).
+    ///
+    /// Wire events are forwarded verbatim (Python: `openai_responses.py` does `yield chunk`), so
+    /// consumers see `response.output_text.delta`, `response.output_item.*` and so on. The
+    /// assembled `output` comes from `response.completed` when the gateway sends it, otherwise
+    /// from the `response.output_item.done` events seen.
+    async fn stream_response(
+        &self,
+        request: ModelRequest<'_>,
+        raw_tx: tokio::sync::mpsc::Sender<Value>,
+    ) -> Result<ModelResponse, ModelError> {
+        let mut body = build_responses_body(&self.model, &request)?;
+        body["stream"] = json!(true);
+
+        let resp = decorate_request(
+            self.endpoint.http.post(self.endpoint.url("/responses")),
+            request.model_settings,
+        )
+        .bearer_auth(self.endpoint.api_key())
+        .json(&body)
+        .send()
+        .await
+        .map_err(map_transport)?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let payload: Value = resp.json().await.unwrap_or(Value::Null);
+            return Err(ModelError::Transport(format!(
+                "responses stream status={status} body={payload}"
+            )));
+        }
+
+        // Wiremock / non-SSE providers may still return a full JSON body.
+        if is_json_response(&resp) {
+            let payload: Value = resp.json().await.map_err(map_transport)?;
+            let response = responses_payload_to_model_response(payload)?;
+            let wire = response_object(
+                response.response_id.as_deref().unwrap_or(FAKE_RESPONSES_ID),
+                &self.model,
+                "completed",
+                now_seconds(),
+                &response.output,
+                &response.usage,
+                "auto",
+            );
+            emit_response_stream(&raw_tx, wire).await;
+            return Ok(response);
+        }
+
+        use futures::StreamExt;
+        let mut byte_stream = resp.bytes_stream();
+        let mut reader = SseReader::new();
+        let mut response_id: Option<String> = None;
+        // output_index -> item; only used when the stream ends without `response.completed`.
+        let mut items: BTreeMap<usize, Value> = BTreeMap::new();
+        let mut completed: Option<Value> = None;
+        // Sequence number of the last forwarded event, so a synthesized terminal event can
+        // continue the numbering instead of restarting it.
+        let mut last_sequence: Option<u64> = None;
+
+        while let Some(chunk) = byte_stream.next().await {
+            let chunk = chunk.map_err(map_transport)?;
+            reader.feed(&chunk);
+            while let Some(event) = reader.next_event() {
+                let event = event?;
+                // Python forwards every wire event, including failure events.
+                if let Some(sequence) = event.get("sequence_number").and_then(|s| s.as_u64()) {
+                    last_sequence = Some(sequence);
+                }
+                let _ = raw_tx.send(event.clone()).await;
+                match event.get("type").and_then(|t| t.as_str()).unwrap_or("") {
+                    // `response.created` carries the id before any content arrives.
+                    "response.created" | "response.queued" | "response.in_progress"
+                        if response_id.is_none() =>
+                    {
+                        response_id = event
+                            .pointer("/response/id")
+                            .and_then(|i| i.as_str())
+                            .map(str::to_string);
+                    }
+                    "response.output_item.done" => {
+                        if let Some(item) = event.get("item") {
+                            let index = event
+                                .get("output_index")
+                                .and_then(|i| i.as_u64())
+                                .unwrap_or(items.len() as u64)
+                                as usize;
+                            items.insert(index, item.clone());
+                        }
+                    }
+                    "response.completed" | "response.incomplete" => {
+                        completed = event.get("response").cloned();
+                    }
+                    "response.failed" | "error" => {
+                        return Err(ModelError::Behavior(format!(
+                            "responses stream {}: {}",
+                            failure_kind(&event),
+                            failure_detail(&event)
+                        )));
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let response = match completed {
+            Some(payload) => {
+                let mut response = responses_payload_to_model_response(payload)?;
+                if response.response_id.is_none() {
+                    response.response_id = response_id;
+                }
+                response
+            }
+            None => {
+                // The gateway never sent `response.completed`: synthesize the terminal event so
+                // consumers still see one, continuing the sequence numbering.
+                let output: Vec<ResponseOutputItem> = items.into_values().collect();
+                let id = response_id
+                    .clone()
+                    .unwrap_or_else(|| FAKE_RESPONSES_ID.to_string());
+                let wire = response_object(
+                    &id,
+                    &self.model,
+                    "completed",
+                    now_seconds(),
+                    &output,
+                    &crate::usage::Usage::default(),
+                    "auto",
+                );
+                emit_completed(&raw_tx, wire, last_sequence.map_or(0, |s| s + 1)).await;
+                ModelResponse {
+                    output,
+                    usage: merge_usage(None),
+                    response_id,
+                    request_id: None,
+                }
+            }
+        };
+        Ok(response)
+    }
+}
+
+fn build_responses_body(model: &str, request: &ModelRequest<'_>) -> Result<Value, ModelError> {
+    let input_items = request.input.to_owned_items();
+    let mut body = json!({
+        "model": model,
+        "input": input_items,
+    });
+    if let Some(instr) = request.system_instructions {
+        body["instructions"] = json!(instr);
+    }
+    let tools = tools_as_responses(request.tools);
+    if !tools.is_empty() {
+        body["tools"] = Value::Array(tools);
+    }
+    if let Some(prev) = request.previous_response_id {
+        body["previous_response_id"] = json!(prev);
+    }
+    if let Some(conv) = request.conversation_id {
+        body["conversation"] = json!(conv);
+    }
+    apply_model_settings_responses(&mut body, request.model_settings);
+    // Python: structured output becomes `text.format = {type: json_schema, ...}`.
+    if let Some(schema) = request.output_schema.filter(|s| !s.is_plain_text()) {
+        body["text"] = json!({
+            "format": {
+                "type": "json_schema",
+                "name": schema.name(),
+                "schema": schema.json_schema().map_err(map_transport)?,
+                "strict": schema.is_strict_json_schema(),
+            }
+        });
+    }
+    Ok(body)
+}
+
+fn failure_kind(event: &Value) -> &str {
+    match event.get("type").and_then(|t| t.as_str()) {
+        Some("error") => "error",
+        _ => "failed",
+    }
+}
+
+fn failure_detail(event: &Value) -> String {
+    event
+        .pointer("/response/error/message")
+        .or_else(|| event.get("message"))
+        .and_then(|m| m.as_str())
+        .unwrap_or("unknown error")
+        .to_string()
 }
 
 fn responses_payload_to_model_response(payload: Value) -> Result<ModelResponse, ModelError> {

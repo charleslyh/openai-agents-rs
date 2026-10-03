@@ -69,9 +69,9 @@ async fn streamed_tool_then_text_emits_tool_events() {
     );
 }
 
-/// Every turn produces exactly one synthetic `response.completed` raw event (D-011).
+/// Every turn ends with exactly one standard `response.completed` wire event (D-011).
 #[tokio::test]
-async fn streamed_emits_one_raw_event_per_turn() {
+async fn streamed_emits_one_completed_event_per_turn() {
     let model = Arc::new(ScriptedModel::new([
         ModelStep::from(ItemHelpers::function_tool_call("echo", "{}", "c1")),
         ModelStep::from(ItemHelpers::text_message("done")),
@@ -85,7 +85,10 @@ async fn streamed_emits_one_raw_event_per_turn() {
     assert_eq!(
         events
             .iter()
-            .filter(|e| matches!(e, StreamEvent::RawResponse { .. }))
+            .filter(|e| matches!(
+                e,
+                StreamEvent::RawResponse { data } if data["type"] == "response.completed"
+            ))
             .count(),
         2
     );

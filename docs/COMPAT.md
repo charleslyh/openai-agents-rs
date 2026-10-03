@@ -14,7 +14,7 @@ Legend: **S** = supported · **P** = partial · **N** = not supported · **D** =
 | `Agent.output_type` / `AgentOutputSchema` | S | `schemars` + `ensure_strict_json_schema`; non-object types wrapped under `response` |
 | `Agent.clone` | N | Use `Clone` on the struct (Rust idiom) |
 | `Runner::run` / `run_blocking` / `run_state` | S | D-001 naming for the sync entry |
-| `Runner::run_streamed` / `RunResultStreaming` | P | Item + agent events; token-level streaming only for Chat Completions (D-011) |
+| `Runner::run_streamed` / `RunResultStreaming` | S | Item + agent events plus raw Responses wire events on both OpenAI APIs (D-011) |
 | `FunctionTool` | S | Manual schema or `#[function_tool]` |
 | `@function_tool` / proc-macro | S | Full `schemars` schema; `Vec<T>`, nested structs, enums and `Option<T>` supported |
 | Tool context injection | S | Optional first `ToolContext` / `RunContextWrapper` parameter |
@@ -25,14 +25,44 @@ Legend: **S** = supported · **P** = partial · **N** = not supported · **D** =
 
 | Capability | Status | Notes |
 |------------|--------|-------|
-| `Model` trait (`get_response` / `stream_response`) | S | |
-| OpenAI Responses API model | S | via `async-openai` config + raw HTTP |
-| OpenAI Chat Completions model | S | includes real SSE streaming |
+| `Model` trait (`get_response` / `stream_response`) | S | `stream_response` emits Responses wire events (D-011) |
+| OpenAI Responses API model | S | via `async-openai` config + raw HTTP; real SSE, events forwarded verbatim (D-011) |
+| OpenAI Chat Completions model | S | real SSE; chunks are synthesized into Responses wire events (D-011) |
 | Default API = Responses | S | `set_default_openai_api` |
 | `ModelProvider` / `MultiProvider` | S | `prefix/model` routing, default prefix `openai` |
 | `OpenAIProvider` | S | Reads `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL`; caches per name |
 | Model retry (`ModelRetrySettings`) | N | |
 | Litellm / other providers | N | Register a custom `ModelProvider` |
+
+## Streaming wire events
+
+`StreamEvent::RawResponse.data` is one Responses API wire event on every backend
+(see [DEVIATIONS.md D-011](./DEVIATIONS.md#streaming-wire-contract)). **F** = forwarded verbatim
+from the provider, **S** = synthesized by the adapter, **N** = not emitted.
+
+| Event | Responses | Chat Completions | `ScriptedModel` |
+|-------|-----------|------------------|-----------------|
+| `response.created` | F | S | S |
+| `response.output_item.added` / `.done` | F | S | S |
+| `response.content_part.added` / `.done` | F | S | S |
+| `response.output_text.delta` | F | S | S |
+| `response.output_text.done` | F | N (Python's chat handler does not emit it) | S |
+| `response.reasoning_summary_part.added` / `.done` | F | S (from `reasoning_content`) | S |
+| `response.reasoning_summary_text.delta` / `.done` | F | S (from `reasoning_content`) | S |
+| `response.reasoning_text.delta` / `.done` | F | S (from `reasoning`) | S |
+| `response.function_call_arguments.delta` | F | S | S |
+| `response.function_call_arguments.done` | F | N | S |
+| `response.completed` | F | S | S |
+| `response.refusal.*` | F | N | N |
+| `response.output_text.annotation.added` | F | N | N |
+| MCP / hosted-tool events | F | N | N |
+| `sequence_number` | forwarded as-is | synthesized, 0-based | synthesized, 0-based |
+| `logprobs` payloads | forwarded as-is | `[]` | `[]` |
+| `usage` token details | forwarded as-is | totals only (D-016) | totals only (D-016) |
+
+No emitter synthesizes `response.in_progress` / `response.queued`; the Responses adapter forwards
+them like any other provider event, and it reads the response id out of them when the terminal
+`response.completed` never arrives.
 
 ## Model settings
 
@@ -116,6 +146,7 @@ tests, which drive `wiremock` directly rather than through a shipped mock layer.
 | `set_default_usage` | S | |
 | `ModelScriptError`, `InvalidModelStep`, `UnexpectedModelCall`, `UnconsumedModelSteps` | S | |
 | `assistant_message`, `function_call` | S | |
+| `ScriptedModel` streaming | S | Replays a step as standard Responses wire events (D-011) |
 | `ModelStepSpec` (dict form) | N | Rust steps are typed; no dict form |
 | `ScriptedSandboxSession` | N | |
 

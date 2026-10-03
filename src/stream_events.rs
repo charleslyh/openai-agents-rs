@@ -38,13 +38,17 @@ impl RunItemStreamName {
 /// A streaming event from an agent run (Python: `StreamEvent`).
 #[derive(Debug, Clone)]
 pub enum StreamEvent {
-    /// Raw model stream / response payload (JSON).
+    /// One Responses API wire event (Python: `RawResponsesStreamEvent.data`).
     ///
-    /// Chat Completions streaming emits:
-    /// - `{"type":"reasoning_text.delta","delta":"..."}` (optional; DeepSeek-style CoT)
-    /// - `{"type":"output_text.delta","delta":"..."}` visible tokens
-    /// - then a `response.completed` object.
-    /// Scripted / Responses models may only emit completed.
+    /// The Responses adapter forwards provider events verbatim; Chat Completions and
+    /// `ScriptedModel` synthesize the same vocabulary (D-011):
+    /// `response.created` → `response.output_item.added` → `response.content_part.added` →
+    /// `response.output_text.delta` (visible tokens) and `response.reasoning_summary_text.delta`
+    /// / `response.reasoning_text.delta` (thinking) → `response.content_part.done` /
+    /// `response.output_item.done` → `response.completed`.
+    ///
+    /// Every event carries a monotonic `sequence_number` starting at 0, and the terminal
+    /// `response.completed` holds the full `response` object.
     RawResponse {
         /// Payload data.
         data: Value,
