@@ -121,7 +121,7 @@ pub struct ModelSettings {
     pub reasoning: Option<Value>,
     /// Verbosity constraint.
     pub verbosity: Option<Verbosity>,
-    /// Metadata attached to the request.
+    /// Metadata attached to the request. Replaced (not merged) by `resolve()`.
     pub metadata: Option<Map<String, Value>>,
     /// Whether the provider should store the response.
     pub store: Option<bool>,
@@ -132,10 +132,20 @@ pub struct ModelSettings {
     /// Extra output fields to include (Responses API `include`).
     pub response_include: Option<Vec<String>>,
     /// Extra JSON fields merged into the provider request.
+    ///
+    /// Python hands this to the OpenAI SDK as the nested `extra_body` argument, which the SDK
+    /// merges over the request body, so it has the **highest precedence**: it overrides both the
+    /// mapped settings and [`Self::extra_args`].
     pub extra_body: Option<Value>,
     /// Extra HTTP headers for the provider request.
     pub extra_headers: Option<Map<String, Value>>,
     /// Arbitrary keyword arguments forwarded to the provider.
+    ///
+    /// Python merges these into the API call kwargs and raises `TypeError` when a key is already
+    /// set, so here a key that collides with a mapped setting or a request field (e.g. `model`)
+    /// is an error instead of being silently dropped. Only unmapped keys are filled in, and
+    /// [`Self::extra_body`] still wins over them. Unlike every other mapping, `resolve()` merges
+    /// these dictionaries instead of replacing them.
     pub extra_args: Option<Map<String, Value>>,
     /// Per-attempt timeout in seconds.
     pub timeout: Option<f32>,
@@ -144,9 +154,10 @@ pub struct ModelSettings {
 impl ModelSettings {
     /// Produce a new instance by overlaying non-`None` values from `override`.
     ///
-    /// Equivalent to Python's `ModelSettings.resolve(override)`: `extra_body`,
-    /// `extra_headers` and `extra_args` dictionaries are merged rather than replaced, and
-    /// `tool_choice` may be cleared back to `None` by the reset logic in the runner.
+    /// Equivalent to Python's `ModelSettings.resolve(override)` (`model_settings.py:254`): every
+    /// field is replaced when the override is not `None`, **except** `extra_args`, whose
+    /// dictionaries are merged (`model_settings.py:273-282`). `tool_choice` may additionally be
+    /// cleared back to `None` by the reset logic in the runner.
     pub fn resolve(&self, override_settings: Option<&ModelSettings>) -> ModelSettings {
         let Some(o) = override_settings else {
             return self.clone();
@@ -174,11 +185,12 @@ impl ModelSettings {
             top_logprobs,
             include_usage,
             response_include,
+            metadata,
+            extra_body,
+            extra_headers,
             timeout,
         );
-        out.metadata = merge_maps(self.metadata.as_ref(), o.metadata.as_ref());
-        out.extra_body = merge_values(self.extra_body.as_ref(), o.extra_body.as_ref());
-        out.extra_headers = merge_maps(self.extra_headers.as_ref(), o.extra_headers.as_ref());
+        // Python merges only `extra_args`; every other mapping is replaced wholesale.
         out.extra_args = merge_maps(self.extra_args.as_ref(), o.extra_args.as_ref());
         out
     }
@@ -196,22 +208,6 @@ fn merge_maps(base: Option<&Map<String, Value>>, overlay: Option<&Map<String, Va
             }
             Some(merged)
         }
-    }
-}
-
-fn merge_values(base: Option<&Value>, overlay: Option<&Value>) -> Option<Value> {
-    match (base, overlay) {
-        (None, None) => None,
-        (Some(b), None) => Some(b.clone()),
-        (None, Some(o)) => Some(o.clone()),
-        (Some(Value::Object(b)), Some(Value::Object(o))) => {
-            let mut merged = b.clone();
-            for (k, v) in o {
-                merged.insert(k.clone(), v.clone());
-            }
-            Some(Value::Object(merged))
-        }
-        (_, Some(o)) => Some(o.clone()),
     }
 }
 
@@ -261,6 +257,32 @@ mod tests {
         let merged = base.resolve(Some(&overlay));
         assert_eq!(merged.extra_args.as_ref().unwrap().len(), 2);
         assert_eq!(merged.extra_headers.as_ref().unwrap().len(), 1);
+    }
+
+    /// Python merges only `extra_args` (`model_settings.py:273`); every other mapping is
+    /// replaced by a non-`None` override.
+    #[test]
+    fn resolve_replaces_every_mapping_but_extra_args() {
+        let base = ModelSettings {
+            metadata: Some(map(&[("tenant", Value::from("acme"))])),
+            extra_body: Some(serde_json::json!({"seed": 1})),
+            extra_headers: Some(map(&[("x", Value::from("1"))])),
+            extra_args: Some(map(&[("a", Value::from(1))])),
+            ..Default::default()
+        };
+        let overlay = ModelSettings {
+            metadata: Some(map(&[("team", Value::from("core"))])),
+            extra_body: Some(serde_json::json!({"seed": 2})),
+            extra_headers: Some(map(&[("y", Value::from("2"))])),
+            extra_args: Some(map(&[("b", Value::from(2))])),
+            ..Default::default()
+        };
+        let merged = base.resolve(Some(&overlay));
+        assert_eq!(merged.metadata.as_ref().unwrap().len(), 1);
+        assert!(merged.metadata.as_ref().unwrap().contains_key("team"));
+        assert_eq!(merged.extra_body, Some(serde_json::json!({"seed": 2})));
+        assert_eq!(merged.extra_headers.as_ref().unwrap().len(), 1);
+        assert_eq!(merged.extra_args.as_ref().unwrap().len(), 2);
     }
 
     #[test]

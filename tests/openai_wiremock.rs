@@ -324,6 +324,199 @@ async fn chat_completions_request_shape() {
     }));
 }
 
+fn extra_args(
+    pairs: &[(&str, serde_json::Value)],
+) -> Option<serde_json::Map<String, serde_json::Value>> {
+    let mut map = serde_json::Map::new();
+    for (key, value) in pairs {
+        map.insert((*key).to_string(), value.clone());
+    }
+    Some(map)
+}
+
+/// `extra_body` is applied last and overrides mapped settings (Python: nested SDK argument).
+#[tokio::test]
+async fn responses_extra_body_overrides_mapped_settings() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "resp_test", "output": [], "usage": {"input_tokens": 1, "output_tokens": 1}
+        })))
+        .mount(&server)
+        .await;
+
+    let agent = Agent::new("a")
+        .model(Arc::new(OpenAIResponsesModel::new(
+            "gpt-test",
+            "sk-test",
+            Some(&format!("{}/v1", server.uri())),
+        )))
+        .model_settings(ModelSettings {
+            max_tokens: Some(512),
+            temperature: Some(0.25),
+            extra_body: Some(json!({"max_output_tokens": 999, "seed": 7})),
+            ..Default::default()
+        });
+
+    let _ = Runner::run(&agent, "ping", RunOptions::default())
+        .await
+        .expect("run");
+
+    let body: serde_json::Value = server.received_requests().await.expect("reqs")[0]
+        .body_json()
+        .expect("json");
+    assert_eq!(body["max_output_tokens"], 999);
+    assert_eq!(body["seed"], 7);
+    approx(&body["temperature"], 0.25);
+}
+
+/// `extra_args` fill keys no mapped setting provides.
+#[tokio::test]
+async fn responses_extra_args_fill_unmapped_keys() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "resp_test", "output": [], "usage": {"input_tokens": 1, "output_tokens": 1}
+        })))
+        .mount(&server)
+        .await;
+
+    let agent = Agent::new("a")
+        .model(Arc::new(OpenAIResponsesModel::new(
+            "gpt-test",
+            "sk-test",
+            Some(&format!("{}/v1", server.uri())),
+        )))
+        .model_settings(ModelSettings {
+            temperature: Some(0.25),
+            extra_args: extra_args(&[("service_tier", json!("flex"))]),
+            ..Default::default()
+        });
+
+    let _ = Runner::run(&agent, "ping", RunOptions::default())
+        .await
+        .expect("run");
+
+    let body: serde_json::Value = server.received_requests().await.expect("reqs")[0]
+        .body_json()
+        .expect("json");
+    assert_eq!(body["service_tier"], "flex");
+    approx(&body["temperature"], 0.25);
+}
+
+/// Overlapping keys: `extra_body` wins.
+///
+/// Anchored on the openai SDK: `extra_body` becomes `extra_json` and is merged with
+/// `_merge_mappings(json_data, extra_json)`, whose contract is "in cases with duplicate keys the
+/// second mapping takes precedence". The Agents SDK keeps both values
+/// (`tests/test_prompt_cache_key.py:194`), so the SDK merge decides the wire value.
+#[tokio::test]
+async fn responses_extra_body_wins_over_extra_args() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "resp_test", "output": [], "usage": {"input_tokens": 1, "output_tokens": 1}
+        })))
+        .mount(&server)
+        .await;
+
+    let agent = Agent::new("a")
+        .model(Arc::new(OpenAIResponsesModel::new(
+            "gpt-test",
+            "sk-test",
+            Some(&format!("{}/v1", server.uri())),
+        )))
+        .model_settings(ModelSettings {
+            extra_args: extra_args(&[("service_tier", json!("flex"))]),
+            extra_body: Some(json!({"service_tier": "priority", "custom_flag": true})),
+            ..Default::default()
+        });
+
+    let _ = Runner::run(&agent, "ping", RunOptions::default())
+        .await
+        .expect("run");
+
+    let body: serde_json::Value = server.received_requests().await.expect("reqs")[0]
+        .body_json()
+        .expect("json");
+    assert_eq!(body["service_tier"], "priority");
+    assert_eq!(body["custom_flag"], true);
+}
+
+/// A colliding `extra_args` key is an error, not a silent drop (Python raises `TypeError`).
+#[tokio::test]
+async fn responses_extra_args_conflict_is_an_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "resp_test", "output": [], "usage": {"input_tokens": 1, "output_tokens": 1}
+        })))
+        .mount(&server)
+        .await;
+
+    let agent = Agent::new("a")
+        .model(Arc::new(OpenAIResponsesModel::new(
+            "gpt-test",
+            "sk-test",
+            Some(&format!("{}/v1", server.uri())),
+        )))
+        .model_settings(ModelSettings {
+            temperature: Some(0.25),
+            extra_args: extra_args(&[("temperature", json!(0.9))]),
+            ..Default::default()
+        });
+
+    let err = Runner::run(&agent, "ping", RunOptions::default())
+        .await
+        .expect_err("colliding extra_args must fail");
+    let message = err.to_string();
+    assert!(
+        message.contains("multiple values for keyword argument")
+            && message.contains("'temperature'"),
+        "unexpected error: {message}"
+    );
+    assert!(server.received_requests().await.expect("reqs").is_empty());
+}
+
+/// The same collision guard applies to the Chat Completions adapter.
+#[tokio::test]
+async fn chat_extra_args_conflict_is_an_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chatcmpl_test",
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": "pong"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+        })))
+        .mount(&server)
+        .await;
+
+    let agent = Agent::new("a")
+        .model(Arc::new(OpenAIChatCompletionsModel::new(
+            "gpt-test",
+            "sk-test",
+            Some(&format!("{}/v1", server.uri())),
+        )))
+        .model_settings(ModelSettings {
+            extra_args: extra_args(&[("model", json!("other-model"))]),
+            ..Default::default()
+        });
+
+    let err = Runner::run(&agent, "ping", RunOptions::default())
+        .await
+        .expect_err("colliding extra_args must fail");
+    let message = err.to_string();
+    assert!(
+        message.contains("chat.completions.create()") && message.contains("'model'"),
+        "unexpected error: {message}"
+    );
+}
+
 /// Render a `text/event-stream` body from Responses / Chat Completions SSE events.
 fn sse_body(events: &[serde_json::Value]) -> String {
     events.iter().map(|e| format!("data: {e}\n\n")).collect()
@@ -361,9 +554,10 @@ fn raw_types(events: &[StreamEvent]) -> Vec<String> {
     events
         .iter()
         .filter_map(|e| match e {
-            StreamEvent::RawResponse { data } => {
-                data.get("type").and_then(|t| t.as_str()).map(str::to_string)
-            }
+            StreamEvent::RawResponse { data } => data
+                .get("type")
+                .and_then(|t| t.as_str())
+                .map(str::to_string),
             _ => None,
         })
         .collect()
@@ -374,9 +568,9 @@ fn sequence_numbers(events: &[StreamEvent]) -> Vec<u64> {
     events
         .iter()
         .filter_map(|e| match e {
-            StreamEvent::RawResponse { data } => data
-                .get("sequence_number")
-                .and_then(|s| s.as_u64()),
+            StreamEvent::RawResponse { data } => {
+                data.get("sequence_number").and_then(|s| s.as_u64())
+            }
             _ => None,
         })
         .collect()

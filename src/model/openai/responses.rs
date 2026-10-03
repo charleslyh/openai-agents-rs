@@ -228,7 +228,6 @@ fn build_responses_body(model: &str, request: &ModelRequest<'_>) -> Result<Value
     if let Some(conv) = request.conversation_id {
         body["conversation"] = json!(conv);
     }
-    apply_model_settings_responses(&mut body, request.model_settings);
     // Python: structured output becomes `text.format = {type: json_schema, ...}`.
     if let Some(schema) = request.output_schema.filter(|s| !s.is_plain_text()) {
         body["text"] = json!({
@@ -240,6 +239,9 @@ fn build_responses_body(model: &str, request: &ModelRequest<'_>) -> Result<Value
             }
         });
     }
+    // Applied last, like Python: `extra_args` collides with anything already in the request
+    // and `extra_body` overrides everything.
+    apply_model_settings_responses(&mut body, request.model_settings)?;
     Ok(body)
 }
 

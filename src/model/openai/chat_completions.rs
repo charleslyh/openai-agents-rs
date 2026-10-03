@@ -52,7 +52,7 @@ impl Model for OpenAIChatCompletionsModel {
                     .into(),
             ));
         }
-        let body = build_chat_body(&self.model, &request);
+        let body = build_chat_body(&self.model, &request)?;
         // non-stream
         let resp = decorate_request(
             self.endpoint.http.post(self.endpoint.url("/chat/completions")),
@@ -87,7 +87,7 @@ impl Model for OpenAIChatCompletionsModel {
                     .into(),
             ));
         }
-        let mut body = build_chat_body(&self.model, &request);
+        let mut body = build_chat_body(&self.model, &request)?;
         body["stream"] = json!(true);
         // Some providers want stream_options.include_usage
         // Python: `ModelSettings.include_usage` asks the provider for a usage chunk.
@@ -495,7 +495,7 @@ impl ChatStreamLayout {
     }
 }
 
-fn build_chat_body(model: &str, request: &ModelRequest<'_>) -> Value {
+fn build_chat_body(model: &str, request: &ModelRequest<'_>) -> Result<Value, ModelError> {
     let messages = input_to_chat_messages(request.system_instructions, &request.input);
     let mut body = json!({
         "model": model,
@@ -505,7 +505,6 @@ fn build_chat_body(model: &str, request: &ModelRequest<'_>) -> Value {
     if !tools.is_empty() {
         body["tools"] = Value::Array(tools);
     }
-    apply_model_settings_chat(&mut body, request.model_settings);
     // Python: structured output becomes `response_format` for Chat Completions.
     if let Some(schema) = request.output_schema.filter(|s| !s.is_plain_text()) {
         match schema.json_schema() {
@@ -522,7 +521,10 @@ fn build_chat_body(model: &str, request: &ModelRequest<'_>) -> Value {
             Err(_) => {}
         }
     }
-    body
+    // Applied last, like Python: `extra_args` collides with anything already in the request
+    // and `extra_body` overrides everything.
+    apply_model_settings_chat(&mut body, request.model_settings)?;
+    Ok(body)
 }
 
 fn input_to_chat_messages(
