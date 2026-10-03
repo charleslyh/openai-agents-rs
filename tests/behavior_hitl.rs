@@ -5,8 +5,70 @@ use std::sync::Arc;
 
 use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
 use openai_agents::{
-    Agent, FunctionTool, RunOptions, Runner, DEFAULT_APPROVAL_REJECTION_MESSAGE,
+    Agent, FunctionTool, RunOptions, RunState, Runner, DEFAULT_APPROVAL_REJECTION_MESSAGE,
+    RUN_STATE_SCHEMA_VERSION, SUPPORTED_RUN_STATE_SCHEMAS,
 };
+
+/// D-C: Python executes the calls that do not need approval before pausing, so a mixed batch
+/// must report the pending approval *and* the sibling tool output.
+#[tokio::test]
+async fn mixed_batch_executes_unapproved_tools_before_pausing() {
+    let model = Arc::new(ScriptedModel::new([
+        ModelStep::from(vec![
+            ItemHelpers::function_tool_call("safe_read", "{}", "c1"),
+            ItemHelpers::function_tool_call("delete_file", "{}", "c2"),
+        ]),
+        ModelStep::from(ItemHelpers::text_message("resumed")),
+    ]));
+    let agent = Agent::new("assistant")
+        .model(model)
+        .tools(vec![
+            FunctionTool::constant("safe_read", "read", "read-ok"),
+            FunctionTool::constant("delete_file", "delete", "deleted").with_needs_approval(true),
+        ]);
+
+    let result = Runner::run(&agent, "go", RunOptions::default())
+        .await
+        .expect("run");
+    assert!(result.is_interrupted());
+    assert_eq!(result.interruptions.len(), 1);
+    assert_eq!(result.interruptions[0].tool_name, "delete_file");
+    // The sibling tool still ran in the same turn.
+    assert!(result.new_items.iter().any(|i| matches!(
+        i,
+        openai_agents::RunItem::ToolCallOutput(o)
+            if o.raw_item.get("call_id").and_then(|c| c.as_str()) == Some("c1")
+    )));
+}
+
+/// RunState schema v2 is current, and v1 payloads remain readable.
+#[tokio::test]
+async fn run_state_json_accepts_previous_schema_version() {
+    assert_eq!(SUPPORTED_RUN_STATE_SCHEMAS.last().copied(), Some(RUN_STATE_SCHEMA_VERSION));
+
+    let model = Arc::new(ScriptedModel::new([
+        ModelStep::from(ItemHelpers::function_tool_call("delete_file", "{}", "c1")),
+        ModelStep::from(ItemHelpers::text_message("done")),
+    ]));
+    let agent = Agent::new("assistant")
+        .model(model)
+        .tools(vec![
+            FunctionTool::constant("delete_file", "delete", "deleted").with_needs_approval(true),
+        ]);
+    let result = Runner::run(&agent, "go", RunOptions::default())
+        .await
+        .expect("run");
+
+    let mut value = result.to_state().expect("to_state").to_json();
+    assert_eq!(value["$schemaVersion"], RUN_STATE_SCHEMA_VERSION);
+    value["$schemaVersion"] = serde_json::json!("openai-agents-rust/1");
+    let restored =
+        RunState::from_json("assistant", value.clone()).expect("v1 payload must still load");
+    assert_eq!(restored.interruptions.len(), 1);
+
+    value["$schemaVersion"] = serde_json::json!("openai-agents-rust/99");
+    assert!(RunState::from_json("assistant", value).is_err());
+}
 
 #[tokio::test]
 async fn approve_then_resume_invokes_tool() {

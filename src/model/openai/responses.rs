@@ -8,7 +8,8 @@ use crate::items::ModelResponse;
 use crate::model::{Model, ModelRequest};
 
 use super::{
-    apply_model_settings_chat, map_transport, merge_usage, tools_as_responses, OpenAiEndpoint,
+    apply_model_settings_responses, decorate_request, map_transport, merge_usage,
+    tools_as_responses, OpenAiEndpoint,
 };
 
 /// OpenAI Responses API model (Python: `OpenAIResponsesModel`).
@@ -56,23 +57,28 @@ impl Model for OpenAIResponsesModel {
         if let Some(conv) = request.conversation_id {
             body["conversation"] = json!(conv);
         }
-        apply_model_settings_chat(&mut body, request.model_settings);
-        if let Some(m) = request.model_settings.max_tokens {
-            if let Some(obj) = body.as_object_mut() {
-                obj.remove("max_tokens");
-                obj.insert("max_output_tokens".into(), json!(m));
-            }
+        apply_model_settings_responses(&mut body, request.model_settings);
+        // Python: structured output becomes `text.format = {type: json_schema, ...}`.
+        if let Some(schema) = request.output_schema.filter(|s| !s.is_plain_text()) {
+            body["text"] = json!({
+                "format": {
+                    "type": "json_schema",
+                    "name": schema.name(),
+                    "schema": schema.json_schema().map_err(map_transport)?,
+                    "strict": schema.is_strict_json_schema(),
+                }
+            });
         }
 
-        let resp = self
-            .endpoint
-            .http
-            .post(self.endpoint.url("/responses"))
-            .bearer_auth(self.endpoint.api_key())
-            .json(&body)
-            .send()
-            .await
-            .map_err(map_transport)?;
+        let resp = decorate_request(
+            self.endpoint.http.post(self.endpoint.url("/responses")),
+            request.model_settings,
+        )
+        .bearer_auth(self.endpoint.api_key())
+        .json(&body)
+        .send()
+        .await
+        .map_err(map_transport)?;
 
         let status = resp.status();
         let payload: Value = resp.json().await.map_err(map_transport)?;

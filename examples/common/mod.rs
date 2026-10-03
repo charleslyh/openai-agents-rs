@@ -1,6 +1,9 @@
 //! Shared helpers for live OpenAI examples (env + confirm prompts).
 //!
-//! Model selection via `OPENAI_API` (default: chat completions):
+//! Model selection via `OPENAI_API` (example-harness default: chat completions).
+//!
+//! Note: the crate's own default is the Responses API (Python-aligned); this harness overrides
+//! it because most OpenAI-compatible gateways implement Chat Completions SSE first.
 //! - `chat` / `chat_completions` / `completions` → Chat Completions
 //! - `responses` → Responses API
 

@@ -1,11 +1,55 @@
 //! Agent definition (Python: `agents.agent.Agent` subset).
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 
+use crate::agent_output::AgentOutputSchemaBase;
+use crate::guardrail::{InputGuardrail, OutputGuardrail};
 use crate::handoffs::Handoff;
+use crate::lifecycle::AgentHooks;
 use crate::model::Model;
 use crate::model_settings::{get_default_model_settings, ModelSettings};
+use crate::run_context::RunContextWrapper;
 use crate::tool::FunctionTool;
+
+/// System instructions for an agent (Python: `Agent.instructions`).
+#[derive(Clone)]
+pub enum Instructions {
+    /// A fixed system prompt.
+    Static(String),
+    /// Generated per run from the context and the agent
+    /// (Python: a callable `(context, agent) -> str`).
+    Dynamic(DynamicInstructions),
+}
+
+impl std::fmt::Debug for Instructions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Static(s) => f.debug_tuple("Static").field(s).finish(),
+            Self::Dynamic(_) => f.write_str("Dynamic(..)"),
+        }
+    }
+}
+
+impl From<&str> for Instructions {
+    fn from(value: &str) -> Self {
+        Self::Static(value.to_string())
+    }
+}
+
+impl From<String> for Instructions {
+    fn from(value: String) -> Self {
+        Self::Static(value)
+    }
+}
+
+/// Body of a dynamic instruction generator: `(context, agent) -> String`.
+pub type DynamicInstructions = Arc<
+    dyn Fn(RunContextWrapper, Arc<Agent>) -> Pin<Box<dyn Future<Output = String> + Send>>
+        + Send
+        + Sync,
+>;
 
 /// How tool results affect the run loop (Python: `tool_use_behavior`).
 #[derive(Debug, Clone)]
@@ -45,8 +89,8 @@ pub struct AsToolConfig {
 pub struct Agent {
     /// Display / identity name.
     pub name: String,
-    /// System instructions.
-    pub instructions: Option<String>,
+    /// System instructions (static or generated per run).
+    pub instructions: Option<Instructions>,
     /// Description used when this agent is a handoff target.
     pub handoff_description: Option<String>,
     /// Function tools.
@@ -63,6 +107,17 @@ pub struct Agent {
     pub tool_use_behavior: ToolUseBehavior,
     /// Reset tool_choice after a tool turn (Python default: true).
     pub reset_tool_choice: bool,
+    /// Structured output schema (Python: `Agent.output_type`).
+    ///
+    /// When set and not plain text, the model is constrained to the schema and the run's
+    /// `final_output` is the validated JSON value.
+    pub output_type: Option<Arc<dyn AgentOutputSchemaBase>>,
+    /// Checks run against the run input (Python: `Agent.input_guardrails`).
+    pub input_guardrails: Vec<InputGuardrail>,
+    /// Checks run against the final output (Python: `Agent.output_guardrails`).
+    pub output_guardrails: Vec<OutputGuardrail>,
+    /// Lifecycle hooks scoped to this agent (Python: `Agent.hooks`).
+    pub hooks: Option<Arc<dyn AgentHooks>>,
 }
 
 impl std::fmt::Debug for Agent {
@@ -96,12 +151,59 @@ impl Agent {
             model_settings: get_default_model_settings(),
             tool_use_behavior: ToolUseBehavior::default(),
             reset_tool_choice: true,
+            output_type: None,
+            input_guardrails: Vec::new(),
+            output_guardrails: Vec::new(),
+            hooks: None,
         }
     }
 
     /// Set instructions.
     pub fn instructions(mut self, instructions: impl Into<String>) -> Self {
-        self.instructions = Some(instructions.into());
+        self.instructions = Some(Instructions::Static(instructions.into()));
+        self
+    }
+
+    /// Generate instructions from the run context (Python: a callable `instructions`).
+    pub fn dynamic_instructions<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(RunContextWrapper, Arc<Agent>) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = String> + Send + 'static,
+    {
+        let f = Arc::new(f);
+        self.instructions = Some(Instructions::Dynamic(Arc::new(move |ctx, agent| {
+            let f = Arc::clone(&f);
+            Box::pin(async move { f(ctx, agent).await })
+        })));
+        self
+    }
+
+    /// Resolve the system prompt for a run.
+    pub async fn resolve_instructions(&self, context: &RunContextWrapper) -> Option<String> {
+        match &self.instructions {
+            Some(Instructions::Static(s)) => Some(s.clone()),
+            Some(Instructions::Dynamic(f)) => {
+                Some(f(context.clone(), Arc::new(self.clone())).await)
+            }
+            None => None,
+        }
+    }
+
+    /// Set input guardrails.
+    pub fn input_guardrails(mut self, guardrails: Vec<InputGuardrail>) -> Self {
+        self.input_guardrails = guardrails;
+        self
+    }
+
+    /// Set output guardrails.
+    pub fn output_guardrails(mut self, guardrails: Vec<OutputGuardrail>) -> Self {
+        self.output_guardrails = guardrails;
+        self
+    }
+
+    /// Attach lifecycle hooks for this agent.
+    pub fn hooks(mut self, hooks: Arc<dyn AgentHooks>) -> Self {
+        self.hooks = Some(hooks);
         self
     }
 
@@ -145,6 +247,17 @@ impl Agent {
     pub fn tool_use_behavior(mut self, behavior: ToolUseBehavior) -> Self {
         self.tool_use_behavior = behavior;
         self
+    }
+
+    /// Declare a structured output schema (Python: `Agent.output_type`).
+    pub fn output_type(mut self, schema: Arc<dyn AgentOutputSchemaBase>) -> Self {
+        self.output_type = Some(schema);
+        self
+    }
+
+    /// Structured output schema for this agent, when declared.
+    pub fn output_schema(&self) -> Option<&dyn AgentOutputSchemaBase> {
+        self.output_type.as_deref()
     }
 
     /// Enabled tools for this run (filters `is_enabled`).

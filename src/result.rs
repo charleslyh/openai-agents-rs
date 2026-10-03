@@ -6,6 +6,7 @@ use tokio::sync::mpsc;
 
 use crate::agent::Agent;
 use crate::error::AgentsError;
+use crate::guardrail::{InputGuardrailResult, OutputGuardrailResult};
 use crate::items::{ItemHelpers, InputLike, ModelResponse, ResponseInputItem, RunItem, ToolApprovalItem};
 use crate::model_settings::ModelSettings;
 use crate::run_state::{ApprovalStore, RunState};
@@ -23,7 +24,9 @@ pub struct RunResult {
     pub raw_responses: Vec<ModelResponse>,
     /// Final output (string or JSON value). `Null` when interrupted pending approval.
     pub final_output: serde_json::Value,
-    /// Last agent that ran.
+    /// Last agent that ran (Python: `RunResult.last_agent`).
+    pub last_agent: Arc<Agent>,
+    /// Name of the last agent that ran.
     pub last_agent_name: String,
     /// Max turns configured for the run.
     pub max_turns: Option<usize>,
@@ -31,6 +34,10 @@ pub struct RunResult {
     pub usage: Usage,
     /// Pending tool approvals (Python: `interruptions`). Empty when the run finished.
     pub interruptions: Vec<ToolApprovalItem>,
+    /// Results of the input guardrails that ran (Python: `input_guardrail_results`).
+    pub input_guardrail_results: Vec<InputGuardrailResult>,
+    /// Results of the output guardrails that ran (Python: `output_guardrail_results`).
+    pub output_guardrail_results: Vec<OutputGuardrailResult>,
     /// Internal snapshot used by [`Self::to_state`] when interrupted.
     pub(crate) interrupt_state: Option<InterruptSnapshot>,
 }
@@ -49,10 +56,22 @@ pub(crate) struct InterruptSnapshot {
 }
 
 impl RunResult {
-    /// Name of the last agent (Python: `last_agent.name`).
-    pub fn last_agent<'a>(&self, starting: &'a Agent) -> &'a Agent {
-        let _ = &self.last_agent_name;
-        starting
+    /// The last agent that ran (Python: `RunResult.last_agent`).
+    ///
+    /// After a handoff this is the agent the run was handed off to, not the starting agent.
+    pub fn last_agent(&self) -> &Agent {
+        self.last_agent.as_ref()
+    }
+
+    /// Parse the final output into a concrete type (Python: `final_output` is already typed
+    /// via `output_type`).
+    pub fn final_output_as<T: serde::de::DeserializeOwned>(&self) -> Result<T, AgentsError> {
+        serde_json::from_value::<T>(self.final_output.clone()).map_err(|e| {
+            AgentsError::tool(format!(
+                "could not decode final output as {}: {e}",
+                std::any::type_name::<T>()
+            ))
+        })
     }
 
     /// Whether the run paused for human approval.
@@ -195,7 +214,7 @@ impl RunResultStreaming {
         let snap = self.snapshot.lock().expect("snapshot");
         if let Some(err) = &snap.error {
             if !snap.is_complete {
-                return Err(AgentsError::Internal(err.clone()));
+                return Err(AgentsError::internal(err.clone()));
             }
         }
         Ok(out)

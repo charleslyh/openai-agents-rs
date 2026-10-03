@@ -2,6 +2,7 @@
 
 use serde_json::{json, Value};
 
+use crate::error::ModelError;
 use crate::usage::Usage;
 
 /// Responses API input item (`ResponseInputItemParam` as JSON).
@@ -29,7 +30,7 @@ impl ModelResponse {
     }
 }
 
-/// An item produced during a run (Python: `RunItem` union, Phase-1 subset).
+/// An item produced during a run (Python: `RunItem` union).
 #[derive(Debug, Clone)]
 pub enum RunItem {
     /// Assistant message.
@@ -40,6 +41,12 @@ pub enum RunItem {
     ToolCallOutput(ToolCallOutputItem),
     /// Pending human approval for a tool call (not sent to the model as input).
     ToolApproval(ToolApprovalItem),
+    /// A handoff request from one agent to another (Python: `HandoffCallItem`).
+    HandoffCall(HandoffCallItem),
+    /// The result of a handoff (Python: `HandoffOutputItem`).
+    HandoffOutput(HandoffOutputItem),
+    /// Model reasoning output (Python: `ReasoningItem`).
+    Reasoning(ReasoningItem),
 }
 
 impl RunItem {
@@ -50,6 +57,9 @@ impl RunItem {
             Self::ToolCall(i) => &i.agent_name,
             Self::ToolCallOutput(i) => &i.agent_name,
             Self::ToolApproval(i) => &i.agent_name,
+            Self::HandoffCall(i) => &i.agent_name,
+            Self::HandoffOutput(i) => &i.agent_name,
+            Self::Reasoning(i) => &i.agent_name,
         }
     }
 
@@ -62,13 +72,50 @@ impl RunItem {
             Self::ToolCall(i) => &i.raw_item,
             Self::ToolCallOutput(i) => &i.raw_item,
             Self::ToolApproval(i) => &i.raw_item,
+            Self::HandoffCall(i) => &i.raw_item,
+            Self::HandoffOutput(i) => &i.raw_item,
+            Self::Reasoning(i) => &i.raw_item,
         }
     }
 
-    /// Whether this item may be forwarded as model input (Python skips `ToolApprovalItem`).
+    /// Whether this item may be forwarded as model input.
+    ///
+    /// Python forwards every run item except `ToolApprovalItem`, which is a placeholder for a
+    /// call that has not been decided yet.
     pub fn is_model_input(&self) -> bool {
         !matches!(self, Self::ToolApproval(_))
     }
+}
+
+/// A tool call that requests a handoff to another agent (Python: `HandoffCallItem`).
+#[derive(Debug, Clone)]
+pub struct HandoffCallItem {
+    /// Agent that produced the item.
+    pub agent_name: String,
+    /// Raw function_call object addressed to the handoff tool.
+    pub raw_item: ResponseOutputItem,
+}
+
+/// The result of a handoff (Python: `HandoffOutputItem`).
+#[derive(Debug, Clone)]
+pub struct HandoffOutputItem {
+    /// Agent that produced the item (the source of the handoff).
+    pub agent_name: String,
+    /// Raw function_call_output object recording the transfer.
+    pub raw_item: ResponseInputItem,
+    /// Agent the run was handed off from.
+    pub source_agent_name: String,
+    /// Agent the run was handed off to.
+    pub target_agent_name: String,
+}
+
+/// Model reasoning output (Python: `ReasoningItem`).
+#[derive(Debug, Clone)]
+pub struct ReasoningItem {
+    /// Agent that produced the item.
+    pub agent_name: String,
+    /// Raw reasoning object.
+    pub raw_item: ResponseOutputItem,
 }
 
 /// Message output item.
@@ -249,7 +296,16 @@ pub fn is_function_call(item: &Value) -> bool {
     item.get("type").and_then(|t| t.as_str()) == Some("function_call")
 }
 
+/// True if the item is a reasoning output (Python: `ResponseReasoningItem`).
+pub fn is_reasoning(item: &Value) -> bool {
+    item.get("type").and_then(|t| t.as_str()) == Some("reasoning")
+}
+
 /// Parse function call fields.
+///
+/// Returns `(name, arguments, call_id)`. Unlike earlier releases this no longer invents a
+/// placeholder `call_id`: a `function_call` without one is a malformed model response and
+/// must surface as a model behavior error (Python raises `ModelBehaviorError`).
 pub fn function_call_parts(item: &Value) -> Option<(String, String, String)> {
     if !is_function_call(item) {
         return None;
@@ -260,10 +316,43 @@ pub fn function_call_parts(item: &Value) -> Option<(String, String, String)> {
         .and_then(|a| a.as_str())
         .unwrap_or("")
         .to_string();
-    let call_id = item
-        .get("call_id")
-        .and_then(|c| c.as_str())
-        .unwrap_or("call")
-        .to_string();
+    let call_id = item.get("call_id")?.as_str()?.to_string();
+    if call_id.is_empty() {
+        return None;
+    }
     Some((name, arguments, call_id))
+}
+
+/// Parse function call fields, reporting malformed items as [`ModelError::Behavior`].
+///
+/// Python: a `ResponseFunctionToolCall` without a `call_id` fails validation (and shell /
+/// apply_patch calls raise `ModelBehaviorError`), so the run aborts instead of silently
+/// matching outputs against a fabricated id.
+pub fn required_function_call_parts(item: &Value) -> Result<(String, String, String), ModelError> {
+    if !is_function_call(item) {
+        return Err(ModelError::Behavior(format!(
+            "expected a function_call item, got {item}"
+        )));
+    }
+    let Some(name) = item.get("name").and_then(|n| n.as_str()) else {
+        return Err(ModelError::Behavior(
+            "function_call item is missing `name`".into(),
+        ));
+    };
+    let Some(call_id) = item.get("call_id").and_then(|c| c.as_str()) else {
+        return Err(ModelError::Behavior(format!(
+            "Function call `{name}` is missing call_id."
+        )));
+    };
+    if call_id.is_empty() {
+        return Err(ModelError::Behavior(format!(
+            "Function call `{name}` is missing call_id."
+        )));
+    }
+    let arguments = item
+        .get("arguments")
+        .and_then(|a| a.as_str())
+        .unwrap_or("")
+        .to_string();
+    Ok((name.to_string(), arguments, call_id.to_string()))
 }

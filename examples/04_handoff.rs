@@ -3,7 +3,7 @@
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
-//! cargo run --example 04_handoff_agent
+//! cargo run --example 04_handoff
 //! ```
 
 #[path = "common/mod.rs"]

@@ -9,7 +9,8 @@ use crate::model::{Model, ModelRequest};
 use crate::usage::Usage;
 
 use super::{
-    apply_model_settings_chat, map_transport, merge_usage, tools_as_chat, OpenAiEndpoint,
+    apply_model_settings_chat, decorate_request, map_transport, merge_usage, tools_as_chat,
+    OpenAiEndpoint,
 };
 
 /// OpenAI Chat Completions model (Python: `OpenAIChatCompletionsModel`).
@@ -39,17 +40,26 @@ impl OpenAIChatCompletionsModel {
 #[async_trait]
 impl Model for OpenAIChatCompletionsModel {
     async fn get_response(&self, request: ModelRequest<'_>) -> Result<ModelResponse, ModelError> {
+        if request.conversation_id.is_some() {
+            // Python: stored conversations are a Responses API feature; the Chat Completions
+            // adapter has no way to honour them and must not silently drop the request.
+            return Err(ModelError::Unsupported(
+                "conversation_id is not supported by the Chat Completions API; use the Responses \
+                 API or clear `RunOptions.conversation_id`"
+                    .into(),
+            ));
+        }
         let body = build_chat_body(&self.model, &request);
         // non-stream
-        let resp = self
-            .endpoint
-            .http
-            .post(self.endpoint.url("/chat/completions"))
-            .bearer_auth(self.endpoint.api_key())
-            .json(&body)
-            .send()
-            .await
-            .map_err(map_transport)?;
+        let resp = decorate_request(
+            self.endpoint.http.post(self.endpoint.url("/chat/completions")),
+            request.model_settings,
+        )
+        .bearer_auth(self.endpoint.api_key())
+        .json(&body)
+        .send()
+        .await
+        .map_err(map_transport)?;
 
         let status = resp.status();
         let payload: Value = resp.json().await.map_err(map_transport)?;
@@ -67,20 +77,30 @@ impl Model for OpenAIChatCompletionsModel {
         request: ModelRequest<'_>,
         raw_tx: tokio::sync::mpsc::Sender<Value>,
     ) -> Result<ModelResponse, ModelError> {
+        if request.conversation_id.is_some() {
+            return Err(ModelError::Unsupported(
+                "conversation_id is not supported by the Chat Completions API; use the Responses \
+                 API or clear `RunOptions.conversation_id`"
+                    .into(),
+            ));
+        }
         let mut body = build_chat_body(&self.model, &request);
         body["stream"] = json!(true);
         // Some providers want stream_options.include_usage
-        body["stream_options"] = json!({"include_usage": true});
+        // Python: `ModelSettings.include_usage` asks the provider for a usage chunk.
+        body["stream_options"] = json!({
+            "include_usage": request.model_settings.include_usage.unwrap_or(true)
+        });
 
-        let resp = self
-            .endpoint
-            .http
-            .post(self.endpoint.url("/chat/completions"))
-            .bearer_auth(self.endpoint.api_key())
-            .json(&body)
-            .send()
-            .await
-            .map_err(map_transport)?;
+        let resp = decorate_request(
+            self.endpoint.http.post(self.endpoint.url("/chat/completions")),
+            request.model_settings,
+        )
+        .bearer_auth(self.endpoint.api_key())
+        .json(&body)
+        .send()
+        .await
+        .map_err(map_transport)?;
 
         let status = resp.status();
         if !status.is_success() {
@@ -267,6 +287,22 @@ fn build_chat_body(model: &str, request: &ModelRequest<'_>) -> Value {
         body["tools"] = Value::Array(tools);
     }
     apply_model_settings_chat(&mut body, request.model_settings);
+    // Python: structured output becomes `response_format` for Chat Completions.
+    if let Some(schema) = request.output_schema.filter(|s| !s.is_plain_text()) {
+        match schema.json_schema() {
+            Ok(schema_value) => {
+                body["response_format"] = json!({
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": schema.name(),
+                        "schema": schema_value,
+                        "strict": schema.is_strict_json_schema(),
+                    }
+                });
+            }
+            Err(_) => {}
+        }
+    }
     body
 }
 

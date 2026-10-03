@@ -1,0 +1,46 @@
+{
+  "name": "stop_on_first_tool_multi",
+  "input": "run both",
+  "agent": {
+    "name": "assistant",
+    "instructions": null,
+    "tools": [
+      {
+        "name": "first",
+        "description": "first",
+        "return_value": "out-1"
+      },
+      {
+        "name": "second",
+        "description": "second",
+        "return_value": "out-2"
+      }
+    ],
+    "tool_use_behavior": "stop_on_first_tool"
+  },
+  "steps": [
+    {
+      "output": [
+        {
+          "id": "1",
+          "type": "function_call",
+          "name": "first",
+          "arguments": "{}",
+          "call_id": "call-1"
+        },
+        {
+          "id": "2",
+          "type": "function_call",
+          "name": "second",
+          "arguments": "{}",
+          "call_id": "call-2"
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "final_output": "out-1",
+    "raw_response_count": 1,
+    "tool_output_count": 2
+  }
+}

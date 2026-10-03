@@ -22,6 +22,7 @@ testing = ["openai", "dep:wiremock"]
 async-trait = "0.1"
 futures = "0.3"
 openai-agents-macros = { path = "macros", version = "0.1.0" }
+schemars = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
@@ -40,19 +41,19 @@ wiremock = "0.6"
 serde_json = "1"
 
 [[example]]
-name = "01_hello_agent"
+name = "01_hello"
 required-features = ["openai"]
 
 [[example]]
-name = "02_tools_agent"
+name = "02_tools"
 required-features = ["openai"]
 
 [[example]]
-name = "03_streamed_agent"
+name = "03_streamed"
 required-features = ["openai"]
 
 [[example]]
-name = "04_handoff_agent"
+name = "04_handoff"
 required-features = ["openai"]
 
 [[example]]
@@ -68,8 +69,12 @@ name = "07_always_approve"
 required-features = ["openai"]
 
 [[example]]
-name = "08_mock_framework"
-required-features = ["testing"]
+name = "08_structured_output"
+required-features = ["openai"]
+
+[[example]]
+name = "09_guardrails_hooks"
+required-features = ["openai"]
 
 [package.metadata.docs.rs]
 all-features = true

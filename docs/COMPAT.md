@@ -1,31 +1,118 @@
-# Phase-1 Compatibility Matrix
+# Compatibility Matrix
 
 Standard reference: `vendor/openai-agents-python` @ **v0.23.1** (`openai-agents==0.23.1`).
+Re-sync the vendored tree with `bash scripts/sync_vendor.sh`.
 
-Legend: **S** = supported · **P** = partial · **N** = not in Phase-1 · **D** = intentional deviation (see [DEVIATIONS.md](./DEVIATIONS.md))
+Legend: **S** = supported · **P** = partial · **N** = not supported · **D** = intentional deviation (see [DEVIATIONS.md](./DEVIATIONS.md))
+
+## Core
 
 | Capability | Status | Notes |
 |------------|--------|-------|
-| `Agent` (name, instructions, tools, model, model_settings, tool_use_behavior, reset_tool_choice) | S | Dynamic instructions as `String` only in Phase-1 |
-| `Runner::run` / `run_blocking` | S | D-001 naming for sync entry |
+| `Agent` (name, instructions, tools, model, model_settings, tool_use_behavior, reset_tool_choice) | S | `instructions` may be static or a dynamic closure of `(context, agent)` |
+| `Agent.model_name` + provider resolution | S | Resolved via `RunConfig.model_provider` (D-013) |
+| `Agent.output_type` / `AgentOutputSchema` | S | `schemars` + `ensure_strict_json_schema`; non-object types wrapped under `response` |
+| `Agent.clone` | N | Use `Clone` on the struct (Rust idiom) |
+| `Runner::run` / `run_blocking` / `run_state` | S | D-001 naming for the sync entry |
+| `Runner::run_streamed` / `RunResultStreaming` | P | Item + agent events; token-level streaming only for Chat Completions (D-011) |
 | `FunctionTool` | S | Manual schema or `#[function_tool]` |
-| `@function_tool` / proc-macro | S | D-002: type→schema, not docstring |
-| `ScriptedModel` | S | Parity with `agents.testing.ScriptedModel` core |
-| `MockResponses` / `MockCompletions` | S | Feature `testing`: queued HTTP mocks of `/v1/responses` and `/v1/chat/completions` |
-| Parallel function tools | S | `try_join_all`; order matches model tool-call order |
-| OpenAI Responses API model | S | via `async-openai` + raw HTTP for Responses |
-| OpenAI Chat Completions model | S | via `async-openai` |
+| `@function_tool` / proc-macro | S | Full `schemars` schema; `Vec<T>`, nested structs, enums and `Option<T>` supported |
+| Tool context injection | S | Optional first `ToolContext` / `RunContextWrapper` parameter |
+| Parallel function tools | S | `join_all`; results ordered by model tool-call order |
+| `ToolExecutionConfig.max_function_tool_concurrency` | N | All tools in a batch start concurrently |
+
+## Model layer
+
+| Capability | Status | Notes |
+|------------|--------|-------|
+| `Model` trait (`get_response` / `stream_response`) | S | |
+| OpenAI Responses API model | S | via `async-openai` config + raw HTTP |
+| OpenAI Chat Completions model | S | includes real SSE streaming |
 | Default API = Responses | S | `set_default_openai_api` |
-| Local tracing (`trace`, `agent_span`, `function_span`, `generation_span`) | S | |
-| OpenAI trace cloud export | N | D-004 |
-| Handoffs | S | Basic `handoff()` + tool transfer; D-003 filters deferred |
-| `run_streamed` / `RunResultStreaming` | S | Item + agent events; raw events synthetic (D-011) |
-| HITL / function-tool approvals | S | `needs_approval`, `interruptions`, `RunState` approve/reject (`always_*`), `to_json`/`from_json` (Rust schema D-012), `Agent.as_tool` nested approvals |
-| MCP / sessions / guardrails / hosted tools / sandbox | N | D-006 |
-| `Agent.as_tool` | S | Basic nested run + HITL bubble; custom extractors/stream deferred |
+| `ModelProvider` / `MultiProvider` | S | `prefix/model` routing, default prefix `openai` |
+| `OpenAIProvider` | S | Reads `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL`; caches per name |
+| Model retry (`ModelRetrySettings`) | N | |
+| Litellm / other providers | N | Register a custom `ModelProvider` |
+
+## Model settings
+
+`ModelSettings` covers 19 fields: `temperature`, `top_p`, `frequency_penalty`,
+`presence_penalty`, `tool_choice` (typed enum), `parallel_tool_calls`, `truncation`, `max_tokens`,
+`reasoning`, `verbosity`, `metadata`, `store`, `top_logprobs`, `include_usage`,
+`response_include`, `extra_body`, `extra_headers`, `extra_args`, `timeout`. `resolve()` overlays
+non-`None` values and merges dictionaries, matching Python.
+
+Not ported: `prompt_cache_retention`, `context_management`, `prompt_cache_options`,
+`preserve_raw_usage`.
+
+## Run items
+
+| Item | Status |
+|------|--------|
+| `MessageOutputItem`, `ToolCallItem`, `ToolCallOutputItem`, `ToolApprovalItem` | S |
+| `HandoffCallItem`, `HandoffOutputItem` | S |
+| `ReasoningItem` | S |
+| `CompactionItem` | N |
+| MCP / tool-search items | N |
+
+## Handoffs
+
+| Capability | Status | Notes |
+|------------|--------|-------|
+| Basic handoff (tool + agent switch) | S | |
+| `HandoffCallItem` / `HandoffOutputItem` | S | |
+| `handoff_span` | S | |
+| `input_filter` / `nest_handoff_history` | N | D-003 |
+| `on_handoff` callback / `input_type` | N | |
+
+## HITL
+
+| Capability | Status | Notes |
+|------------|--------|-------|
+| `needs_approval` (fixed or dynamic) | S | |
+| `interruptions`, `RunState` approve/reject | S | |
+| Sticky `always_approve` / `always_reject` | S | |
+| `to_json` / `from_json` | S | Schema `openai-agents-rust/2` (D-012); v1 payloads still load |
+| `Agent.as_tool` nested approvals | S | Bubbles to the outer `RunState` |
+| Custom output extractor / `on_stream` | N | |
+
+## Context, guardrails, hooks
+
+| Capability | Status | Notes |
+|------------|--------|-------|
+| `RunContextWrapper` (type-erased) | S | `context::<T>()` / `try_context::<T>()`; D-014 |
+| `RunOptions.context` | S | |
+| Input / output guardrails | S | Run concurrently; tripwire raises |
+| Guardrail results on `RunResult` | S | |
+| `RunHooks` / `AgentHooks` | S | All methods default to no-op |
+| Tool input/output guardrails | N | |
+| Dynamic `is_enabled` / `needs_approval` closures | N | |
+
+## Tracing
+
+| Capability | Status | Notes |
+|------------|--------|-------|
+| `trace`, `agent_span`, `function_span`, `generation_span`, `custom_span` | S | |
+| `handoff_span`, `response_span`, `guardrail_span` | S | |
+| Per-run `tracing_disabled` | S | Takes precedence over the global switch |
+| `trace_id` / `group_id` / `trace_metadata` injection | S | |
+| `trace_include_sensitive_data` | S | Maps to `ModelTracing::EnabledWithoutData` |
+| Processor start events | S | `InMemoryProcessor::started_spans` / `started_traces` |
+| `flush_traces` | S | Calls `TracingProcessor::force_flush` |
+| `task_span` / `turn_span` / speech / transcription spans | N | |
+| OpenAI cloud export | N | D-004 |
+
+## Testing
+
+| Capability | Status | Notes |
+|------------|--------|-------|
+| `ScriptedModel`, `ModelStep`, `ModelCall` | S | |
+| `MockResponses` / `MockCompletions` (HTTP mocks) | S | Rust addition, no Python equivalent |
+| `ConcurrentProbe` | S | Rust addition |
+| `ScriptedSandboxSession` | N | |
 
 ## Verification layers
 
 1. `cargo test --no-default-features` — ScriptedModel behavior
-2. `cargo test --features testing` — OpenAI HTTP mocks (`MockResponses` / `MockCompletions`) + wiremock contracts
-3. `python scripts/run_parity.py` + Rust parity tests — Python oracle golden
+2. `cargo test --features testing` — OpenAI HTTP mocks + wiremock contracts
+3. `.venv/bin/python scripts/run_parity.py --write-golden` then `cargo test --test parity_scenarios`

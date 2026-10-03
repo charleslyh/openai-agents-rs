@@ -17,6 +17,8 @@ pub enum RunItemStreamName {
     HandoffRequested,
     /// Handoff completed (Python spelling: `handoff_occured`).
     HandoffOccured,
+    /// Reasoning output created (Python: `reasoning_item_created`).
+    ReasoningItemCreated,
 }
 
 impl RunItemStreamName {
@@ -28,6 +30,7 @@ impl RunItemStreamName {
             Self::ToolOutput => "tool_output",
             Self::HandoffRequested => "handoff_requested",
             Self::HandoffOccured => "handoff_occured",
+            Self::ReasoningItemCreated => "reasoning_item_created",
         }
     }
 }

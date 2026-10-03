@@ -14,12 +14,70 @@ pub enum AgentsError {
     /// Invalid user configuration or input.
     #[error(transparent)]
     User(#[from] UserError),
+    /// An input guardrail halted the run (Python: `InputGuardrailTripwireTriggered`).
+    #[error(transparent)]
+    InputGuardrailTripwire(#[from] InputGuardrailTripwireTriggered),
+    /// An output guardrail halted the run (Python: `OutputGuardrailTripwireTriggered`).
+    #[error(transparent)]
+    OutputGuardrailTripwire(#[from] OutputGuardrailTripwireTriggered),
     /// Tool execution failure that should abort the run.
-    #[error("tool error: {0}")]
-    Tool(String),
+    #[error("tool error: {message}")]
+    Tool {
+        /// Human-readable message.
+        message: String,
+        /// Underlying cause, when there is one.
+        #[source]
+        source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    },
     /// Unexpected internal failure.
-    #[error("internal error: {0}")]
-    Internal(String),
+    #[error("internal error: {message}")]
+    Internal {
+        /// Human-readable message.
+        message: String,
+        /// Underlying cause, when there is one.
+        #[source]
+        source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    },
+}
+
+impl AgentsError {
+    /// A tool failure described by `message`.
+    pub fn tool(message: impl Into<String>) -> Self {
+        Self::Tool {
+            message: message.into(),
+            source: None,
+        }
+    }
+
+    /// A tool failure that preserves `source` in the error chain.
+    pub fn tool_with_source(
+        message: impl Into<String>,
+        source: impl std::error::Error + Send + Sync + 'static,
+    ) -> Self {
+        Self::Tool {
+            message: message.into(),
+            source: Some(Box::new(source)),
+        }
+    }
+
+    /// An internal failure described by `message`.
+    pub fn internal(message: impl Into<String>) -> Self {
+        Self::Internal {
+            message: message.into(),
+            source: None,
+        }
+    }
+
+    /// An internal failure that preserves `source` in the error chain.
+    pub fn internal_with_source(
+        message: impl Into<String>,
+        source: impl std::error::Error + Send + Sync + 'static,
+    ) -> Self {
+        Self::Internal {
+            message: message.into(),
+            source: Some(Box::new(source)),
+        }
+    }
 }
 
 /// Raised when `max_turns` is exceeded (Python: `MaxTurnsExceeded`).
@@ -45,6 +103,22 @@ pub enum ModelError {
     /// Feature or API not available in this build.
     #[error("unsupported: {0}")]
     Unsupported(String),
+}
+
+/// Raised when an input guardrail trips (Python: `InputGuardrailTripwireTriggered`).
+#[derive(Debug, Error, Clone)]
+#[error("Input guardrail `{}` triggered a tripwire", result.guardrail_name)]
+pub struct InputGuardrailTripwireTriggered {
+    /// The guardrail result that tripped.
+    pub result: crate::guardrail::InputGuardrailResult,
+}
+
+/// Raised when an output guardrail trips (Python: `OutputGuardrailTripwireTriggered`).
+#[derive(Debug, Error, Clone)]
+#[error("Output guardrail `{}` triggered a tripwire", result.guardrail_name)]
+pub struct OutputGuardrailTripwireTriggered {
+    /// The guardrail result that tripped.
+    pub result: crate::guardrail::OutputGuardrailResult,
 }
 
 /// Invalid configuration or caller misuse (Python: `UserError`).
