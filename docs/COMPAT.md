@@ -104,15 +104,23 @@ Not ported: `prompt_cache_retention`, `context_management`, `prompt_cache_option
 
 ## Testing
 
+The `testing` module mirrors `agents.testing`; HTTP-level assertions live in the crate's own
+tests, which drive `wiremock` directly rather than through a shipped mock layer.
+
 | Capability | Status | Notes |
 |------------|--------|-------|
-| `ScriptedModel`, `ModelStep`, `ModelCall` | S | |
-| `MockResponses` / `MockCompletions` (HTTP mocks) | S | Rust addition, no Python equivalent |
-| `ConcurrentProbe` | S | Rust addition |
+| `ScriptedModel` (`new`, `enqueue`, `extend`, `calls`, `assert_complete`) | S | |
+| `ModelStep` (`output`, `raise_error`) | S | `responder` / `stream_events` / `retry_advice` not ported |
+| `ModelCall` (incl. `streamed`, `output_schema_name`) | S | `output_schema` / `handoffs` / `prompt` recorded only by name, if at all |
+| `remaining_steps`, `first_call`, `last_call` | S | |
+| `set_default_usage` | S | |
+| `ModelScriptError`, `InvalidModelStep`, `UnexpectedModelCall`, `UnconsumedModelSteps` | S | |
+| `assistant_message`, `function_call` | S | |
+| `ModelStepSpec` (dict form) | N | Rust steps are typed; no dict form |
 | `ScriptedSandboxSession` | N | |
 
 ## Verification layers
 
 1. `cargo test --no-default-features` — ScriptedModel behavior
-2. `cargo test --features testing` — OpenAI HTTP mocks + wiremock contracts
+2. `cargo test` — OpenAI HTTP contracts via wiremock (requires the `openai` feature)
 3. `.venv/bin/python scripts/run_parity.py --write-golden` then `cargo test --test parity_scenarios`

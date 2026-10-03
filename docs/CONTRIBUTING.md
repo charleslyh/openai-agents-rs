@@ -29,7 +29,7 @@ This convention is also enforced for agents via [`.cursor/rules/commit-messages.
 ```bash
 bash scripts/sync_vendor.sh --check
 cargo test --no-default-features
-cargo test --features testing
+cargo test
 ```
 
 Optional Python oracle:
@@ -39,4 +39,5 @@ python3 -m venv .venv && .venv/bin/pip install 'openai-agents==0.23.1'
 .venv/bin/python scripts/run_parity.py --write-golden
 ```
 
-See [COMPAT.md](./COMPAT.md) and [DEVIATIONS.md](./DEVIATIONS.md) for Phase-1 boundaries.
+See [COMPAT.md](./COMPAT.md) for the support matrix and [DEVIATIONS.md](./DEVIATIONS.md) for the
+recorded differences from Python.

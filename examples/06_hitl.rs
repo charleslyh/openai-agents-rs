@@ -4,8 +4,8 @@
 //! Non-interactive: `HITL_AUTO=approve` or `HITL_AUTO=reject`.
 //!
 //! ```bash
-//! cargo run --example 06_human_in_the_loop
-//! HITL_AUTO=approve cargo run --example 06_human_in_the_loop
+//! cargo run --example 06_hitl
+//! HITL_AUTO=approve cargo run --example 06_hitl
 //! ```
 
 #[path = "common/mod.rs"]

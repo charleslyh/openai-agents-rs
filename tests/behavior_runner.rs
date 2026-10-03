@@ -224,6 +224,129 @@ async fn function_call_without_call_id_is_a_behavior_error() {
     }
 }
 
+/// Test-local probe: records overlapping tool invocations so parallelism can be asserted.
+///
+/// Kept in the test because `agents.testing` has no equivalent helper.
+mod probe {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    use openai_agents::{FunctionTool, ToolContext};
+
+    #[derive(Debug, Default)]
+    pub struct Probe {
+        inflight: AtomicUsize,
+        max_inflight: AtomicUsize,
+        pub completed: Mutex<Vec<String>>,
+    }
+
+    impl Probe {
+        pub fn new() -> Arc<Self> {
+            Arc::new(Self::default())
+        }
+        pub fn max_inflight(&self) -> usize {
+            self.max_inflight.load(Ordering::SeqCst)
+        }
+        pub fn completed_names(&self) -> Vec<String> {
+            self.completed.lock().expect("probe").clone()
+        }
+        pub fn delayed_tool(
+            self: &Arc<Self>,
+            name: &str,
+            delay: Duration,
+            output: &str,
+        ) -> FunctionTool {
+            let probe = Arc::clone(self);
+            let name = name.to_string();
+            let output = output.to_string();
+            let tool_name = name.clone();
+            FunctionTool::new(
+                name,
+                format!("mock tool {tool_name}"),
+                serde_json::json!({
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": false
+                }),
+                move |_ctx: ToolContext, _args: String| {
+                    let probe = Arc::clone(&probe);
+                    let tool_name = tool_name.clone();
+                    let output = output.clone();
+                    async move {
+                        let now = probe.inflight.fetch_add(1, Ordering::SeqCst) + 1;
+                        probe.max_inflight.fetch_max(now, Ordering::SeqCst);
+                        tokio::time::sleep(delay).await;
+                        probe.inflight.fetch_sub(1, Ordering::SeqCst);
+                        probe.completed.lock().expect("probe").push(tool_name);
+                        Ok(serde_json::Value::String(output))
+                    }
+                },
+            )
+        }
+    }
+}
+
+/// Tools emitted in one turn run concurrently, and results keep the model's call order.
+#[tokio::test]
+async fn tools_in_one_turn_run_in_parallel() {
+    use std::time::{Duration, Instant};
+
+    let probe = probe::Probe::new();
+    let model = Arc::new(ScriptedModel::new([
+        ModelStep::from(vec![
+            ItemHelpers::function_tool_call("slow", "{}", "c-slow"),
+            ItemHelpers::function_tool_call("fast", "{}", "c-fast"),
+        ]),
+        ModelStep::from(ItemHelpers::text_message("both done")),
+    ]));
+    let agent = Agent::new("assistant")
+        .model(model.clone())
+        .tools(vec![
+            probe.delayed_tool("slow", Duration::from_millis(80), "slow-ok"),
+            probe.delayed_tool("fast", Duration::from_millis(10), "fast-ok"),
+        ]);
+
+    let started = Instant::now();
+    let result = Runner::run(&agent, "run both", RunOptions::default())
+        .await
+        .expect("run");
+    let elapsed = started.elapsed();
+
+    assert_eq!(result.final_output_as_str(), Some("both done"));
+    assert!(
+        probe.max_inflight() >= 2,
+        "expected overlapping tools, max_inflight={}",
+        probe.max_inflight()
+    );
+    assert!(
+        elapsed < Duration::from_millis(150),
+        "expected parallel tools, elapsed={elapsed:?}"
+    );
+    // Completion order follows duration, not the model's call order.
+    assert_eq!(probe.completed_names()[0], "fast");
+    model.assert_complete();
+}
+
+/// A three-turn scripted loop consumes exactly the configured steps.
+#[tokio::test]
+async fn three_turn_loop_then_text() {
+    let model = Arc::new(ScriptedModel::new([
+        ModelStep::from(ItemHelpers::function_tool_call("echo", "{}", "c1")),
+        ModelStep::from(ItemHelpers::function_tool_call("echo", "{}", "c2")),
+        ModelStep::from(ItemHelpers::text_message("A then B")),
+    ]));
+    let agent = Agent::new("assistant")
+        .model(model.clone())
+        .tools(vec![FunctionTool::constant("echo", "echo", "ok")]);
+    let result = Runner::run(&agent, "two calls", RunOptions::default())
+        .await
+        .expect("run");
+    assert_eq!(result.raw_responses.len(), 3);
+    assert_eq!(result.final_output_as_str(), Some("A then B"));
+    model.assert_complete();
+}
+
 #[tokio::test]
 async fn to_input_list_includes_new_items() {
     let model = Arc::new(ScriptedModel::new([ModelStep::from(

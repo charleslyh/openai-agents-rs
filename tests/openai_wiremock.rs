@@ -1,7 +1,8 @@
 //! OpenAI wiremock contract tests (verification layer 2).
 #![cfg(feature = "openai")]
 
-use std::sync::Arc;
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex};
 
 use openai_agents::{
     Agent, FunctionTool, ModelSettings, OpenAIChatCompletionsModel, OpenAIProvider,
@@ -10,6 +11,194 @@ use openai_agents::{
 use serde_json::json;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
+
+/// Test-local responder that replays queued bodies in order.
+///
+/// Only the tests in this file use it; the crate does not ship an HTTP mock layer.
+struct QueuedBodies(Mutex<VecDeque<serde_json::Value>>);
+
+impl QueuedBodies {
+    fn new(bodies: Vec<serde_json::Value>) -> Self {
+        Self(Mutex::new(bodies.into()))
+    }
+}
+
+impl wiremock::Respond for QueuedBodies {
+    fn respond(&self, _request: &wiremock::Request) -> ResponseTemplate {
+        match self.0.lock().expect("queue").pop_front() {
+            Some(body) => ResponseTemplate::new(200).set_body_json(body),
+            None => ResponseTemplate::new(500)
+                .set_body_json(json!({"error": {"message": "no queued body"}})),
+        }
+    }
+}
+
+fn weather_tool() -> FunctionTool {
+    FunctionTool::new(
+        "get_weather",
+        "weather",
+        json!({
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+            "required": ["city"]
+        }),
+        |_ctx, args| async move {
+            let v: serde_json::Value = serde_json::from_str(&args).unwrap_or_default();
+            let city = v.get("city").and_then(|c| c.as_str()).unwrap_or("?");
+            Ok(serde_json::Value::String(format!("sunny in {city}")))
+        },
+    )
+}
+
+/// A multi-turn Responses loop must round-trip `function_call_output` back to the API.
+///
+/// This is the assertion `ScriptedModel` cannot make: only the real adapter proves the second
+/// request carries the tool result in Responses wire format.
+#[tokio::test]
+async fn responses_multi_turn_tool_loop() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(QueuedBodies::new(vec![
+            json!({
+                "id": "resp_1",
+                "object": "response",
+                "output": [{
+                    "id": "1",
+                    "type": "function_call",
+                    "name": "get_weather",
+                    "arguments": "{\"city\":\"Paris\"}",
+                    "call_id": "call-w"
+                }],
+                "usage": {"input_tokens": 1, "output_tokens": 1}
+            }),
+            json!({
+                "id": "resp_2",
+                "object": "response",
+                "output": [{
+                    "id": "2",
+                    "type": "message",
+                    "role": "assistant",
+                    "status": "completed",
+                    "content": [{"type": "output_text", "text": "It is sunny in Paris.", "annotations": [], "logprobs": []}]
+                }],
+                "usage": {"input_tokens": 1, "output_tokens": 1}
+            }),
+        ]))
+        .mount(&server)
+        .await;
+
+    let agent = Agent::new("assistant")
+        .instructions("use tools")
+        .model(Arc::new(OpenAIResponsesModel::new(
+            "mock-model",
+            "sk-test",
+            Some(&format!("{}/v1", server.uri())),
+        )))
+        .tools(vec![weather_tool()]);
+
+    let result = Runner::run(&agent, "weather in Paris?", RunOptions::default())
+        .await
+        .expect("run");
+    assert_eq!(result.final_output_as_str(), Some("It is sunny in Paris."));
+    assert_eq!(result.raw_responses.len(), 2);
+
+    let requests = server.received_requests().await.expect("reqs");
+    assert_eq!(requests.len(), 2);
+    let first: serde_json::Value = requests[0].body_json().expect("json");
+    assert_eq!(first["model"], "mock-model");
+    assert!(first["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|t| t["name"] == "get_weather"));
+
+    // The second request must replay the tool result as a `function_call_output` item.
+    let second: serde_json::Value = requests[1].body_json().expect("json");
+    let input = second["input"].as_array().expect("turn-2 input");
+    assert!(
+        input.iter().any(|i| i["type"] == "function_call_output"
+            && i["call_id"] == "call-w"
+            && i["output"].as_str().unwrap().contains("Paris")),
+        "turn-2 input missing function_call_output: {input:?}"
+    );
+}
+
+/// The same loop over Chat Completions must use `messages` with `role: tool`.
+#[tokio::test]
+async fn chat_multi_turn_tool_loop() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(QueuedBodies::new(vec![
+            json!({
+                "id": "chatcmpl_1",
+                "object": "chat.completion",
+                "choices": [{
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": null,
+                        "tool_calls": [{
+                            "id": "call-w",
+                            "type": "function",
+                            "function": {
+                                "name": "get_weather",
+                                "arguments": "{\"city\":\"Tokyo\"}"
+                            }
+                        }]
+                    },
+                    "finish_reason": "tool_calls"
+                }],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+            }),
+            json!({
+                "id": "chatcmpl_2",
+                "object": "chat.completion",
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "Tokyo is sunny."},
+                    "finish_reason": "stop"
+                }],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+            }),
+        ]))
+        .mount(&server)
+        .await;
+
+    let agent = Agent::new("assistant")
+        .model(Arc::new(OpenAIChatCompletionsModel::new(
+            "mock-chat",
+            "sk-test",
+            Some(&format!("{}/v1", server.uri())),
+        )))
+        .tools(vec![weather_tool()]);
+
+    let result = Runner::run(&agent, "weather?", RunOptions::default())
+        .await
+        .expect("run");
+    assert_eq!(result.final_output_as_str(), Some("Tokyo is sunny."));
+    assert_eq!(result.raw_responses.len(), 2);
+
+    let requests = server.received_requests().await.expect("reqs");
+    assert_eq!(requests.len(), 2);
+    let first: serde_json::Value = requests[0].body_json().expect("json");
+    assert!(first["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|t| t["function"]["name"] == "get_weather"));
+
+    // Chat Completions replays the result as a `tool` message keyed by `tool_call_id`.
+    let second: serde_json::Value = requests[1].body_json().expect("json");
+    let messages = second["messages"].as_array().expect("messages");
+    assert!(
+        messages.iter().any(|m| m["role"] == "tool"
+            && m["tool_call_id"] == "call-w"
+            && m["content"].as_str().unwrap().contains("Tokyo")),
+        "turn-2 messages missing tool result: {messages:?}"
+    );
+}
 
 /// Settings are stored as `f32`, so compare with a tolerance.
 fn approx(actual: &serde_json::Value, expected: f64) {

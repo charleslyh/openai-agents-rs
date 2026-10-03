@@ -1,6 +1,7 @@
-//! OpenAI Agents SDK for Rust — Phase-1 port of `openai-agents` Python v0.23.1.
+//! OpenAI Agents SDK for Rust — port of `openai-agents` Python v0.23.1.
 //!
-//! Public surface mirrors `agents/__init__.py` for the supported subset.
+//! The public surface mirrors `agents/__init__.py` for the supported subset; see
+//! `docs/COMPAT.md` for the support matrix and `docs/DEVIATIONS.md` for recorded differences.
 
 #![deny(missing_docs)]
 

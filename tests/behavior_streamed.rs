@@ -69,6 +69,34 @@ async fn streamed_tool_then_text_emits_tool_events() {
     );
 }
 
+/// Every turn produces exactly one synthetic `response.completed` raw event (D-011).
+#[tokio::test]
+async fn streamed_emits_one_raw_event_per_turn() {
+    let model = Arc::new(ScriptedModel::new([
+        ModelStep::from(ItemHelpers::function_tool_call("echo", "{}", "c1")),
+        ModelStep::from(ItemHelpers::text_message("done")),
+    ]));
+    let agent = Agent::new("assistant")
+        .model(model)
+        .tools(vec![FunctionTool::constant("echo", "echo", "ok")]);
+    let mut streamed = Runner::run_streamed(agent, "go", RunOptions::default());
+    let events = streamed.collect_events().await.expect("events");
+
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| matches!(e, StreamEvent::RawResponse { .. }))
+            .count(),
+        2
+    );
+    assert_eq!(
+        streamed
+            .final_output()
+            .and_then(|v| v.as_str().map(str::to_string)),
+        Some("done".into())
+    );
+}
+
 #[tokio::test]
 async fn streamed_stop_on_first_tool() {
     let model = Arc::new(ScriptedModel::new([ModelStep::from(

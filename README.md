@@ -45,11 +45,11 @@ Responses API.
 | 02 | `02_tools` | `#[function_tool]` tool loop |
 | 03 | `03_streamed` | `Runner::run_streamed` events |
 | 04 | `04_handoff` | Multi-agent handoff |
-| 05 | `05_agents_as_tools` | `Agent.as_tool` orchestration |
-| 06 | `06_human_in_the_loop` | Approvals + `RunState` JSON resume |
+| 05 | `05_as_tools` | `Agent.as_tool` orchestration |
+| 06 | `06_hitl` | Approvals + `RunState` JSON resume |
 | 07 | `07_always_approve` | Sticky `always_approve` |
 | 08 | `08_structured_output` | `output_type` + typed `final_output_as::<T>()` |
-| 09 | `09_guardrails_hooks` | Context, guardrails, `RunHooks` / `AgentHooks` |
+| 09 | `09_guardrails` | Context, guardrails, `RunHooks` / `AgentHooks` |
 
 ```bash
 cargo run --example 01_hello
@@ -60,12 +60,12 @@ cargo run --example 04_handoff
 OPENAI_API=responses cargo run --example 02_tools
 
 EXAMPLE_INPUT="Translate 'Hello' to French and Spanish." \
-  cargo run --example 05_agents_as_tools
-HITL_AUTO=approve cargo run --example 06_human_in_the_loop
+  cargo run --example 05_as_tools
+HITL_AUTO=approve cargo run --example 06_hitl
 HITL_AUTO=approve cargo run --example 07_always_approve
 
 cargo run --example 08_structured_output
-cargo run --example 09_guardrails_hooks
+cargo run --example 09_guardrails
 ```
 
 ## Standard reference
@@ -83,7 +83,7 @@ bash scripts/sync_vendor.sh --check
 | Layer | Command |
 |-------|---------|
 | 1. ScriptedModel behavior | `cargo test --no-default-features` |
-| 2. async-openai + MockResponses/MockCompletions | `cargo test --features testing` |
+| 2. OpenAI HTTP contracts (wiremock) | `cargo test` (default features; needs `openai`) |
 | 3. Python oracle parity | `.venv/bin/python scripts/run_parity.py --write-golden` then `cargo test --test parity_scenarios` |
 
 Shared scenarios live in [`tests/parity/scenarios/`](./tests/parity/scenarios/). A scenario only

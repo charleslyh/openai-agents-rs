@@ -107,7 +107,7 @@ async fn parity_scenarios_match_expect_and_golden() {
         let steps: Vec<ModelStep> = scenario
             .steps
             .into_iter()
-            .map(|s| ModelStep::respond(s.output))
+            .map(|s| ModelStep::output(s.output))
             .collect();
         let model = Arc::new(ScriptedModel::new(steps));
         let tools = scenario
