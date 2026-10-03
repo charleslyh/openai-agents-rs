@@ -4,11 +4,43 @@
 use std::sync::Arc;
 
 use openai_agents::{
-    Agent, FunctionTool, OpenAIChatCompletionsModel, OpenAIResponsesModel, RunOptions, Runner,
+    Agent, FunctionTool, ModelSettings, OpenAIChatCompletionsModel, OpenAIProvider,
+    OpenAIResponsesModel, RunOptions, Runner, ToolChoice, Truncation, Verbosity,
 };
 use serde_json::json;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
+
+/// Settings are stored as `f32`, so compare with a tolerance.
+fn approx(actual: &serde_json::Value, expected: f64) {
+    let got = actual.as_f64().unwrap_or(f64::NAN);
+    assert!(
+        (got - expected).abs() < 1e-4,
+        "expected {expected}, got {got}"
+    );
+}
+
+fn new_settings() -> ModelSettings {
+    let mut metadata = serde_json::Map::new();
+    metadata.insert("tenant".into(), json!("acme"));
+    ModelSettings {
+        temperature: Some(0.25),
+        top_p: Some(0.9),
+        frequency_penalty: Some(0.1),
+        presence_penalty: Some(0.2),
+        tool_choice: Some(ToolChoice::Function("noop".into())),
+        parallel_tool_calls: Some(false),
+        truncation: Some(Truncation::Auto),
+        max_tokens: Some(512),
+        reasoning: Some(json!({"effort": "medium"})),
+        verbosity: Some(Verbosity::Low),
+        metadata: Some(metadata),
+        store: Some(false),
+        top_logprobs: Some(3),
+        response_include: Some(vec!["file_search_call.results".into()]),
+        ..Default::default()
+    }
+}
 
 #[tokio::test]
 async fn responses_request_shape() {
@@ -101,4 +133,277 @@ async fn chat_completions_request_shape() {
     assert!(body["tools"].as_array().unwrap().iter().any(|t| {
         t["type"] == "function" && t["function"]["name"] == "noop"
     }));
+}
+
+/// Expanded `ModelSettings` must reach the Responses request with Responses field names.
+#[tokio::test]
+async fn responses_maps_expanded_model_settings() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "resp_test",
+            "object": "response",
+            "output": [{
+                "id": "1",
+                "type": "message",
+                "role": "assistant",
+                "status": "completed",
+                "content": [{"type": "output_text", "text": "pong", "annotations": [], "logprobs": []}]
+            }],
+            "usage": {"input_tokens": 3, "output_tokens": 1}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let model = Arc::new(OpenAIResponsesModel::new(
+        "gpt-test",
+        "sk-test",
+        Some(&format!("{}/v1", server.uri())),
+    ));
+    let agent = Agent::new("a")
+        .model(model)
+        .tools(vec![FunctionTool::constant("noop", "noop", "x")])
+        .model_settings(new_settings());
+
+    let _ = Runner::run(&agent, "ping", RunOptions::default())
+        .await
+        .expect("run");
+
+    let body: serde_json::Value = server.received_requests().await.expect("reqs")[0]
+        .body_json()
+        .expect("json");
+    approx(&body["temperature"], 0.25);
+    approx(&body["top_p"], 0.9);
+    approx(&body["frequency_penalty"], 0.1);
+    approx(&body["presence_penalty"], 0.2);
+    // Responses API names it `max_output_tokens`, not `max_tokens`.
+    assert_eq!(body["max_output_tokens"], 512);
+    assert!(body.get("max_tokens").is_none());
+    assert_eq!(body["truncation"], "auto");
+    assert_eq!(body["verbosity"], "low");
+    assert_eq!(body["reasoning"]["effort"], "medium");
+    assert_eq!(body["metadata"]["tenant"], "acme");
+    assert_eq!(body["store"], false);
+    assert_eq!(body["top_logprobs"], 3);
+    assert_eq!(body["include"][0], "file_search_call.results");
+    assert_eq!(body["parallel_tool_calls"], false);
+    assert_eq!(
+        body["tool_choice"],
+        json!({"type": "function", "function": {"name": "noop"}})
+    );
+}
+
+/// The same settings map onto Chat Completions field names.
+#[tokio::test]
+async fn chat_maps_expanded_model_settings() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chatcmpl_test",
+            "object": "chat.completion",
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": "pong"},
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": 3, "completion_tokens": 1, "total_tokens": 4}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let model = Arc::new(OpenAIChatCompletionsModel::new(
+        "gpt-test",
+        "sk-test",
+        Some(&format!("{}/v1", server.uri())),
+    ));
+    let agent = Agent::new("a")
+        .model(model)
+        .tools(vec![FunctionTool::constant("noop", "noop", "x")])
+        .model_settings(new_settings());
+
+    let _ = Runner::run(&agent, "ping", RunOptions::default())
+        .await
+        .expect("run");
+
+    let body: serde_json::Value = server.received_requests().await.expect("reqs")[0]
+        .body_json()
+        .expect("json");
+    assert_eq!(body["max_tokens"], 512);
+    approx(&body["frequency_penalty"], 0.1);
+    approx(&body["presence_penalty"], 0.2);
+    assert_eq!(body["top_logprobs"], 3);
+    assert_eq!(body["store"], false);
+    assert_eq!(body["metadata"]["tenant"], "acme");
+    // Responses-only settings must not leak into a Chat Completions request.
+    assert!(body.get("truncation").is_none());
+    assert!(body.get("max_output_tokens").is_none());
+    assert!(body.get("include").is_none());
+}
+
+#[derive(serde::Deserialize, openai_agents::schemars::JsonSchema)]
+#[allow(dead_code)]
+struct WiremockAnswer {
+    /// The answer.
+    value: String,
+}
+
+/// Responses API advertises structured output through `text.format`.
+#[tokio::test]
+async fn responses_advertises_json_schema() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "resp_test",
+            "object": "response",
+            "output": [{
+                "id": "1",
+                "type": "message",
+                "role": "assistant",
+                "status": "completed",
+                "content": [{"type": "output_text", "text": "{\"value\":\"ok\"}", "annotations": [], "logprobs": []}]
+            }],
+            "usage": {"input_tokens": 3, "output_tokens": 1}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let agent = Agent::new("a")
+        .model(Arc::new(OpenAIResponsesModel::new(
+            "gpt-test",
+            "sk-test",
+            Some(&format!("{}/v1", server.uri())),
+        )))
+        .output_type(Arc::new(
+            openai_agents::AgentOutputSchema::of::<WiremockAnswer>().expect("schema"),
+        ));
+
+    let result = Runner::run(&agent, "ping", RunOptions::default())
+        .await
+        .expect("run");
+    assert_eq!(result.final_output, json!({"value": "ok"}));
+
+    let body: serde_json::Value = server.received_requests().await.expect("reqs")[0]
+        .body_json()
+        .expect("json");
+    assert_eq!(body["text"]["format"]["type"], "json_schema");
+    assert_eq!(body["text"]["format"]["strict"], true);
+    assert_eq!(
+        body["text"]["format"]["schema"]["properties"]["value"]["type"],
+        "string"
+    );
+}
+
+/// `OpenAIProvider` turns `Agent.model_name` into the API selected by
+/// `set_default_openai_api` (Responses by default, Python-aligned).
+#[tokio::test]
+async fn openai_provider_resolves_model_name() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "resp_test",
+            "object": "response",
+            "output": [{
+                "id": "1",
+                "type": "message",
+                "role": "assistant",
+                "status": "completed",
+                "content": [{"type": "output_text", "text": "via responses", "annotations": [], "logprobs": []}]
+            }],
+            "usage": {"input_tokens": 1, "output_tokens": 1}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    openai_agents::set_default_openai_api(openai_agents::DefaultOpenAiApi::Responses);
+    let provider = OpenAIProvider::new("sk-test", Some(&format!("{}/v1", server.uri())), None);
+
+    let agent = Agent::new("named").model_name("gpt-test");
+    let mut opts = RunOptions::default();
+    opts.run_config.model_provider = Some(Arc::new(provider));
+    let result = Runner::run(&agent, "go", opts).await.expect("run");
+    assert_eq!(result.final_output_as_str(), Some("via responses"));
+
+    // Switching the global default routes the same name to Chat Completions. This runs in the
+    // same test because `set_default_openai_api` is process-global.
+    let chat_server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chatcmpl_test",
+            "object": "chat.completion",
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": "via chat"},
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+        })))
+        .expect(1)
+        .mount(&chat_server)
+        .await;
+
+    openai_agents::set_default_openai_api(openai_agents::DefaultOpenAiApi::ChatCompletions);
+    let provider =
+        OpenAIProvider::new("sk-test", Some(&format!("{}/v1", chat_server.uri())), None);
+    let mut opts = RunOptions::default();
+    opts.run_config.model_provider = Some(Arc::new(provider));
+    let result = Runner::run(&agent, "go", opts).await.expect("run");
+    assert_eq!(result.final_output_as_str(), Some("via chat"));
+
+    // Restore the crate default for the rest of this binary.
+    openai_agents::set_default_openai_api(openai_agents::DefaultOpenAiApi::Responses);
+}
+
+/// Chat Completions advertises structured output through `response_format`.
+#[tokio::test]
+async fn chat_advertises_json_schema() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chatcmpl_test",
+            "object": "chat.completion",
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": "{\"value\":\"ok\"}"},
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": 3, "completion_tokens": 1, "total_tokens": 4}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let agent = Agent::new("a")
+        .model(Arc::new(OpenAIChatCompletionsModel::new(
+            "gpt-test",
+            "sk-test",
+            Some(&format!("{}/v1", server.uri())),
+        )))
+        .output_type(Arc::new(
+            openai_agents::AgentOutputSchema::of::<WiremockAnswer>().expect("schema"),
+        ));
+
+    let result = Runner::run(&agent, "ping", RunOptions::default())
+        .await
+        .expect("run");
+    assert_eq!(result.final_output, json!({"value": "ok"}));
+
+    let body: serde_json::Value = server.received_requests().await.expect("reqs")[0]
+        .body_json()
+        .expect("json");
+    assert_eq!(body["response_format"]["type"], "json_schema");
+    assert_eq!(body["response_format"]["json_schema"]["strict"], true);
+    assert_eq!(
+        body["response_format"]["json_schema"]["schema"]["properties"]["value"]["type"],
+        "string"
+    );
 }

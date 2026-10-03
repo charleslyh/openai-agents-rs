@@ -5,7 +5,7 @@
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
-//! cargo run --example 01_hello_agent
+//! cargo run --example 01_hello
 //! ```
 
 #[path = "common/mod.rs"]

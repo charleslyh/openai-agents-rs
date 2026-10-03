@@ -1,7 +1,7 @@
 //! Run state for HITL pause/resume (Python: `agents.run_state.RunState` subset).
 //!
 //! Supports in-memory sticky approvals and JSON round-trip (`to_json` / `from_json`).
-//! Schema id: `openai-agents-rust/1` (not the Python 1.18 wire format — see D-012).
+//! Schema id: `openai-agents-rust/2` (not the Python 1.18 wire format — see D-012).
 
 use std::collections::HashMap;
 
@@ -9,15 +9,18 @@ use serde_json::{json, Value};
 
 use crate::error::{AgentsError, UserError};
 use crate::items::{
-    InputLike, MessageOutputItem, ModelResponse, ResponseInputItem, RunItem, ToolApprovalItem,
-    ToolCallItem, ToolCallOutputItem,
+    HandoffCallItem, HandoffOutputItem, InputLike, MessageOutputItem, ModelResponse,
+    ReasoningItem, ResponseInputItem, RunItem, ToolApprovalItem, ToolCallItem, ToolCallOutputItem,
 };
 use crate::model_settings::ModelSettings;
 use crate::tool::DEFAULT_APPROVAL_REJECTION_MESSAGE;
 use crate::usage::Usage;
 
 /// Schema version embedded in [`RunState::to_json`].
-pub const RUN_STATE_SCHEMA_VERSION: &str = "openai-agents-rust/1";
+pub const RUN_STATE_SCHEMA_VERSION: &str = "openai-agents-rust/2";
+
+/// Older schema ids that [`RunState::from_json`] still accepts.
+pub const SUPPORTED_RUN_STATE_SCHEMAS: &[&str] = &["openai-agents-rust/1", RUN_STATE_SCHEMA_VERSION];
 
 /// Decision recorded for a pending tool call.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -384,7 +387,8 @@ impl RunState {
             .get("$schemaVersion")
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        if version != RUN_STATE_SCHEMA_VERSION {
+        // v1 payloads stay readable: they simply never carry handoff/reasoning items.
+        if version != RUN_STATE_SCHEMA_VERSION && !SUPPORTED_RUN_STATE_SCHEMAS.contains(&version) {
             return Err(UserError::new(format!(
                 "unsupported RunState schema `{version}` (expected {RUN_STATE_SCHEMA_VERSION})"
             ))
@@ -610,7 +614,36 @@ fn serialize_run_item(item: &RunItem) -> Value {
             "kind": "tool_approval",
             "item": serialize_approval_item(a),
         }),
+        RunItem::HandoffCall(h) => json!({
+            "kind": "handoff_call",
+            "agent_name": h.agent_name,
+            "raw_item": h.raw_item,
+        }),
+        RunItem::HandoffOutput(h) => json!({
+            "kind": "handoff_output",
+            "agent_name": h.agent_name,
+            "raw_item": h.raw_item,
+            "source_agent_name": h.source_agent_name,
+            "target_agent_name": h.target_agent_name,
+        }),
+        RunItem::Reasoning(r) => json!({
+            "kind": "reasoning",
+            "agent_name": r.agent_name,
+            "raw_item": r.raw_item,
+        }),
     }
+}
+
+fn agent_name_field(value: &Value) -> String {
+    value
+        .get("agent_name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string()
+}
+
+fn raw_item_field(value: &Value) -> Value {
+    value.get("raw_item").cloned().unwrap_or(Value::Null)
 }
 
 fn deserialize_run_item(value: &Value) -> Result<RunItem, AgentsError> {
@@ -645,6 +678,28 @@ fn deserialize_run_item(value: &Value) -> Result<RunItem, AgentsError> {
                 .get("item")
                 .ok_or_else(|| UserError::new("tool_approval missing item"))?,
         )?)),
+        Some("handoff_call") => Ok(RunItem::HandoffCall(HandoffCallItem {
+            agent_name: agent_name_field(value),
+            raw_item: raw_item_field(value),
+        })),
+        Some("handoff_output") => Ok(RunItem::HandoffOutput(HandoffOutputItem {
+            agent_name: agent_name_field(value),
+            raw_item: raw_item_field(value),
+            source_agent_name: value
+                .get("source_agent_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            target_agent_name: value
+                .get("target_agent_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        })),
+        Some("reasoning") => Ok(RunItem::Reasoning(ReasoningItem {
+            agent_name: agent_name_field(value),
+            raw_item: raw_item_field(value),
+        })),
         other => Err(UserError::new(format!("unknown RunItem kind: {other:?}")).into()),
     }
 }

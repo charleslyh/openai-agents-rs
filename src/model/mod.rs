@@ -1,7 +1,10 @@
 //! Model interface (Python: `agents.models.interface`).
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 
+use crate::agent_output::AgentOutputSchemaBase;
 use crate::error::ModelError;
 use crate::items::{ModelResponse, ResponseInputItem};
 use crate::model_settings::ModelSettings;
@@ -9,9 +12,74 @@ use crate::tool::FunctionTool;
 
 #[cfg(feature = "openai")]
 pub mod openai;
+pub mod provider;
 pub mod scripted;
 
+pub use provider::{MissingProvider, ModelProvider, MultiProvider};
 pub use scripted::ScriptedModel;
+
+/// A model reference: either a ready instance or a name resolved by a [`ModelProvider`].
+#[derive(Clone)]
+pub enum ModelRef {
+    /// A pre-built model instance.
+    Instance(Arc<dyn Model>),
+    /// A model name resolved through `RunConfig.model_provider`.
+    Name(String),
+}
+
+impl std::fmt::Debug for ModelRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Instance(_) => f.write_str("ModelRef::Instance(..)"),
+            Self::Name(n) => f.debug_tuple("ModelRef::Name").field(n).finish(),
+        }
+    }
+}
+
+impl From<Arc<dyn Model>> for ModelRef {
+    fn from(value: Arc<dyn Model>) -> Self {
+        Self::Instance(value)
+    }
+}
+
+impl From<&str> for ModelRef {
+    fn from(value: &str) -> Self {
+        Self::Name(value.to_string())
+    }
+}
+
+impl From<String> for ModelRef {
+    fn from(value: String) -> Self {
+        Self::Name(value)
+    }
+}
+
+/// The provider used when `RunConfig.model_provider` is not set.
+///
+/// With the `openai` feature this routes `openai/...` (and unprefixed) names to OpenAI,
+/// honouring [`crate::get_default_openai_api`]. Without it, name resolution fails with an
+/// actionable error.
+pub fn default_model_provider() -> Arc<dyn ModelProvider> {
+    #[cfg(feature = "openai")]
+    {
+        match openai::OpenAIProvider::from_env() {
+            Ok(provider) => {
+                let router = MultiProvider::new()
+                    .register("openai", Arc::new(provider.clone()))
+                    .register(
+                        "openai_chat_completions",
+                        Arc::new(provider.clone().always_chat_completions()),
+                    );
+                Arc::new(router)
+            }
+            Err(_) => Arc::new(MissingProvider),
+        }
+    }
+    #[cfg(not(feature = "openai"))]
+    {
+        Arc::new(MissingProvider)
+    }
+}
 
 /// Tracing mode for a model call (Python: `ModelTracing`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -54,6 +122,10 @@ pub struct ModelRequest<'a> {
     pub previous_response_id: Option<&'a str>,
     /// Conversation id when using stored conversations.
     pub conversation_id: Option<&'a str>,
+    /// Structured output schema declared by the agent (Python: `ModelRequest.output_schema`).
+    ///
+    /// `None` or a plain-text schema means the model should answer in free-form text.
+    pub output_schema: Option<&'a dyn AgentOutputSchemaBase>,
 }
 
 /// Input to a model call.

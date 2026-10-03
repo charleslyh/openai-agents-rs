@@ -4,7 +4,8 @@ use std::sync::Arc;
 
 use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
 use openai_agents::{
-    handoff, Agent, Handoff, RunItemStreamName, RunOptions, Runner, StreamEvent,
+    handoff, Agent, Handoff, HandoffOutputItem, RunItem, RunItemStreamName, RunOptions, Runner,
+    StreamEvent,
 };
 
 #[tokio::test]
@@ -73,6 +74,83 @@ async fn streamed_handoff_emits_events() {
             >= 2
     );
     assert_eq!(streamed.current_agent_name(), "B");
+}
+
+/// D-A: handoffs produce `HandoffCallItem` / `HandoffOutputItem`, not plain tool items.
+#[tokio::test]
+async fn handoff_produces_handoff_run_items() {
+    let specialist_model = Arc::new(ScriptedModel::new([ModelStep::from(
+        ItemHelpers::text_message("specialist done"),
+    )]));
+    let specialist = Agent::new("Specialist").model(specialist_model);
+    let triage_model = Arc::new(ScriptedModel::new([ModelStep::from(
+        ItemHelpers::function_tool_call(Handoff::default_tool_name("Specialist"), "{}", "h1"),
+    )]));
+    let triage = Agent::new("Triage")
+        .model(triage_model)
+        .handoffs(vec![handoff(specialist)]);
+
+    let result = Runner::run(&triage, "please specialize", RunOptions::default())
+        .await
+        .expect("run");
+
+    let calls: Vec<&str> = result
+        .new_items
+        .iter()
+        .filter_map(|i| match i {
+            RunItem::HandoffCall(c) => Some(c.agent_name.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(calls, vec!["Triage"]);
+
+    let outputs: Vec<HandoffOutputItem> = result
+        .new_items
+        .iter()
+        .filter_map(|i| match i {
+            RunItem::HandoffOutput(o) => Some(o.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(outputs.len(), 1);
+    assert_eq!(outputs[0].source_agent_name, "Triage");
+    assert_eq!(outputs[0].target_agent_name, "Specialist");
+    // Python: `Handoff.get_transfer_message` -> {"assistant": <target>}
+    assert_eq!(
+        outputs[0].raw_item["output"],
+        serde_json::json!(r#"{"assistant":"Specialist"}"#)
+    );
+    // No plain tool items for the handoff itself.
+    assert!(!result
+        .new_items
+        .iter()
+        .any(|i| matches!(i, RunItem::ToolCall(_))));
+}
+
+/// D-A: reasoning output becomes its own run item instead of being wrapped as a message.
+#[tokio::test]
+async fn reasoning_output_becomes_reasoning_item() {
+    let model = Arc::new(ScriptedModel::new([ModelStep::from(vec![
+        serde_json::json!({"type": "reasoning", "summary": []}),
+        ItemHelpers::text_message("answer"),
+    ])]));
+    let agent = Agent::new("thinker").model(model);
+    let result = Runner::run(&agent, "think", RunOptions::default())
+        .await
+        .expect("run");
+    assert!(result
+        .new_items
+        .iter()
+        .any(|i| matches!(i, RunItem::Reasoning(_))));
+    // The reasoning item must not be reported as an assistant message.
+    assert_eq!(
+        result
+            .new_items
+            .iter()
+            .filter(|i| matches!(i, RunItem::Message(_)))
+            .count(),
+        1
+    );
 }
 
 #[test]

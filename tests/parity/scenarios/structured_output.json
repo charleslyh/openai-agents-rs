@@ -1,0 +1,43 @@
+{
+  "name": "structured_output",
+  "input": "answer in json",
+  "agent": {
+    "name": "assistant",
+    "instructions": null,
+    "tools": [],
+    "tool_use_behavior": "run_llm_again",
+    "output_type": {
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" },
+        "confidence": { "type": "number" }
+      },
+      "required": ["text", "confidence"],
+      "additionalProperties": false
+    }
+  },
+  "steps": [
+    {
+      "output": [
+        {
+          "id": "1",
+          "type": "message",
+          "role": "assistant",
+          "status": "completed",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "{\"text\": \"42\", \"confidence\": 0.9}",
+              "annotations": [],
+              "logprobs": []
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "final_output": "{\"confidence\":0.9,\"text\":\"42\"}",
+    "raw_response_count": 1
+  }
+}

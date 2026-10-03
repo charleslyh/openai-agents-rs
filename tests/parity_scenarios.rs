@@ -5,7 +5,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use openai_agents::testing::{ModelStep, ScriptedModel};
-use openai_agents::{Agent, FunctionTool, RunOptions, Runner, ToolUseBehavior};
+use openai_agents::{
+    Agent, CustomOutputSchema, FunctionTool, RunItem, RunOptions, Runner, ToolUseBehavior,
+};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -25,6 +27,9 @@ struct AgentSpec {
     tools: Vec<ToolSpec>,
     #[serde(default = "default_behavior")]
     tool_use_behavior: String,
+    /// Optional structured-output JSON Schema (Python: `Agent.output_type`).
+    #[serde(default)]
+    output_type: Option<Value>,
 }
 
 fn default_behavior() -> String {
@@ -49,6 +54,9 @@ struct StepSpec {
 struct Expect {
     final_output: String,
     raw_response_count: usize,
+    /// Number of `ToolCallOutputItem`s the run must have produced.
+    #[serde(default)]
+    tool_output_count: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -114,27 +122,36 @@ async fn parity_scenarios_match_expect_and_golden() {
                 )
             })
             .collect();
-        let agent = Agent::new(scenario.agent.name)
+        let mut agent = Agent::new(scenario.agent.name)
             .model(model.clone())
             .tools(tools)
             .tool_use_behavior(behavior(&scenario.agent.tool_use_behavior));
+        if let Some(schema) = scenario.agent.output_type {
+            agent = agent.output_type(Arc::new(CustomOutputSchema::new("output", schema, true)));
+        }
 
         let result = Runner::run(&agent, scenario.input, RunOptions::default())
             .await
             .unwrap_or_else(|e| panic!("{} failed: {e}", scenario.name));
 
-        assert_eq!(
-            result.final_output_as_str(),
-            Some(scenario.expect.final_output.as_str()),
-            "{}",
-            scenario.name
-        );
+        // Structured outputs are JSON values, not strings, so compare as JSON.
+        let expected: Value = serde_json::from_str(&scenario.expect.final_output)
+            .unwrap_or_else(|_| Value::String(scenario.expect.final_output.clone()));
+        assert_eq!(result.final_output, expected, "{}", scenario.name);
         assert_eq!(
             result.raw_responses.len(),
             scenario.expect.raw_response_count,
             "{}",
             scenario.name
         );
+        if let Some(count) = scenario.expect.tool_output_count {
+            let actual = result
+                .new_items
+                .iter()
+                .filter(|i| matches!(i, RunItem::ToolCallOutput(_)))
+                .count();
+            assert_eq!(actual, count, "tool outputs {}", scenario.name);
+        }
         model.assert_complete();
 
         let golden_path = path.with_extension("golden.json");

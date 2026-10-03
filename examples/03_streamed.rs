@@ -8,7 +8,7 @@
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`, `OPENAI_API`.
 //!
 //! ```bash
-//! cargo run --example 03_streamed_agent
+//! cargo run --example 03_streamed
 //! ```
 
 #[path = "common/mod.rs"]
