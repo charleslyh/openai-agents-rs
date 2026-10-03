@@ -109,6 +109,107 @@ async fn run_config_tracing_disabled_is_authoritative() {
     assert!(proc.traces.lock().unwrap().is_empty());
 }
 
+/// Guardrails run on a spawned task, so spans they open must still honor `RunConfig.tracing_disabled`
+/// (task-locals are not inherited by `tokio::spawn`).
+#[tokio::test]
+async fn spawned_input_guardrail_respects_run_tracing_disabled() {
+    let _guard = tracing_test_lock().lock().unwrap();
+    tracing::set_tracing_disabled(false);
+    let proc = InMemoryProcessor::install();
+
+    let spanned = |_ctx, _agent, _input| async {
+        let _span = tracing::guardrail_span("spanned");
+        openai_agents::GuardrailFunctionOutput::pass(serde_json::json!({}))
+    };
+
+    // Tracing on: the span opened inside the spawned guardrail task is recorded.
+    let on_model = Arc::new(ScriptedModel::new([ModelStep::from(
+        ItemHelpers::text_message("ok"),
+    )]));
+    let on_agent = Agent::new("guarded")
+        .model(on_model)
+        .input_guardrails(vec![openai_agents::input_guardrail("spanned", spanned)]);
+    let _ = Runner::run(&on_agent, "hi", RunOptions::default())
+        .await
+        .expect("run");
+    assert!(
+        proc.spans
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|s| matches!(&s.data, SpanData::Guardrail { name } if name == "spanned")),
+        "guardrail span should be recorded when tracing is enabled"
+    );
+
+    // Tracing off for this run: the same span must not reach the processor.
+    let off_model = Arc::new(ScriptedModel::new([ModelStep::from(
+        ItemHelpers::text_message("ok"),
+    )]));
+    let off_agent = Agent::new("guarded")
+        .model(off_model)
+        .input_guardrails(vec![openai_agents::input_guardrail("spanned", spanned)]);
+    let mut opts = RunOptions::default();
+    opts.run_config.tracing_disabled = true;
+    let before_spans = proc.spans.lock().unwrap().len();
+    let before_started = proc.started_spans.lock().unwrap().len();
+    let _ = Runner::run(&off_agent, "hi", opts).await.expect("run");
+
+    assert_eq!(
+        proc.spans.lock().unwrap().len(),
+        before_spans,
+        "guardrail span bypassed RunConfig.tracing_disabled"
+    );
+    assert_eq!(
+        proc.started_spans.lock().unwrap().len(),
+        before_started,
+        "guardrail span start bypassed RunConfig.tracing_disabled"
+    );
+}
+
+/// Python wraps guardrail bodies in `guardrail_span`; both directions must appear in the trace
+/// (input guardrails run on a spawned task, output guardrails inline at finalize time).
+#[tokio::test]
+async fn guardrails_emit_guardrail_spans() {
+    let _guard = tracing_test_lock().lock().unwrap();
+    tracing::set_tracing_disabled(false);
+    let proc = InMemoryProcessor::install();
+
+    let model = Arc::new(ScriptedModel::new([ModelStep::from(
+        ItemHelpers::text_message("ok"),
+    )]));
+    let agent = Agent::new("guarded")
+        .model(model)
+        .input_guardrails(vec![openai_agents::input_guardrail(
+            "in-check",
+            |_ctx, _agent, _input| async {
+                openai_agents::GuardrailFunctionOutput::pass(serde_json::json!({}))
+            },
+        )])
+        .output_guardrails(vec![openai_agents::output_guardrail(
+            "out-check",
+            |_ctx, _agent, _out| async {
+                openai_agents::GuardrailFunctionOutput::pass(serde_json::json!({}))
+            },
+        )]);
+    let _ = Runner::run(&agent, "hi", RunOptions::default())
+        .await
+        .expect("run");
+
+    let spans = proc.spans.lock().unwrap().clone();
+    assert!(
+        spans
+            .iter()
+            .any(|s| matches!(&s.data, SpanData::Guardrail { name } if name == "in-check")),
+        "spans={spans:?}"
+    );
+    assert!(
+        spans
+            .iter()
+            .any(|s| matches!(&s.data, SpanData::Guardrail { name } if name == "out-check")),
+        "spans={spans:?}"
+    );
+}
+
 /// D-B: a handoff emits a `Handoff` span carrying both agent names.
 #[tokio::test]
 async fn handoff_emits_handoff_span() {

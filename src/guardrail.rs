@@ -101,12 +101,16 @@ impl InputGuardrail {
     }
 
     /// Run the guardrail.
+    ///
+    /// Python wraps the guardrail body in `guardrail_span(name)`, so the check is visible in the
+    /// trace and inherits the run's tracing switch (`RunConfig.tracing_disabled`).
     pub async fn run(
         &self,
         agent: Arc<Agent>,
         input: InputLike,
         context: RunContextWrapper,
     ) -> InputGuardrailResult {
+        let _span = crate::tracing::guardrail_span(&self.name);
         let output = (self.guardrail_function)(context, agent, input).await;
         InputGuardrailResult {
             guardrail_name: self.name.clone(),
@@ -162,12 +166,16 @@ impl OutputGuardrail {
     }
 
     /// Run the guardrail.
+    ///
+    /// Python wraps the guardrail body in `guardrail_span(name)`, so the check is visible in the
+    /// trace and inherits the run's tracing switch (`RunConfig.tracing_disabled`).
     pub async fn run(
         &self,
         agent: Arc<Agent>,
         agent_output: Value,
         context: RunContextWrapper,
     ) -> OutputGuardrailResult {
+        let _span = crate::tracing::guardrail_span(&self.name);
         let output = (self.guardrail_function)(context, Arc::clone(&agent), agent_output.clone()).await;
         OutputGuardrailResult {
             guardrail_name: self.name.clone(),
