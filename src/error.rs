@@ -1,4 +1,4 @@
-//! Error types aligned with Python `agents.exceptions` (Phase-1 subset).
+//! Error types aligned with Python `agents.exceptions` (supported subset).
 
 use thiserror::Error;
 

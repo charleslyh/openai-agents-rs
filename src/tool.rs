@@ -1,4 +1,4 @@
-//! Function tools (Python: `agents.tool.FunctionTool` Phase-1 subset).
+//! Function tools (Python: `agents.tool.FunctionTool` supported subset).
 
 use std::future::Future;
 use std::pin::Pin;

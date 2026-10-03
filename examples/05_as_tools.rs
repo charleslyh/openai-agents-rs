@@ -4,7 +4,7 @@
 //!
 //! ```bash
 //! EXAMPLE_INPUT="Translate 'Hello, world!' to French and Spanish." \
-//!   cargo run --example 05_agents_as_tools
+//!   cargo run --example 05_as_tools
 //! ```
 
 #[path = "common/mod.rs"]

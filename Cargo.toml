@@ -6,7 +6,7 @@ resolver = "2"
 name = "openai-agents"
 version = "0.1.0"
 edition = "2021"
-description = "Rust port of the OpenAI Agents Python SDK (Phase-1 subset)"
+description = "Rust port of the OpenAI Agents Python SDK (core loop, tools, handoffs, HITL, guardrails, structured output)"
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/charleslyh/openai-agents-rust"
@@ -16,7 +16,6 @@ categories = ["api-bindings", "asynchronous"]
 [features]
 default = ["openai"]
 openai = ["dep:async-openai", "dep:reqwest"]
-testing = ["openai", "dep:wiremock"]
 
 [dependencies]
 async-trait = "0.1"
@@ -30,13 +29,13 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"
 tracing = "0.1"
 uuid = { version = "1", features = ["v4"] }
 
-# Optional OpenAI HTTP client (third-party Rust client — verification layer 2)
+# Optional OpenAI HTTP client (third-party Rust client)
 async-openai = { version = "0.42", optional = true, default-features = false, features = ["chat-completion", "responses"] }
 reqwest = { version = "0.12", optional = true, default-features = false, features = ["json", "rustls-tls", "stream"] }
-wiremock = { version = "0.6", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util"] }
+# Used by the HTTP-level contract tests (verification layer 2); not part of the public API.
 wiremock = "0.6"
 serde_json = "1"
 
@@ -57,11 +56,11 @@ name = "04_handoff"
 required-features = ["openai"]
 
 [[example]]
-name = "05_agents_as_tools"
+name = "05_as_tools"
 required-features = ["openai"]
 
 [[example]]
-name = "06_human_in_the_loop"
+name = "06_hitl"
 required-features = ["openai"]
 
 [[example]]
@@ -73,7 +72,7 @@ name = "08_structured_output"
 required-features = ["openai"]
 
 [[example]]
-name = "09_guardrails_hooks"
+name = "09_guardrails"
 required-features = ["openai"]
 
 [package.metadata.docs.rs]
