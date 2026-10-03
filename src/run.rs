@@ -448,15 +448,22 @@ async fn run_loop_inner(
         let agent = Arc::new(current_agent.clone());
         let run_input = input.clone();
         let ctx = context.clone();
+        // `tokio::spawn` does not inherit task-locals, so the run's tracing switch has to be
+        // re-established inside the task; otherwise spans opened by a guardrail (Python runs
+        // them concurrently with the first turn) escape `RunConfig.tracing_disabled`.
+        let run_tracing_disabled = options.run_config.tracing_disabled;
         Some(tokio::spawn(async move {
-            let futs = guardrails.iter().map(|g| {
-                let g = g.clone();
-                let agent = Arc::clone(&agent);
-                let run_input = run_input.clone();
-                let ctx = ctx.clone();
-                async move { g.run(agent, run_input, ctx).await }
-            });
-            futures::future::join_all(futs).await
+            crate::tracing::with_run_tracing_disabled(run_tracing_disabled, async move {
+                let futs = guardrails.iter().map(|g| {
+                    let g = g.clone();
+                    let agent = Arc::clone(&agent);
+                    let run_input = run_input.clone();
+                    let ctx = ctx.clone();
+                    async move { g.run(agent, run_input, ctx).await }
+                });
+                futures::future::join_all(futs).await
+            })
+            .await
         }))
     };
 
