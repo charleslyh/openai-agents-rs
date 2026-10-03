@@ -14,6 +14,7 @@ use crate::tool::FunctionTool;
 pub mod openai;
 pub mod provider;
 pub mod scripted;
+pub(crate) mod wire_events;
 
 pub use provider::{MissingProvider, ModelProvider, MultiProvider};
 pub use scripted::ScriptedModel;
@@ -153,23 +154,30 @@ pub trait Model: Send + Sync {
     /// Get a complete model response (non-streaming).
     async fn get_response(&self, request: ModelRequest<'_>) -> Result<ModelResponse, ModelError>;
 
-    /// Stream raw JSON events (e.g. text deltas), then return the assembled response.
+    /// Stream standard Responses API wire events, then return the assembled response.
     ///
-    /// Default: call [`Self::get_response`] and emit a single synthetic `response.completed`.
-    /// Chat Completions overrides this for token-level `output_text.delta` events.
+    /// Default: call [`Self::get_response`] and replay the result as the standard event sequence
+    /// (`response.created` → per-item events → `response.completed`). Both OpenAI adapters
+    /// override it to stream real token deltas (D-011).
     async fn stream_response(
         &self,
         request: ModelRequest<'_>,
         raw_tx: tokio::sync::mpsc::Sender<serde_json::Value>,
     ) -> Result<ModelResponse, ModelError> {
         let response = self.get_response(request).await?;
-        let _ = raw_tx
-            .send(serde_json::json!({
-                "type": "response.completed",
-                "response_id": response.response_id,
-                "output": response.output,
-            }))
-            .await;
+        let wire = wire_events::response_object(
+            response
+                .response_id
+                .as_deref()
+                .unwrap_or(wire_events::FAKE_RESPONSES_ID),
+            "unknown",
+            "completed",
+            wire_events::now_seconds(),
+            &response.output,
+            &response.usage,
+            "none",
+        );
+        wire_events::emit_response_stream(&raw_tx, wire).await;
         Ok(response)
     }
 }

@@ -1,9 +1,8 @@
 //! 03 — Streaming run events (core path)
 //!
-//! Prints assistant text as token deltas (typewriter) under Chat Completions
-//! (default `OPENAI_API`). DeepSeek-style models also stream `reasoning_content`
-//! as `reasoning_text.delta` before the visible answer. Responses API still
-//! completes in one shot (D-011).
+//! Prints assistant text as token deltas (typewriter). Both OpenAI APIs emit the standard
+//! Responses wire events (D-011): `response.output_text.delta` for visible tokens, and
+//! `response.reasoning_summary_text.delta` / `response.reasoning_text.delta` for thinking.
 //!
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`, `OPENAI_API`.
 //!
@@ -43,12 +42,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let kind = data.get("type").and_then(|t| t.as_str()).unwrap_or("");
                 let delta = data.get("delta").and_then(|d| d.as_str()).unwrap_or("");
                 match kind {
-                    "reasoning_text.delta" => {
+                    "response.reasoning_summary_text.delta" | "response.reasoning_text.delta" => {
                         open_section(&mut section, Section::Reasoning)?;
                         print!("{delta}");
                         io::stdout().flush()?;
                     }
-                    "output_text.delta" => {
+                    "response.output_text.delta" => {
                         open_section(&mut section, Section::Message)?;
                         print!("{delta}");
                         io::stdout().flush()?;

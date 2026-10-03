@@ -309,3 +309,66 @@ pub(crate) fn tools_as_responses(tools: &[FunctionTool]) -> Vec<serde_json::Valu
 pub(crate) fn map_transport(err: impl std::fmt::Display) -> ModelError {
     ModelError::Transport(err.to_string())
 }
+
+/// Whether a response carries a plain JSON body instead of an SSE stream.
+///
+/// Some gateways (and wiremock) ignore `stream: true` and answer with the full object, so
+/// adapters must fall back to the non-streaming parse.
+pub(crate) fn is_json_response(resp: &reqwest::Response) -> bool {
+    resp.headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_ascii_lowercase()
+        .contains("application/json")
+}
+
+/// Incremental SSE parser shared by the Chat Completions and Responses adapters.
+///
+/// OpenAI streams `text/event-stream` bodies as `data: {...}` lines separated by blank lines.
+/// `[DONE]` terminators and non-`data:` lines (comments, `event:`) are skipped.
+pub(crate) struct SseReader {
+    buffer: String,
+}
+
+impl SseReader {
+    /// Start with an empty buffer.
+    pub(crate) fn new() -> Self {
+        Self {
+            buffer: String::new(),
+        }
+    }
+
+    /// Append raw bytes from the HTTP byte stream.
+    pub(crate) fn feed(&mut self, chunk: &[u8]) {
+        self.buffer.push_str(&String::from_utf8_lossy(chunk));
+    }
+
+    /// Drain the next complete `data:` payload, if one is buffered.
+    pub(crate) fn next_event(&mut self) -> Option<Result<serde_json::Value, ModelError>> {
+        while let Some(pos) = self.buffer.find('\n') {
+            let mut line: String = self.buffer[..pos].to_string();
+            self.buffer.drain(..=pos);
+            if line.ends_with('\r') {
+                line.pop();
+            }
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let Some(data) = line.strip_prefix("data:") else {
+                continue;
+            };
+            let data = data.trim();
+            if data == "[DONE]" {
+                continue;
+            }
+            return Some(
+                serde_json::from_str(data).map_err(|e| {
+                    ModelError::Behavior(format!("invalid SSE JSON: {e}; data={data}"))
+                }),
+            );
+        }
+        None
+    }
+}

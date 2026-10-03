@@ -35,13 +35,13 @@ Rust language difference) · **Gap** (known missing capability, tracked by COMPA
 | D-002 | `@function_tool` docstring → JSON schema | `#[function_tool]` derives the schema from Rust types via `schemars`; the function doc comment becomes the tool description and `///` docs on fields become property descriptions | Rust has no runtime docstrings/annotations | Accepted |
 | D-003 | `Agent.handoffs` / `handoff()` | Basic handoff supported; no `input_filter`, `nest_handoff_history`, `input_type` or `on_handoff` | Deferred | Later phase |
 | D-004 | OpenAI `BackendSpanExporter` / `set_tracing_export_api_key` | Local / in-memory processors only | Phase-2 still local | Optional later |
-| D-005 | `Runner.run_streamed` | `Runner::run_streamed` + `RunResultStreaming` | Naming; see D-011 for event shape | Aligned (item events) |
+| D-005 | `Runner.run_streamed` | `Runner::run_streamed` + `RunResultStreaming` | Naming only; the raw event vocabulary matches Python (D-011) | Aligned |
 | D-006 | MCP / sessions / hosted tools / sandbox | Not exported | Out of scope | Later phases |
 | D-007 | Package layout | Single crate `openai-agents` with modules + Cargo features | Mirrors the Python single package; no empty facade | N/A (aligned intent) |
 | D-008 | Default max turns `10` | Same default (`DEFAULT_MAX_TURNS = 10`) | — | Aligned |
 | D-009 | `function_tool` `failure_error_function` | Tool errors are surfaced as results by default; there is no per-tool error formatter hook | `RunConfig.tool_error_formatter` not ported | Later phase |
 | D-010 | Prefer git submodule for vendor | Vendored via release tarball + `vendor/PINNED_VERSION` | Network / CI portability | Prefer submodule when accessible |
-| D-011 | Token-level `RawResponsesStreamEvent` from `Model.stream_response` | Chat Completions streams `output_text.delta` (+ `reasoning_text.delta` for `reasoning_content`); Responses / Scripted still emit a synthetic `response.completed` after `get_response` | Most OpenAI-compatible gateways support chat SSE first | Add Responses SSE later |
+| D-011 | Token-level `RawResponsesStreamEvent` from `Model.stream_response` | `StreamEvent::RawResponse.data` is a standard Responses wire event, matching Python's `RawResponsesStreamEvent.data`. Responses forwards provider events verbatim (`openai_responses.py:781`); Chat Completions synthesizes them the way `chatcmpl_stream_handler.py` does; `ScriptedModel` replays a step the way `testing/model.py` does. See [Streaming wire contract](#streaming-wire-contract) | Not ported: `response.refusal.*`, `response.output_text.annotation.added` and logprob payloads (emitted empty); usage token details follow D-016 | Aligned |
 | D-012 | Python `RunState` schema 1.18 wire format | Rust schema `openai-agents-rust/2` via `to_json`/`from_json`; sticky `always_approve`/`always_reject`; `Agent.as_tool` nested HITL | Not byte-compatible with Python snapshots; process-local + Rust JSON is enough for HITL | Optional Python-compatible exporter later |
 | D-013 | `MultiProvider` provider registry | Only `openai` and `openai_chat_completions` prefixes are built in; others are registered explicitly | No dynamic entry-point discovery in Rust | Accepted |
 | D-022 | `ScriptedModel.set_default_usage` | Applies to steps whose usage is empty, matching Python | — | Aligned |
@@ -53,6 +53,46 @@ Rust language difference) · **Gap** (known missing capability, tracked by COMPA
 | D-020 | `ModelStep.responder` / `stream_events` / `retry_advice` | Not ported; steps are a plain output/error pair | Advanced streaming and retry features are out of scope | Later phase |
 | D-021 | `ModelCall` recorded fields | Records `streamed` and `output_schema_name`, but not `output_schema`, `handoffs` or `prompt` objects | `ModelRequest` does not carry handoffs; Python exposes the live objects | Later phase |
 | D-018 | `function_tool` variadic / `Annotated` parameters | Not supported; the macro accepts plain owned-typed identifiers and an optional leading context parameter | Rust signatures cannot express `*args` / `**kwargs` with types | Accepted |
+| D-023 | Chat Completions synthesized response id | The synthesized `response` object and `ModelResponse.response_id` carry the provider's `id` (e.g. `chatcmpl-…`) when the gateway sends one; `FAKE_RESPONSES_ID` only when it does not | Python always uses `FAKE_RESPONSES_ID` for Chat Completions. The id is only fed back as `previous_response_id`, which the Chat Completions adapter ignores | Accepted |
+
+## Streaming wire contract
+
+`StreamEvent::RawResponse { data }` carries **one Responses API wire event** (Python:
+`RawResponsesStreamEvent.data`, `stream_events.py:11-20`). Both OpenAI adapters and
+`ScriptedModel` emit the same vocabulary, so a consumer never branches on the backend.
+
+Which emitter does what:
+
+| Emitter | Source | Python reference |
+|---------|--------|------------------|
+| `OpenAIResponsesModel` | provider SSE events, forwarded verbatim | `openai_responses.py:781` (`yield chunk`) |
+| `OpenAIChatCompletionsModel` | synthesized from chat chunks | `chatcmpl_stream_handler.py` (15 event types) |
+| `ScriptedModel` / default `Model::stream_response` | a finished response replayed | `testing/model.py` step expansion |
+
+Rules the three share:
+
+- **Vocabulary**: only `response.*` wire type names. No dialect names (the pre-D-011
+  `output_text.delta` / `reasoning_text.delta` are gone).
+- **Shape**: `item_id` / `output_index` / `content_index` / `summary_index` / `delta` /
+  `logprobs` / `sequence_number`, matching the Python event objects. `item_id` is the item's own
+  `id` (or `call_id`), falling back to `FAKE_RESPONSES_ID` (`"__fake_id__"`) when absent — which
+  is the case for everything the Chat Completions adapter synthesizes, matching Python.
+- **Ordering**: `response.created` → `output_item.added` → `content_part.added` → deltas →
+  `*_done` → `output_item.done` → `response.completed`.
+- **Numbering**: `sequence_number` is 0-based and monotonic (`chatcmpl_stream_handler.py:184`).
+  Forwarded events keep the provider's number and are never renumbered; a synthesized terminal
+  event continues from the last number seen.
+- **`output_index`**: the reasoning item occupies 0, function calls take the next slots in
+  arrival order, and the assistant message is assigned lazily right after the calls known when
+  its first delta arrives (`_StreamOutputLayout`).
+- **Terminal event**: `{"type":"response.completed","response":{…}}` with the full `response`
+  object (`id`, `object`, `created_at`, `model`, `status`, `output`, `usage`, `tools`,
+  `tool_choice`, `parallel_tool_calls`, `top_p`, `temperature`).
+
+Deliberately not ported (see D-011): `response.refusal.*` and
+`response.output_text.annotation.added` are not synthesized, `logprobs` payloads are emitted as
+`[]`, and `usage` carries no token details (D-016). The per-event status per emitter is tabulated
+in [COMPAT.md](./COMPAT.md#streaming-wire-events).
 
 ## How to add an entry
 

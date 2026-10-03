@@ -34,10 +34,10 @@ Numbered from core path → extended usage. Live OpenAI-compatible API (not `Scr
 Required env: `OPENAI_API_KEY`, `OPENAI_MODEL`.  
 Optional: `OPENAI_BASE_URL`, `OPENAI_API` (`chat_completions` | `responses`).
 
-The crate default is the **Responses** API, matching `set_default_openai_api()` in Python. The
+The crate default is the **Responses** API, matching `set_default_openai_api()` in Python. Both
+APIs stream standard Responses wire events such as `response.output_text.delta` (D-011); the
 example harness below defaults `OPENAI_API` to `chat_completions` because most OpenAI-compatible
-gateways implement Chat Completions SSE first (see D-011); set `OPENAI_API=responses` to use the
-Responses API.
+gateways implement Chat Completions SSE first. Set `OPENAI_API=responses` to use the Responses API.
 
 | # | Example | What it shows |
 |---|---------|----------------|
@@ -97,13 +97,15 @@ machine that has `openai-agents==0.23.1` installed.
 - [`docs/DEVIATIONS.md`](./docs/DEVIATIONS.md) — intentional differences from Python (must stay current)
 - [`docs/CONTRIBUTING.md`](./docs/CONTRIBUTING.md) — commit message format and verification
 
+HITL is supported: `needs_approval` (fixed or dynamic), `RunState` approve/reject, sticky
+`always_approve` / `always_reject`, and `Agent.as_tool` nested approvals. The Rust `RunState` JSON
+schema `openai-agents-rust/2` is a process-local snapshot format and is intentionally **not**
+Python 1.18 wire-compatible (D-012) — use one language per durable state store.
+
 ## Still out of scope
 
 MCP, sessions, hosted tools (web search / file search / computer / shell / apply_patch), sandbox,
-OpenAI trace cloud export, and token-level Responses streaming (D-011).
-
-HITL (`needs_approval` / `RunState` / `Agent.as_tool` nested approvals) is supported — the Rust
-`RunState` JSON schema `openai-agents-rust/2` is not Python 1.18 wire-compatible (D-012).
+and OpenAI trace cloud export.
 
 ## License
 

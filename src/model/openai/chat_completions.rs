@@ -5,12 +5,15 @@ use serde_json::{json, Value};
 
 use crate::error::ModelError;
 use crate::items::{ItemHelpers, ModelResponse, ResponseOutputItem};
+use crate::model::wire_events::{
+    emit_response_stream, now_seconds, response_object, WireEventEmitter, FAKE_RESPONSES_ID,
+};
 use crate::model::{Model, ModelRequest};
 use crate::usage::Usage;
 
 use super::{
-    apply_model_settings_chat, decorate_request, map_transport, merge_usage, tools_as_chat,
-    OpenAiEndpoint,
+    apply_model_settings_chat, decorate_request, is_json_response, map_transport, merge_usage,
+    tools_as_chat, OpenAiEndpoint, SseReader,
 };
 
 /// OpenAI Chat Completions model (Python: `OpenAIChatCompletionsModel`).
@@ -111,68 +114,35 @@ impl Model for OpenAIChatCompletionsModel {
         }
 
         // Wiremock / non-SSE providers may still return a full JSON body.
-        let content_type = resp
-            .headers()
-            .get(reqwest::header::CONTENT_TYPE)
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("")
-            .to_ascii_lowercase();
-        if content_type.contains("application/json") {
+        if is_json_response(&resp) {
             let payload: Value = resp.json().await.map_err(map_transport)?;
             let response = chat_payload_to_model_response(payload)?;
-            for item in &response.output {
-                if let Some(text) = crate::items::extract_message_text(item) {
-                    let _ = raw_tx
-                        .send(json!({
-                            "type": "output_text.delta",
-                            "delta": text,
-                        }))
-                        .await;
-                }
-            }
-            let _ = raw_tx
-                .send(json!({
-                    "type": "response.completed",
-                    "response_id": response.response_id,
-                    "output": response.output,
-                }))
-                .await;
+            let wire = response_object(
+                response.response_id.as_deref().unwrap_or(FAKE_RESPONSES_ID),
+                &self.model,
+                "completed",
+                now_seconds(),
+                &response.output,
+                &response.usage,
+                "auto",
+            );
+            emit_response_stream(&raw_tx, wire).await;
             return Ok(response);
         }
 
         use futures::StreamExt;
         let mut byte_stream = resp.bytes_stream();
-        let mut buffer = String::new();
+        let mut reader = SseReader::new();
+        let mut emitter = WireEventEmitter::new(&raw_tx);
+        let mut layout = ChatStreamLayout::default();
         let mut response_id: Option<String> = None;
-        let mut text = String::new();
-        // index -> (id, name, arguments)
-        let mut tool_calls: std::collections::BTreeMap<usize, (String, String, String)> =
-            std::collections::BTreeMap::new();
         let mut usage: Option<(u64, u64)> = None;
 
         while let Some(chunk) = byte_stream.next().await {
             let chunk = chunk.map_err(map_transport)?;
-            buffer.push_str(&String::from_utf8_lossy(&chunk));
-            while let Some(pos) = buffer.find('\n') {
-                let mut line = buffer[..pos].to_string();
-                buffer.drain(..=pos);
-                if line.ends_with('\r') {
-                    line.pop();
-                }
-                let line = line.trim();
-                if line.is_empty() {
-                    continue;
-                }
-                let Some(data) = line.strip_prefix("data:") else {
-                    continue;
-                };
-                let data = data.trim();
-                if data == "[DONE]" {
-                    continue;
-                }
-                let payload: Value = serde_json::from_str(data).map_err(|e| {
-                    ModelError::Behavior(format!("invalid SSE JSON: {e}; data={data}"))
-                })?;
+            reader.feed(&chunk);
+            while let Some(event) = reader.next_event() {
+                let payload = event?;
 
                 if response_id.is_none() {
                     response_id = payload
@@ -180,6 +150,9 @@ impl Model for OpenAIChatCompletionsModel {
                         .and_then(|i| i.as_str())
                         .map(str::to_string);
                 }
+                layout
+                    .ensure_created(&mut emitter, &self.model, response_id.as_deref())
+                    .await;
 
                 if let Some(u) = payload.get("usage") {
                     let input = u.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
@@ -195,84 +168,330 @@ impl Model for OpenAIChatCompletionsModel {
                     .cloned()
                     .unwrap_or(Value::Null);
 
-                // DeepSeek / some gateways stream chain-of-thought as
-                // `reasoning_content` before visible `content`.
+                // DeepSeek / some gateways stream chain-of-thought as `reasoning_content`
+                // before the visible `content` (Python: reasoning summary path).
                 if let Some(reasoning) = delta.get("reasoning_content").and_then(|c| c.as_str()) {
                     if !reasoning.is_empty() {
-                        let _ = raw_tx
-                            .send(json!({
-                                "type": "reasoning_text.delta",
-                                "delta": reasoning,
-                            }))
+                        layout.open_reasoning_summary(&mut emitter).await;
+                        emitter
+                            .reasoning_summary_text_delta(FAKE_RESPONSES_ID, 0, 0, reasoning)
                             .await;
+                        layout.reasoning_summary.push_str(reasoning);
+                    }
+                }
+
+                // Third-party gateways expose raw CoT as `reasoning` (Python: content path).
+                if let Some(reasoning) = delta.get("reasoning").and_then(|c| c.as_str()) {
+                    if !reasoning.is_empty() {
+                        layout.open_reasoning_content(&mut emitter).await;
+                        emitter
+                            .reasoning_text_delta(FAKE_RESPONSES_ID, 0, 0, reasoning)
+                            .await;
+                        layout.reasoning_content.push_str(reasoning);
                     }
                 }
 
                 if let Some(content) = delta.get("content").and_then(|c| c.as_str()) {
                     if !content.is_empty() {
-                        text.push_str(content);
-                        let _ = raw_tx
-                            .send(json!({
-                                "type": "output_text.delta",
-                                "delta": content,
-                            }))
+                        layout.open_message(&mut emitter).await;
+                        let index = layout.message_index();
+                        emitter
+                            .text_delta(FAKE_RESPONSES_ID, index, 0, content)
                             .await;
+                        layout.text.push_str(content);
                     }
                 }
 
                 if let Some(tcs) = delta.get("tool_calls").and_then(|t| t.as_array()) {
                     for tc in tcs {
                         let idx = tc.get("index").and_then(|i| i.as_u64()).unwrap_or(0) as usize;
-                        let entry = tool_calls.entry(idx).or_insert_with(|| {
-                            (
-                                String::new(),
-                                String::new(),
-                                String::new(),
-                            )
-                        });
                         if let Some(id) = tc.get("id").and_then(|i| i.as_str()) {
                             if !id.is_empty() {
-                                entry.0 = id.to_string();
+                                layout.call_id(idx, id);
                             }
                         }
                         if let Some(name) = tc.pointer("/function/name").and_then(|n| n.as_str()) {
                             if !name.is_empty() {
-                                entry.1.push_str(name);
+                                layout.call_name(idx, name);
                             }
                         }
                         if let Some(args) =
                             tc.pointer("/function/arguments").and_then(|a| a.as_str())
                         {
-                            entry.2.push_str(args);
+                            if !args.is_empty() {
+                                layout.call_arguments(idx, args);
+                                let index = layout.register_call(&mut emitter, idx).await;
+                                emitter
+                                    .function_call_arguments_delta(FAKE_RESPONSES_ID, index, args)
+                                    .await;
+                            }
                         }
+                        // A tool call can arrive without an arguments delta.
+                        let _ = layout.register_call(&mut emitter, idx).await;
                     }
                 }
             }
         }
 
-        let mut output: Vec<ResponseOutputItem> = Vec::new();
-        for (id, name, arguments) in tool_calls.into_values() {
-            let id = if id.is_empty() { "call".to_string() } else { id };
-            output.push(ItemHelpers::function_tool_call(name, arguments, id));
-        }
-        if !text.is_empty() {
-            output.push(ItemHelpers::text_message(text));
+        // Finalize: `done` events, then the terminal `response.completed`.
+        let mut tagged: Vec<(usize, Value)> = Vec::new();
+
+        if layout.reasoning_open {
+            let mut summary: Vec<Value> = Vec::new();
+            if layout.reasoning_summary_open {
+                emitter
+                    .reasoning_summary_text_done(FAKE_RESPONSES_ID, 0, 0, &layout.reasoning_summary)
+                    .await;
+                emitter
+                    .reasoning_summary_part_done(FAKE_RESPONSES_ID, 0, 0, &layout.reasoning_summary)
+                    .await;
+                summary.push(json!({"type": "summary_text", "text": layout.reasoning_summary}));
+            }
+            let mut content: Vec<Value> = Vec::new();
+            if layout.reasoning_content_open {
+                emitter
+                    .reasoning_text_done(FAKE_RESPONSES_ID, 0, 0, &layout.reasoning_content)
+                    .await;
+                content.push(json!({"type": "reasoning_text", "text": layout.reasoning_content}));
+            }
+            let item = json!({
+                "id": FAKE_RESPONSES_ID,
+                "type": "reasoning",
+                "summary": summary,
+                "content": content,
+            });
+            emitter.output_item_done(0, item.clone()).await;
+            tagged.push((0, item));
         }
 
+        if layout.message_open {
+            let index = layout.message_index();
+            let part = json!({
+                "type": "output_text",
+                "text": layout.text,
+                "annotations": [],
+                "logprobs": [],
+            });
+            emitter
+                .content_part_done(FAKE_RESPONSES_ID, index, 0, part.clone())
+                .await;
+            let item = json!({
+                "id": FAKE_RESPONSES_ID,
+                "type": "message",
+                "role": "assistant",
+                "status": "completed",
+                "content": [part],
+            });
+            emitter.output_item_done(index, item.clone()).await;
+            tagged.push((index, item));
+        }
+
+        for (_, call) in layout.calls.iter() {
+            let call_id = if call.id.is_empty() {
+                "call".to_string()
+            } else {
+                call.id.clone()
+            };
+            let item = json!({
+                "id": FAKE_RESPONSES_ID,
+                "type": "function_call",
+                "name": call.name,
+                "arguments": call.arguments,
+                "call_id": call_id,
+            });
+            emitter
+                .output_item_done(call.output_index, item.clone())
+                .await;
+            tagged.push((call.output_index, item));
+        }
+
+        tagged.sort_by_key(|(index, _)| *index);
+        let output: Vec<ResponseOutputItem> = tagged.into_iter().map(|(_, item)| item).collect();
+        let id = response_id
+            .clone()
+            .unwrap_or_else(|| FAKE_RESPONSES_ID.to_string());
         let response = ModelResponse {
-            output,
+            output: output.clone(),
             usage: merge_usage(usage),
             response_id,
             request_id: None,
         };
-        let _ = raw_tx
-            .send(json!({
-                "type": "response.completed",
-                "response_id": response.response_id,
-                "output": response.output,
-            }))
-            .await;
+        let wire = response_object(
+            &id,
+            &self.model,
+            "completed",
+            now_seconds(),
+            &output,
+            &response.usage,
+            "auto",
+        );
+        emitter.completed(wire).await;
         Ok(response)
+    }
+}
+
+/// One synthesized tool call.
+#[derive(Debug, Default, Clone)]
+struct ChatCall {
+    id: String,
+    name: String,
+    arguments: String,
+    output_index: usize,
+    /// `output_item.added` already emitted.
+    announced: bool,
+}
+
+/// Output-index bookkeeping and lazy event emission for the synthesized stream
+/// (Python: `chatcmpl_stream_handler._StreamOutputLayout` + `StreamingState`).
+#[derive(Debug, Default)]
+struct ChatStreamLayout {
+    created: bool,
+    reasoning_open: bool,
+    reasoning_summary_open: bool,
+    reasoning_content_open: bool,
+    reasoning_summary: String,
+    reasoning_content: String,
+    message_open: bool,
+    message_index: Option<usize>,
+    text: String,
+    calls: std::collections::BTreeMap<usize, ChatCall>,
+}
+
+impl ChatStreamLayout {
+    /// `response.created` precedes every output item (Python: emitted once, up front).
+    async fn ensure_created(
+        &mut self,
+        emitter: &mut WireEventEmitter<'_>,
+        model: &str,
+        response_id: Option<&str>,
+    ) {
+        if self.created {
+            return;
+        }
+        self.created = true;
+        let response = response_object(
+            response_id.unwrap_or(FAKE_RESPONSES_ID),
+            model,
+            "in_progress",
+            now_seconds(),
+            &[],
+            &Usage::default(),
+            "auto",
+        );
+        emitter.created(response).await;
+    }
+
+    /// The reasoning item always occupies output index 0 (Python: `_reasoning_output_count`).
+    async fn open_reasoning(&mut self, emitter: &mut WireEventEmitter<'_>) {
+        if self.reasoning_open {
+            return;
+        }
+        self.reasoning_open = true;
+        emitter
+            .output_item_added(
+                0,
+                json!({"id": FAKE_RESPONSES_ID, "type": "reasoning", "summary": [], "content": []}),
+            )
+            .await;
+    }
+
+    async fn open_reasoning_summary(&mut self, emitter: &mut WireEventEmitter<'_>) {
+        self.open_reasoning(emitter).await;
+        if self.reasoning_summary_open {
+            return;
+        }
+        self.reasoning_summary_open = true;
+        emitter
+            .reasoning_summary_part_added(FAKE_RESPONSES_ID, 0, 0)
+            .await;
+    }
+
+    async fn open_reasoning_content(&mut self, emitter: &mut WireEventEmitter<'_>) {
+        self.open_reasoning(emitter).await;
+        self.reasoning_content_open = true;
+    }
+
+    async fn open_message(&mut self, emitter: &mut WireEventEmitter<'_>) {
+        if self.message_open {
+            return;
+        }
+        // Python: reasoning takes index 0, then every tool call known at this point.
+        let index = usize::from(self.reasoning_open) + self.calls.len();
+        self.message_open = true;
+        self.message_index = Some(index);
+        emitter
+            .output_item_added(
+                index,
+                json!({
+                    "id": FAKE_RESPONSES_ID,
+                    "type": "message",
+                    "role": "assistant",
+                    "status": "in_progress",
+                    "content": [],
+                }),
+            )
+            .await;
+        emitter
+            .content_part_added(
+                FAKE_RESPONSES_ID,
+                index,
+                0,
+                json!({"type": "output_text", "text": "", "annotations": [], "logprobs": []}),
+            )
+            .await;
+    }
+
+    fn message_index(&self) -> usize {
+        self.message_index.unwrap_or(0)
+    }
+
+    fn call(&mut self, index: usize) -> &mut ChatCall {
+        self.calls.entry(index).or_default()
+    }
+
+    fn call_id(&mut self, index: usize, id: &str) {
+        self.call(index).id.push_str(id);
+    }
+
+    fn call_name(&mut self, index: usize, name: &str) {
+        self.call(index).name.push_str(name);
+    }
+
+    fn call_arguments(&mut self, index: usize, arguments: &str) {
+        self.call(index).arguments.push_str(arguments);
+    }
+
+    /// Announce the call once (`output_item.added`) and return its output index.
+    ///
+    /// Python: `function_call_output_index` = reasoning slot + position in insertion order.
+    async fn register_call(&mut self, emitter: &mut WireEventEmitter<'_>, index: usize) -> usize {
+        if let Some(call) = self.calls.get(&index) {
+            if call.announced {
+                return call.output_index;
+            }
+        }
+        let announced = self.calls.values().filter(|c| c.announced).count();
+        let output_index = usize::from(self.reasoning_open) + announced;
+        let (id, name) = {
+            let call = self.calls.entry(index).or_default();
+            call.output_index = output_index;
+            call.announced = true;
+            (call.id.clone(), call.name.clone())
+        };
+        emitter
+            .output_item_added(
+                output_index,
+                json!({
+                    "id": FAKE_RESPONSES_ID,
+                    "type": "function_call",
+                    "name": name,
+                    "arguments": "",
+                    "call_id": id,
+                    "status": "in_progress",
+                }),
+            )
+            .await;
+        output_index
     }
 }
 
