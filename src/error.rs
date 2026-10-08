@@ -129,20 +129,98 @@ pub struct MaxTurnsExceeded {
 }
 
 /// Model-layer errors.
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Clone)]
 pub enum ModelError {
     /// Scripted model ran out of steps or received an unexpected call.
     #[error("model script error: {0}")]
     Script(String),
-    /// HTTP / transport failure.
+    /// HTTP / transport failure without more structure (for example an undecodable body).
     #[error("model transport error: {0}")]
     Transport(String),
+    /// The provider answered with a non-success HTTP status.
+    #[error("model transport error: {0}")]
+    Status(ModelStatusError),
+    /// The request never produced a response: connection, TLS, timeout or body-read failure.
+    #[error("model transport error: {0}")]
+    Connection(ModelConnectionError),
+    /// One model attempt exceeded `ModelSettings.timeout` (Python: `ModelTimeoutError`).
+    #[error(transparent)]
+    Timeout(ModelTimeoutError),
     /// Provider returned an unusable payload.
     #[error("model behavior error: {0}")]
     Behavior(String),
     /// Feature or API not available in this build.
     #[error("unsupported: {0}")]
     Unsupported(String),
+}
+
+/// A non-success HTTP answer from the provider (Python: `openai.APIStatusError`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModelStatusError {
+    /// HTTP status code.
+    pub status_code: u16,
+    /// Human-readable message (status and body).
+    pub message: String,
+    /// Parsed JSON body, or the raw text as a string.
+    pub body: serde_json::Value,
+    /// Response headers, names lower-cased.
+    pub headers: std::collections::BTreeMap<String, String>,
+}
+
+impl std::fmt::Display for ModelStatusError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl ModelStatusError {
+    /// A response header by case-insensitive name.
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .get(&name.to_ascii_lowercase())
+            .map(String::as_str)
+    }
+
+    /// The provider's error code (`body.error.code`, falling back to `body.code`).
+    pub fn error_code(&self) -> Option<&str> {
+        self.body
+            .pointer("/error/code")
+            .or_else(|| self.body.get("code"))
+            .and_then(serde_json::Value::as_str)
+    }
+
+    /// The provider's request id (`x-request-id`).
+    pub fn request_id(&self) -> Option<&str> {
+        self.header("x-request-id")
+    }
+
+    /// Seconds the provider asked the client to wait (`retry-after-ms`, then `retry-after`).
+    pub fn retry_after(&self) -> Option<f64> {
+        crate::retry::retry_after_from_headers(self.header("retry-after-ms"), self.header("retry-after"))
+    }
+}
+
+/// A request that failed before an HTTP answer arrived (Python: `openai.APIConnectionError`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelConnectionError {
+    /// Human-readable message.
+    pub message: String,
+    /// Whether the transport timed out (Python: `APITimeoutError`).
+    pub is_timeout: bool,
+}
+
+impl std::fmt::Display for ModelConnectionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+/// One model attempt exceeded its timeout (Python: `ModelTimeoutError`).
+#[derive(Debug, Error, Clone, PartialEq)]
+#[error("Model call timed out after {timeout_seconds} seconds.")]
+pub struct ModelTimeoutError {
+    /// The configured timeout.
+    pub timeout_seconds: f64,
 }
 
 /// Raised when an input guardrail trips (Python: `InputGuardrailTripwireTriggered`).

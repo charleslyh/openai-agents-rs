@@ -17,6 +17,7 @@ pub mod model;
 pub mod model_settings;
 pub(crate) mod pyjson;
 pub mod result;
+pub mod retry;
 pub mod run;
 pub mod run_context;
 pub mod run_state;
@@ -37,6 +38,7 @@ pub use agent_output::{
 };
 pub use error::{
     AgentsError, InputGuardrailTripwireTriggered, MaxTurnsExceeded, ModelError,
+    ModelConnectionError, ModelStatusError, ModelTimeoutError,
     OutputGuardrailTripwireTriggered, ToolInputGuardrailTripwireTriggered,
     ToolOutputGuardrailTripwireTriggered, ToolTimeoutError, UserError,
 };
@@ -88,6 +90,11 @@ pub use tool_guardrails::{
     ToolGuardrailBehavior, ToolGuardrailFunctionOutput, ToolInputGuardrail, ToolInputGuardrailData,
     ToolInputGuardrailResult, ToolOutputGuardrail, ToolOutputGuardrailData,
     ToolOutputGuardrailResult,
+};
+pub use retry::{
+    retry_policies, ModelRetryAdvice, ModelRetryAdviceRequest, ModelRetryBackoffSettings,
+    ModelRetryNormalizedError, ModelRetrySettings, ReplaySafety, RetryDecision, RetryPolicy,
+    RetryPolicyContext,
 };
 pub use usage::{InputTokensDetails, OutputTokensDetails, RequestUsage, Usage};
 

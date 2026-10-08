@@ -149,6 +149,8 @@ pub struct ModelSettings {
     pub extra_args: Option<Map<String, Value>>,
     /// Per-attempt timeout in seconds.
     pub timeout: Option<f32>,
+    /// Opt-in runner-managed retries for model calls (Python: `ModelSettings.retry`).
+    pub retry: Option<crate::retry::ModelRetrySettings>,
 }
 
 impl ModelSettings {
@@ -190,6 +192,12 @@ impl ModelSettings {
             extra_headers,
             timeout,
         );
+        // Python merges `retry` field by field (`_merge_retry_settings`).
+        out.retry = match (&self.retry, &o.retry) {
+            (None, over) => over.clone(),
+            (Some(base), None) => Some(base.clone()),
+            (Some(base), Some(over)) => Some(base.merged_with(over)),
+        };
         // Python merges only `extra_args`; every other mapping is replaced wholesale.
         out.extra_args = merge_maps(self.extra_args.as_ref(), o.extra_args.as_ref());
         out

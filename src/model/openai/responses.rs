@@ -14,7 +14,7 @@ use crate::model::wire_events::{
 use crate::model::{Model, ModelRequest};
 
 use super::{
-    apply_model_settings_responses, decorate_request, is_json_response, map_transport,
+    apply_model_settings_responses, decorate_request, is_json_response, map_reqwest, map_transport, status_error,
     tools_as_responses, OpenAiEndpoint, SseReader,
 };
 
@@ -44,6 +44,13 @@ impl OpenAIResponsesModel {
 
 #[async_trait]
 impl Model for OpenAIResponsesModel {
+    fn get_retry_advice(
+        &self,
+        request: &crate::retry::ModelRetryAdviceRequest,
+    ) -> Option<crate::retry::ModelRetryAdvice> {
+        crate::retry::openai_retry_advice(request)
+    }
+
     async fn get_response(&self, request: ModelRequest<'_>) -> Result<ModelResponse, ModelError> {
         let body = build_responses_body(&self.model, &request)?;
 
@@ -55,15 +62,12 @@ impl Model for OpenAIResponsesModel {
         .json(&body)
         .send()
         .await
-        .map_err(map_transport)?;
+        .map_err(map_reqwest)?;
 
-        let status = resp.status();
-        let payload: Value = resp.json().await.map_err(map_transport)?;
-        if !status.is_success() {
-            return Err(ModelError::Transport(format!(
-                "responses status={status} body={payload}"
-            )));
+        if !resp.status().is_success() {
+            return Err(status_error("responses", resp).await);
         }
+        let payload: Value = resp.json().await.map_err(map_reqwest)?;
 
         responses_payload_to_model_response(payload)
     }
@@ -90,19 +94,15 @@ impl Model for OpenAIResponsesModel {
         .json(&body)
         .send()
         .await
-        .map_err(map_transport)?;
+        .map_err(map_reqwest)?;
 
-        let status = resp.status();
-        if !status.is_success() {
-            let payload: Value = resp.json().await.unwrap_or(Value::Null);
-            return Err(ModelError::Transport(format!(
-                "responses stream status={status} body={payload}"
-            )));
+        if !resp.status().is_success() {
+            return Err(status_error("responses stream", resp).await);
         }
 
         // Wiremock / non-SSE providers may still return a full JSON body.
         if is_json_response(&resp) {
-            let payload: Value = resp.json().await.map_err(map_transport)?;
+            let payload: Value = resp.json().await.map_err(map_reqwest)?;
             let response = responses_payload_to_model_response(payload)?;
             let wire = response_object(
                 response.response_id.as_deref().unwrap_or(FAKE_RESPONSES_ID),
@@ -129,7 +129,7 @@ impl Model for OpenAIResponsesModel {
         let mut last_sequence: Option<u64> = None;
 
         while let Some(chunk) = byte_stream.next().await {
-            let chunk = chunk.map_err(map_transport)?;
+            let chunk = chunk.map_err(map_reqwest)?;
             reader.feed(&chunk);
             while let Some(event) = reader.next_event() {
                 let event = event?;

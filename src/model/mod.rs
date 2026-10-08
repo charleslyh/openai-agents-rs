@@ -154,6 +154,15 @@ pub trait Model: Send + Sync {
     /// Get a complete model response (non-streaming).
     async fn get_response(&self, request: ModelRequest<'_>) -> Result<ModelResponse, ModelError>;
 
+    /// Provider guidance about a failed call, used by retry policies
+    /// (Python: `Model.get_retry_advice`). `None` means the adapter has no opinion.
+    fn get_retry_advice(
+        &self,
+        _request: &crate::retry::ModelRetryAdviceRequest,
+    ) -> Option<crate::retry::ModelRetryAdvice> {
+        None
+    }
+
     /// Stream standard Responses API wire events, then return the assembled response.
     ///
     /// Default: call [`Self::get_response`] and replay the result as the standard event sequence
