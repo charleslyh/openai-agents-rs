@@ -234,7 +234,7 @@ fn build_responses_body(model: &str, request: &ModelRequest<'_>) -> Result<Value
         body["text"] = json!({
             "format": {
                 "type": "json_schema",
-                "name": schema.name(),
+                "name": "final_output",
                 "schema": schema.json_schema().map_err(map_transport)?,
                 "strict": schema.is_strict_json_schema(),
             }

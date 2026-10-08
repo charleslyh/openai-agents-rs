@@ -41,7 +41,8 @@ Legend: **X** = out of scope (OpenAI-hosted) · **S** = supported · **P** = par
 |------------|--------|-------|
 | `Model` trait (`get_response` / `stream_response`) | S | `stream_response` emits Responses wire events (D-011) |
 | OpenAI Responses API model | S | via `async-openai` config + raw HTTP; real SSE, events forwarded verbatim (D-011) |
-| OpenAI Chat Completions model | S | real SSE; chunks are synthesized into Responses wire events (D-011) |
+| OpenAI Chat Completions model | S | real SSE; chunks are synthesized into Responses wire events (D-011); converters checked against Python, tolerant of non-conforming servers (D-040) |
+| Third-party servers (base URL + key) | S | `stream_options` opt-in, DeepSeek reasoning replay, generated tool call ids, `finish_reason` handling (D-040) |
 | Default API = Responses | S | `set_default_openai_api` |
 | `ModelProvider` / `MultiProvider` | S | `prefix/model` routing, default prefix `openai` |
 | `OpenAIProvider` | S | Reads `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL`; caches per name |
@@ -68,7 +69,7 @@ from the provider, **S** = synthesized by the adapter, **N** = not emitted.
 | `response.function_call_arguments.delta` | F | S | S |
 | `response.function_call_arguments.done` | F | N | S |
 | `response.completed` | F | S | S |
-| `response.refusal.*` | F | N | N |
+| `response.refusal.delta` / `.done` | F | S (from `delta.refusal`) | N |
 | `response.output_text.annotation.added` | F | N | N |
 | MCP / hosted-tool events | F | N | N (hosted tools not planned, D-006) |
 | `sequence_number` | forwarded as-is | synthesized, 0-based | synthesized, 0-based |
