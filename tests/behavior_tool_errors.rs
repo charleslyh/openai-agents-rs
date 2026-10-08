@@ -310,3 +310,71 @@ async fn run_level_handoff_filter_and_server_managed_conversation() {
     let err = Runner::run(&build(), "hi", options).await.unwrap_err();
     assert!(matches!(err, AgentsError::User(_)), "{err}");
 }
+
+/// D-003: `on_handoff` runs with the parsed arguments and the schema reaches the model.
+#[tokio::test]
+async fn on_handoff_receives_parsed_input_and_schema_is_advertised() {
+    let seen = Arc::new(std::sync::Mutex::new(None::<Value>));
+    let sink = Arc::clone(&seen);
+    let b = Agent::new("B").model(Arc::new(ScriptedModel::new([ModelStep::from(
+        ItemHelpers::text_message("b"),
+    )])));
+    let schema = json!({
+        "type": "object",
+        "properties": {"reason": {"type": "string"}},
+        "required": ["reason"]
+    });
+    let h = handoff(b)
+        .with_on_handoff_input(schema, move |_ctx, input| {
+            let sink = Arc::clone(&sink);
+            async move {
+                *sink.lock().unwrap() = Some(input);
+                Ok(())
+            }
+        })
+        .expect("schema");
+    let tool_name = h.tool_name.clone();
+    let a_model = Arc::new(ScriptedModel::new([ModelStep::from(
+        ItemHelpers::function_tool_call(tool_name, r#"{"reason":"billing"}"#, "h1"),
+    )]));
+    let a = Agent::new("A").model(a_model.clone()).handoffs(vec![h]);
+    Runner::run(&a, "hi", RunOptions::default()).await.expect("run");
+    assert_eq!(*seen.lock().unwrap(), Some(json!({"reason": "billing"})));
+}
+
+#[tokio::test]
+async fn on_handoff_without_input_runs_and_bad_json_is_behavior_error() {
+    let called = Arc::new(AtomicUsize::new(0));
+    let c = Arc::clone(&called);
+    let b = Agent::new("B").model(Arc::new(ScriptedModel::new([ModelStep::from(
+        ItemHelpers::text_message("b"),
+    )])));
+    let h = handoff(b).with_on_handoff(move |_ctx| {
+        let c = Arc::clone(&c);
+        async move {
+            c.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    });
+    let name = h.tool_name.clone();
+    let a = Agent::new("A")
+        .model(Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::function_tool_call(
+            name, "{}", "h1",
+        ))])))
+        .handoffs(vec![h]);
+    Runner::run(&a, "hi", RunOptions::default()).await.expect("run");
+    assert_eq!(called.load(Ordering::SeqCst), 1);
+
+    let b2 = Agent::new("B2").model(Arc::new(ScriptedModel::new([])));
+    let h2 = handoff(b2)
+        .with_on_handoff_input(json!({"type": "object", "properties": {}}), |_c, _i| async { Ok(()) })
+        .unwrap();
+    let name2 = h2.tool_name.clone();
+    let a2 = Agent::new("A2")
+        .model(Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::function_tool_call(
+            name2, "not json", "h1",
+        ))])))
+        .handoffs(vec![h2]);
+    let err = Runner::run(&a2, "hi", RunOptions::default()).await.unwrap_err();
+    assert!(matches!(err, AgentsError::Model(ModelError::Behavior(_))), "{err}");
+}
