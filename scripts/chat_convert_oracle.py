@@ -21,21 +21,23 @@ logging.disable(logging.CRITICAL)
 
 def convert_items(case: dict) -> object:
     try:
-        return Converter.items_to_messages(case["items"], model=case.get("model"))
+        return Converter.items_to_messages(
+            case["items"],
+            model=case.get("model"),
+            preserve_thinking_blocks=case.get("preserve_thinking_blocks", False),
+        )
     except Exception as exc:  # noqa: BLE001 - the exception class is the observable contract
         return {"error": type(exc).__name__}
 
 
 def convert_message(case: dict) -> object:
     try:
-        items = Converter.message_to_output_items(ChatCompletionMessage(**case["message"]))
+        items = Converter.message_to_output_items(
+            ChatCompletionMessage(**case["message"]), provider_data=case.get("provider_data")
+        )
     except Exception as exc:  # noqa: BLE001
         return {"error": type(exc).__name__}
-    dumped = [item.model_dump(exclude_none=True) for item in items]
-    # `provider_data` carries LiteLLM / Gemini bookkeeping the Rust port does not produce.
-    for item in dumped:
-        item.pop("provider_data", None)
-    return dumped
+    return [item.model_dump(exclude_none=True) for item in items]
 
 
 def main() -> None:

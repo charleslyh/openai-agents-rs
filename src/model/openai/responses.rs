@@ -220,8 +220,32 @@ impl Model for OpenAIResponsesModel {
     }
 }
 
+/// Make items that another provider produced acceptable to a Responses server (Python:
+/// `_remove_openai_responses_api_incompatible_fields`): the placeholder id Chat Completions
+/// items carry is dropped, `provider_data` bookkeeping is removed, and reasoning that came from
+/// another provider is left out entirely, since its content only means something to that model.
+fn remove_incompatible_fields(items: Vec<Value>) -> Vec<Value> {
+    items
+        .into_iter()
+        .filter_map(|mut item| {
+            let Some(map) = item.as_object_mut() else { return Some(item) };
+            let has_provider_data = map.get("provider_data").is_some_and(|d| {
+                !d.is_null() && d.as_object().map_or(true, |o| !o.is_empty())
+            });
+            if map.get("type").and_then(Value::as_str) == Some("reasoning") && has_provider_data {
+                return None;
+            }
+            if map.get("id").and_then(Value::as_str) == Some(FAKE_RESPONSES_ID) {
+                map.remove("id");
+            }
+            map.remove("provider_data");
+            Some(item)
+        })
+        .collect()
+}
+
 fn build_responses_body(model: &str, request: &ModelRequest<'_>) -> Result<Value, ModelError> {
-    let input_items = request.input.to_owned_items();
+    let input_items = remove_incompatible_fields(request.input.to_owned_items());
     let mut body = json!({
         "model": model,
         "input": input_items,
