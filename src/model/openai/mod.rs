@@ -16,7 +16,6 @@ use crate::model::provider::ModelProvider;
 use crate::model::Model;
 use crate::model_settings::ModelSettings;
 use crate::tool::FunctionTool;
-use crate::usage::Usage;
 
 /// Resolves OpenAI model names into [`Model`] instances (Python: `OpenAIProvider`).
 ///
@@ -174,13 +173,6 @@ impl OpenAiEndpoint {
     /// API key string for Authorization header.
     pub fn api_key(&self) -> &str {
         &self.api_key
-    }
-}
-
-pub(crate) fn merge_usage(usage: Option<(u64, u64)>) -> Usage {
-    match usage {
-        Some((input, output)) => Usage::from_tokens(input, output),
-        None => Usage::default(),
     }
 }
 

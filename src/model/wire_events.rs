@@ -58,7 +58,6 @@ pub(crate) fn now_seconds() -> f64 {
 /// A `Response` object as carried by `response.created` / `response.completed`.
 ///
 /// Mirrors the fields Python fills in (`openai_chatcompletions.py:760`, `testing/model.py:1183`).
-/// Token *details* are not ported (D-016).
 pub(crate) fn response_object(
     id: &str,
     model: &str,
@@ -75,11 +74,7 @@ pub(crate) fn response_object(
         "model": model,
         "status": status,
         "output": output,
-        "usage": {
-            "input_tokens": usage.input_tokens,
-            "output_tokens": usage.output_tokens,
-            "total_tokens": usage.total_tokens,
-        },
+        "usage": usage.to_responses_usage(),
         "tools": [],
         "tool_choice": tool_choice,
         "parallel_tool_calls": false,
