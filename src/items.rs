@@ -356,3 +356,33 @@ pub fn required_function_call_parts(item: &Value) -> Result<(String, String, Str
         .to_string();
     Ok((name.to_string(), arguments, call_id.to_string()))
 }
+
+/// Whether reasoning item ids are kept when run items become model input
+/// (Python: `ReasoningItemIdPolicy`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ReasoningItemIdPolicy {
+    /// Keep the ids as the provider returned them (default).
+    #[default]
+    Preserve,
+    /// Strip the `id` of reasoning items from input the runner builds.
+    Omit,
+}
+
+/// Convert an output item to input, applying `policy` (Python: `run_item_to_input_item`).
+///
+/// Only `reasoning` items change: their `id` is removed under [`ReasoningItemIdPolicy::Omit`].
+pub(crate) fn apply_reasoning_item_id_policy(
+    item: &serde_json::Value,
+    policy: Option<ReasoningItemIdPolicy>,
+) -> serde_json::Value {
+    if policy != Some(ReasoningItemIdPolicy::Omit)
+        || item.get("type").and_then(serde_json::Value::as_str) != Some("reasoning")
+    {
+        return item.clone();
+    }
+    let mut item = item.clone();
+    if let Some(map) = item.as_object_mut() {
+        map.remove("id");
+    }
+    item
+}
