@@ -43,7 +43,7 @@ Legend: **X** = out of scope (OpenAI-hosted) · **S** = supported · **P** = par
 | OpenAI Responses API model | S | via `async-openai` config + raw HTTP; real SSE, events forwarded verbatim (D-011) |
 | OpenAI Chat Completions model | S | real SSE; chunks are synthesized into Responses wire events (D-011); converters checked against Python, tolerant of non-conforming servers (D-040) |
 | Third-party servers (base URL + key) | S | `stream_options` opt-in, DeepSeek reasoning replay, generated tool call ids, `finish_reason` handling (D-040) |
-| Default API = Responses | S | `set_default_openai_api` |
+| Default API = Chat Completions (Python: Responses) | S | `set_default_openai_api`; D-I |
 | `ModelProvider` / `MultiProvider` | S | `prefix/model` routing, default prefix `openai` |
 | `OpenAIProvider` | S | Reads `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL` (the key is optional with a base URL); caches per name; API per provider, global or by host (D-I) |
 | `CompatibleProvider` | S | Provider-neutral entry: base URL, optional key, Chat Completions by default (D-013) |
