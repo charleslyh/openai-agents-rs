@@ -440,3 +440,48 @@ async fn streaming_cancel_immediate_closes_stream() {
     assert!(streamed.is_cancelled() && streamed.is_complete());
     assert_eq!(streamed.final_output(), None);
 }
+
+/// D-027: a session carries history across runs and stores each run's input and output.
+#[tokio::test]
+async fn session_carries_history_between_runs() {
+    use openai_agents::{InMemorySession, Session};
+    let model = Arc::new(ScriptedModel::new([
+        ModelStep::from(ItemHelpers::text_message("first answer")),
+        ModelStep::from(ItemHelpers::text_message("second answer")),
+    ]));
+    let agent = Agent::new("a").model(model.clone());
+    let session = InMemorySession::shared("conv-1");
+    let options = || {
+        let mut o = RunOptions::default();
+        o.session = Some(session.clone());
+        o
+    };
+
+    Runner::run(&agent, "one", options()).await.expect("run 1");
+    assert_eq!(session.get_items(None).await.unwrap().len(), 2);
+
+    let result = Runner::run(&agent, "two", options()).await.expect("run 2");
+    assert_eq!(result.final_output_as_str(), Some("second answer"));
+    let second_input = model.calls()[1].input.clone();
+    assert_eq!(second_input.as_array().map(Vec::len), Some(3), "{second_input}");
+    assert_eq!(session.get_items(None).await.unwrap().len(), 4);
+    assert_eq!(session.get_items(Some(1)).await.unwrap().len(), 1);
+    assert!(session.pop_item().await.unwrap().is_some());
+    session.clear_session().await.unwrap();
+    assert!(session.get_items(None).await.unwrap().is_empty());
+}
+
+/// D-027: failed runs are not written to the session.
+#[tokio::test]
+async fn session_is_untouched_when_the_run_fails() {
+    use openai_agents::{InMemorySession, Session};
+    let model = Arc::new(ScriptedModel::new([ModelStep::from(
+        ItemHelpers::function_tool_call("nope", "{}", "c1"),
+    )]));
+    let agent = Agent::new("a").model(model);
+    let session = InMemorySession::shared("conv-2");
+    let mut options = RunOptions::default();
+    options.session = Some(session.clone());
+    assert!(Runner::run(&agent, "go", options).await.is_err());
+    assert!(session.get_items(None).await.unwrap().is_empty());
+}

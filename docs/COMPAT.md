@@ -125,6 +125,13 @@ dictionaries are merged (`model_settings.py:273`).
 | `Agent.as_tool` nested approvals | S | Bubbles to the outer `RunState` |
 | Custom output extractor / `on_stream` | N | |
 
+## Sessions
+
+| Capability | Status | Notes |
+|------------|--------|-------|
+| `Session` trait, `InMemorySession` | S | `RunOptions.session` (D-027) |
+| `session_input_callback`, `SessionSettings`, SQLite / OpenAI-conversations sessions, compaction | N | D-027 |
+
 ## Context, guardrails, hooks
 
 | Capability | Status | Notes |
