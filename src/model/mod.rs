@@ -57,8 +57,8 @@ impl From<String> for ModelRef {
 
 /// The provider used when `RunConfig.model_provider` is not set.
 ///
-/// With the `openai` feature this routes `openai/...` (and unprefixed) names to OpenAI,
-/// honouring [`crate::get_default_openai_api`]. Without it, name resolution fails with an
+/// With the `openai` feature this routes `openai/...` (and unprefixed) names to the OpenAI
+/// protocol (Chat Completions unless changed), `openai_responses/...` to Responses, honouring [`crate::get_default_openai_api`]. Without it, name resolution fails with an
 /// actionable error.
 pub fn default_model_provider() -> Arc<dyn ModelProvider> {
     #[cfg(feature = "openai")]
@@ -70,6 +70,10 @@ pub fn default_model_provider() -> Arc<dyn ModelProvider> {
                     .register(
                         "openai_chat_completions",
                         Arc::new(provider.clone().always_chat_completions()),
+                    )
+                    .register(
+                        "openai_responses",
+                        Arc::new(provider.clone().api(crate::run::DefaultOpenAiApi::Responses)),
                     );
                 Arc::new(router)
             }

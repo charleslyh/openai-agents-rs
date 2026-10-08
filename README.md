@@ -49,8 +49,9 @@ Required env: `OPENAI_API_KEY`, `OPENAI_MODEL`.
 Optional: `OPENAI_BASE_URL`, `OPENAI_API` (`chat_completions` | `responses`).
 
 Which API a model uses (D-I): `OpenAIProvider::api(..)` / `CompatibleProvider::api(..)` first, then
-`set_default_openai_api()`, then the server: a base URL other than `api.openai.com` gets **Chat
-Completions** (what nearly every compatible server implements), OpenAI itself gets **Responses**.
+`set_default_openai_api()`, then **Chat Completions** (what nearly every compatible server
+implements) for every server, OpenAI included. Choose Responses explicitly with `.api(Responses)`,
+`set_default_openai_api(Responses)` or the `openai_responses/<model>` name prefix.
 Both APIs stream standard Responses wire events such as `response.output_text.delta` (D-011). The
 example harness reads `OPENAI_API` (`chat_completions` | `responses`) to override the choice.
 

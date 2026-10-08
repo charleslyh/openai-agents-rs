@@ -20,8 +20,8 @@ use crate::tool::FunctionTool;
 
 /// Resolves OpenAI model names into [`Model`] instances (Python: `OpenAIProvider`).
 ///
-/// The API used depends on [`crate::get_default_openai_api`]: Responses by default,
-/// Chat Completions when the default was switched.
+/// The API used depends on [`crate::get_default_openai_api`]: Chat Completions by default,
+/// Responses when the default was switched or the provider was given `.api(Responses)`.
 #[derive(Clone)]
 pub struct OpenAIProvider {
     api_key: String,
@@ -91,17 +91,9 @@ impl OpenAIProvider {
     }
 
     /// The API a model gets (D-I): the provider's own choice, else `set_default_openai_api`,
-    /// else Chat Completions for a server other than OpenAI (the protocol every compatible
-    /// server speaks; a wrong guess there fails on the first request), else Responses.
+    /// else Chat Completions.
     fn resolve_api(&self) -> crate::run::DefaultOpenAiApi {
-        use crate::run::DefaultOpenAiApi::{ChatCompletions, Responses};
-        if let Some(api) = self.api.or_else(crate::run::explicit_default_openai_api) {
-            return api;
-        }
-        match self.base_url.as_deref() {
-            Some(base) if !base.to_lowercase().contains("://api.openai.com") => ChatCompletions,
-            _ => Responses,
-        }
+        self.api.or_else(crate::run::explicit_default_openai_api).unwrap_or_default()
     }
 }
 
@@ -599,28 +591,15 @@ mod tests {
     use super::*;
     use crate::run::DefaultOpenAiApi::{ChatCompletions, Responses};
 
-    /// D-I: OpenAI itself (or no base URL) keeps Responses, any other host gets Chat
-    /// Completions, and an explicit provider choice always wins. (These cases never touch the
-    /// process-global `set_default_openai_api`.)
+    /// D-I: Chat Completions unless the provider (or `set_default_openai_api`) says otherwise,
+    /// whatever the host. (These cases never touch the process-global setting.)
     #[test]
-    fn api_defaults_follow_the_host() {
-        assert_eq!(OpenAIProvider::new("k", None, None).resolve_api(), Responses);
+    fn api_defaults_to_chat_completions() {
+        for base in [None, Some("https://api.openai.com/v1"), Some("http://localhost:8000/v1")] {
+            assert_eq!(OpenAIProvider::new("k", base, None).resolve_api(), ChatCompletions, "{base:?}");
+        }
         assert_eq!(
-            OpenAIProvider::new("k", Some("https://api.openai.com/v1"), None).resolve_api(),
-            Responses
-        );
-        assert_eq!(
-            OpenAIProvider::new("k", Some("https://API.OpenAI.com/v1"), None).resolve_api(),
-            Responses
-        );
-        assert_eq!(
-            OpenAIProvider::new("k", Some("http://localhost:8000/v1"), None).resolve_api(),
-            ChatCompletions
-        );
-        assert_eq!(
-            OpenAIProvider::new("k", Some("http://localhost:8000/v1"), None)
-                .api(Responses)
-                .resolve_api(),
+            OpenAIProvider::new("k", None, None).api(Responses).resolve_api(),
             Responses
         );
         assert_eq!(OpenAIProvider::new("k", None, None).always_chat_completions().resolve_api(), ChatCompletions);
