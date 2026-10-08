@@ -1301,3 +1301,111 @@ async fn cancel_on_drop_is_opt_in() {
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
     assert!(dropped.load(Ordering::SeqCst), "opt-in: dropping the handle stops the run");
 }
+
+/// D-036: when an output guardrail withholds a tool-derived final output, the session gets the
+/// same data-free record as the error: the turn's tool calls, every tool output replaced by the
+/// placeholder, no model messages, and nothing at all for a turn holding reasoning. Earlier turns
+/// keep their real outputs. Expected values come from the Python SDK's `SQLiteSession` runs.
+#[tokio::test]
+async fn blocked_tool_output_is_withheld_from_the_session_too() {
+    use openai_agents::{
+        GuardrailFunctionOutput, InMemorySession, OutputGuardrail, RunConfig, Session, ToolUseBehavior,
+        OUTPUT_GUARDRAIL_BLOCKED_TOOL_OUTPUT as WITHHELD,
+    };
+    let reasoning = json!({"id": "rs1", "type": "reasoning", "summary": []});
+    let call = |name: &str, id: &str| ItemHelpers::function_tool_call(name, "{}", id);
+    let run = |steps: Vec<ModelStep>, behavior: ToolUseBehavior, config: RunConfig| async move {
+        let trip = OutputGuardrail::new("g", |_c, _a, _o| async { GuardrailFunctionOutput::trip(json!("x")) });
+        let agent = Agent::new("a")
+            .model(Arc::new(ScriptedModel::new(steps)))
+            .tools(vec![
+                FunctionTool::constant("secret", "s", "TOP-SECRET"),
+                FunctionTool::constant("echo", "e", "ECHO-OK"),
+            ])
+            .tool_use_behavior(behavior)
+            .output_guardrails(vec![trip]);
+        let session = InMemorySession::shared("s");
+        let mut options = RunOptions::default();
+        options.session = Some(session.clone());
+        options.run_config = config;
+        assert!(matches!(
+            Runner::run(&agent, "go", options).await,
+            Err(AgentsError::OutputGuardrailTripwire(_))
+        ));
+        session
+            .get_items(None)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|i| {
+                let kind = i["type"].as_str().or(i["role"].as_str()).unwrap().to_string();
+                let detail = i["output"].as_str().or(i["call_id"].as_str()).unwrap_or("").to_string();
+                (kind, detail)
+            })
+            .collect::<Vec<_>>()
+    };
+    let first = ToolUseBehavior::StopOnFirstTool;
+    let pair = |kind: &str, detail: &str| (kind.to_string(), detail.to_string());
+    let withheld = |id: &str| pair("function_call_output", if id.is_empty() { WITHHELD } else { id });
+
+    let items = run(vec![ModelStep::from(call("secret", "c1"))], first.clone(), RunConfig::default()).await;
+    assert_eq!(items, [pair("user", ""), pair("function_call", "c1"), withheld("")]);
+
+    let two = ModelStep::output([call("echo", "c1"), call("secret", "c2")]);
+    let items = run(vec![two], first.clone(), RunConfig::default()).await;
+    assert_eq!(
+        items,
+        [pair("user", ""), pair("function_call", "c1"), pair("function_call", "c2"), withheld(""), withheld("")],
+        "every output of the turn is withheld, not only the final one"
+    );
+
+    let custom = RunConfig {
+        output_guardrail_blocked_message: Some(openai_agents::OutputGuardrailBlockedMessage::Text("[blocked]".into())),
+        ..RunConfig::default()
+    };
+    let items = run(vec![ModelStep::from(call("secret", "c1"))], first.clone(), custom).await;
+    assert_eq!(items[2], pair("function_call_output", "[blocked]"));
+
+    let items = run(
+        vec![ModelStep::output([ItemHelpers::text_message("thinking aloud"), call("secret", "c1")])],
+        first.clone(),
+        RunConfig::default(),
+    )
+    .await;
+    assert_eq!(items, [pair("user", ""), pair("function_call", "c1"), withheld("")], "the model's text is dropped");
+
+    let items = run(
+        vec![ModelStep::output([reasoning.clone(), call("secret", "c1")])],
+        first.clone(),
+        RunConfig::default(),
+    )
+    .await;
+    assert_eq!(items, [pair("user", "")], "a turn with reasoning is not saved");
+
+    let items = run(
+        vec![ModelStep::from(call("echo", "c0")), ModelStep::from(call("secret", "c1"))],
+        ToolUseBehavior::StopAtTools { stop_at_tool_names: vec!["secret".into()] },
+        RunConfig::default(),
+    )
+    .await;
+    assert_eq!(
+        items,
+        [
+            pair("user", ""),
+            pair("function_call", "c0"),
+            pair("function_call_output", "ECHO-OK"),
+            pair("function_call", "c1"),
+            withheld(""),
+        ],
+        "the earlier turn keeps its real output"
+    );
+
+    // Model-authored text is not withheld, and its turn is not saved when the guardrail trips.
+    let items = run(
+        vec![ModelStep::from(ItemHelpers::text_message("PLAIN"))],
+        ToolUseBehavior::RunLlmAgain,
+        RunConfig::default(),
+    )
+    .await;
+    assert_eq!(items, [pair("user", "")]);
+}
