@@ -1236,7 +1236,7 @@ async fn run_loop_inner(
         // Python re-evaluates `is_enabled` every turn; disabled tools and handoffs are hidden
         // from the model and calls to them are treated as unknown.
         let (enabled_tools, enabled_handoffs) = resolve_tool_name_collisions(
-            current_agent.enabled_tools(&context).await,
+            current_agent.all_function_tools(&context).await?,
             current_agent.enabled_handoffs(&context).await,
             options.run_config.tool_name_collision_policy,
         )?;
