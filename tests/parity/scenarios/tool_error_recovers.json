@@ -1,0 +1,52 @@
+{
+  "name": "tool_error_recovers",
+  "input": "use the failing tool",
+  "agent": {
+    "name": "assistant",
+    "instructions": null,
+    "tools": [
+      {
+        "name": "boom",
+        "description": "always fails",
+        "error": "boom failed"
+      }
+    ],
+    "tool_use_behavior": "run_llm_again"
+  },
+  "steps": [
+    {
+      "output": [
+        {
+          "id": "1",
+          "type": "function_call",
+          "name": "boom",
+          "arguments": "{}",
+          "call_id": "call-1"
+        }
+      ]
+    },
+    {
+      "output": [
+        {
+          "id": "1",
+          "type": "message",
+          "role": "assistant",
+          "status": "completed",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "recovered",
+              "annotations": [],
+              "logprobs": []
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "final_output": "recovered",
+    "raw_response_count": 2,
+    "tool_output_count": 1
+  }
+}

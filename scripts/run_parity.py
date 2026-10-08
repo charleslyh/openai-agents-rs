@@ -42,16 +42,19 @@ def _build_tools(tool_specs: list[dict]):
     for spec in tool_specs:
         name = spec["name"]
         return_value = spec.get("return_value", "ok")
+        error = spec.get("error")
 
-        def _make(rv: str):
+        def _make(rv: str, err: str | None):
             def _fn() -> str:
+                if err is not None:
+                    raise RuntimeError(err)
                 return rv
 
             return _fn
 
         tools.append(
             function_tool(
-                _make(return_value),
+                _make(return_value, error),
                 name_override=name,
                 description_override=spec.get("description", name),
             )

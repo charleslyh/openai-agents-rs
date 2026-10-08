@@ -43,6 +43,9 @@ struct ToolSpec {
     description: Option<String>,
     #[serde(default)]
     return_value: Option<String>,
+    /// When set the tool fails with this message (Python: the function raises).
+    #[serde(default)]
+    error: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -115,6 +118,21 @@ async fn parity_scenarios_match_expect_and_golden() {
             .tools
             .into_iter()
             .map(|t| {
+                if let Some(message) = t.error {
+                    return FunctionTool::new(
+                        t.name,
+                        t.description.unwrap_or_else(|| "tool".into()),
+                        serde_json::json!({
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": false
+                        }),
+                        move |_ctx, _args| {
+                            let message = message.clone();
+                            async move { Err::<Value, _>(openai_agents::AgentsError::tool(message)) }
+                        },
+                    );
+                }
                 FunctionTool::constant(
                     t.name,
                     t.description.unwrap_or_else(|| "tool".into()),
