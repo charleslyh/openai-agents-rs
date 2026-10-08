@@ -12,7 +12,7 @@ use tokio::sync::mpsc;
 
 use crate::agent::{Agent, AsToolConfig, FunctionToolResult, ToolUseBehavior};
 use crate::error::{
-    AgentsError, InputGuardrailTripwireTriggered, MaxTurnsExceeded, ModelError,
+    AgentsError, InputGuardrailTripwireTriggered, MaxTurnsExceeded, ModelError, ModelRefusalError,
     OutputGuardrailTripwireTriggered, ToolTimeoutError, UserError,
 };
 use crate::guardrail::{InputGuardrail, InputGuardrailResult, OutputGuardrail};
@@ -233,11 +233,34 @@ pub struct RunErrorData {
     pub last_agent: Arc<Agent>,
 }
 
+/// The error a run error handler is asked to turn into a final output
+/// (Python: `MaxTurnsExceeded | ModelRefusalError | ModelBehaviorError`).
+#[derive(Debug, Clone)]
+pub enum RunHandledError {
+    /// `max_turns` was exceeded.
+    MaxTurns(MaxTurnsExceeded),
+    /// The model refused to answer.
+    ModelRefusal(ModelRefusalError),
+    /// The final message did not match the structured `output_type`.
+    InvalidFinalOutput(ModelError),
+}
+
+impl RunHandledError {
+    /// The error the run raises when no handler produces an output.
+    pub fn into_error(self) -> AgentsError {
+        match self {
+            Self::MaxTurns(e) => e.into(),
+            Self::ModelRefusal(e) => e.into(),
+            Self::InvalidFinalOutput(e) => e.into(),
+        }
+    }
+}
+
 /// Input of a run error handler (Python: `RunErrorHandlerInput`).
 #[derive(Clone)]
 pub struct RunErrorHandlerInput {
     /// The error that stopped the run.
-    pub error: MaxTurnsExceeded,
+    pub error: RunHandledError,
     /// The run context.
     pub context: RunContextWrapper,
     /// The run so far.
@@ -273,11 +296,15 @@ pub type RunErrorHandler = Arc<
         + Sync,
 >;
 
-/// Error handlers keyed by error kind (Python: `RunErrorHandlers`; only `max_turns` is ported).
+/// Error handlers keyed by error kind (Python: `RunErrorHandlers`).
 #[derive(Clone, Default)]
 pub struct RunErrorHandlers {
     /// Called when `max_turns` is exceeded.
     pub max_turns: Option<RunErrorHandler>,
+    /// Called when the model refuses to answer.
+    pub model_refusal: Option<RunErrorHandler>,
+    /// Called when the final message does not match the structured `output_type`.
+    pub invalid_final_output: Option<RunErrorHandler>,
 }
 
 impl RunErrorHandlers {
@@ -292,6 +319,69 @@ impl RunErrorHandlers {
         self.max_turns = Some(Arc::new(move |input| Box::pin(f(input))));
         self
     }
+
+    /// Handle `ModelRefusalError` with an async closure.
+    pub fn on_model_refusal<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(RunErrorHandlerInput) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<Option<RunErrorHandlerResult>, AgentsError>>
+            + Send
+            + 'static,
+    {
+        self.model_refusal = Some(Arc::new(move |input| Box::pin(f(input))));
+        self
+    }
+
+    /// Handle an invalid structured final output with an async closure.
+    pub fn on_invalid_final_output<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(RunErrorHandlerInput) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<Option<RunErrorHandlerResult>, AgentsError>>
+            + Send
+            + 'static,
+    {
+        self.invalid_final_output = Some(Arc::new(move |input| Box::pin(f(input))));
+        self
+    }
+}
+
+/// Run `handler` (if any) for `error`; `None` means the error should be raised.
+async fn invoke_run_error_handler(
+    handler: Option<RunErrorHandler>,
+    error: RunHandledError,
+    context: &RunContextWrapper,
+    run_data: RunErrorData,
+) -> Result<Option<RunErrorHandlerResult>, AgentsError> {
+    match handler {
+        Some(handler) => {
+            handler(RunErrorHandlerInput {
+                error,
+                context: context.clone(),
+                run_data,
+            })
+            .await
+        }
+        None => Ok(None),
+    }
+}
+
+/// Validate a handler's output against the agent's `output_type` and, unless the handler opted
+/// out, record it as an assistant message (Python: `finalize_*_handler_output`).
+fn accept_handler_output(
+    agent: &Agent,
+    handled: RunErrorHandlerResult,
+    generated_items: &mut Vec<RunItem>,
+) -> Result<Value, AgentsError> {
+    let (final_output, text) = validate_handler_final_output(agent, handled.final_output)?;
+    if handled.include_in_history {
+        let mut message = ItemHelpers::text_message(text);
+        message["id"] = Value::String(FAKE_RESPONSES_ID.to_string());
+        generated_items.push(RunItem::Message(MessageOutputItem {
+            agent_name: agent.name.clone(),
+            raw_item: message,
+        }));
+    }
+    Ok(final_output)
 }
 
 /// SDK-side execution settings for local tool calls (Python: `ToolExecutionConfig`).
@@ -1063,9 +1153,6 @@ async fn run_loop_inner(
         }
         if turn > max_turns {
             let error = MaxTurnsExceeded { max_turns };
-            let Some(handler) = options.error_handlers.max_turns.clone() else {
-                return Err(error.into());
-            };
             // Python (`finalize_max_turns_handler_output`): validate the handler's output,
             // record it as an assistant message, then run the end hooks and output guardrails.
             let run_data = build_run_error_data(
@@ -1075,25 +1162,17 @@ async fn run_loop_inner(
                 &current_agent,
                 options.run_config.reasoning_item_id_policy,
             );
-            let handled = handler(RunErrorHandlerInput {
-                error: error.clone(),
-                context: context.clone(),
+            let Some(handled) = invoke_run_error_handler(
+                options.error_handlers.max_turns.clone(),
+                RunHandledError::MaxTurns(error.clone()),
+                &context,
                 run_data,
-            })
-            .await?;
-            let Some(handled) = handled else {
+            )
+            .await?
+            else {
                 return Err(error.into());
             };
-            let (final_output, text) =
-                validate_handler_final_output(&current_agent, handled.final_output)?;
-            if handled.include_in_history {
-                let mut message = ItemHelpers::text_message(text);
-                message["id"] = Value::String(FAKE_RESPONSES_ID.to_string());
-                generated_items.push(RunItem::Message(MessageOutputItem {
-                    agent_name: current_agent.name.clone(),
-                    raw_item: message,
-                }));
-            }
+            let final_output = accept_handler_output(&current_agent, handled, &mut generated_items)?;
             return finalize_run(
                 input,
                 generated_items,
@@ -1402,24 +1481,99 @@ async fn run_loop_inner(
         }
 
         if function_calls.is_empty() {
+            let last_message = messages
+                .iter()
+                .rev()
+                .find(|m| m.get("type").and_then(Value::as_str) == Some("message"));
             let final_text = messages
                 .iter()
                 .filter_map(|m| extract_message_text(m))
                 .collect::<Vec<_>>()
                 .join("");
-            // Python (`execute_tools_and_side_effects`): with a non-plain-text output schema the
-            // message must validate against it; otherwise the run is a model behavior error.
-            let final_output = match current_agent.output_type.as_deref() {
-                Some(schema) if !schema.is_plain_text() => {
-                    if final_text.is_empty() {
-                        return Err(ModelError::Behavior(
-                            "Model returned no final output for the structured output type.".into(),
+            // Only this response is reported to `model_refusal` / `invalid_final_output`
+            // handlers, like Python (`raw_responses=[new_response]`).
+            let error_data = |generated: &[RunItem]| {
+                build_run_error_data(
+                    &input,
+                    generated,
+                    std::slice::from_ref(&response),
+                    &current_agent,
+                    options.run_config.reasoning_item_id_policy,
+                )
+            };
+            // Python (`execute_tools_and_side_effects`): a refusal ends the turn with
+            // `ModelRefusalError` unless a `model_refusal` handler supplies the output.
+            let refusal = last_message.and_then(crate::items::extract_message_refusal);
+            let final_output = if let Some(refusal) = refusal {
+                let error = ModelRefusalError { refusal };
+                let handled = invoke_run_error_handler(
+                    options.error_handlers.model_refusal.clone(),
+                    RunHandledError::ModelRefusal(error.clone()),
+                    &context,
+                    error_data(&generated_items),
+                )
+                .await?;
+                let Some(handled) = handled else {
+                    return Err(error.into());
+                };
+                accept_handler_output(&current_agent, handled, &mut generated_items)?
+            } else {
+                match current_agent.output_type.as_deref() {
+                    Some(schema) if !schema.is_plain_text() => {
+                        let invalid = if final_text.is_empty() {
+                            ModelError::Behavior(
+                                "Model returned no final output for the structured output type."
+                                    .into(),
+                            )
+                        } else {
+                            match schema.validate_json(&final_text) {
+                                Ok(value) => {
+                                    return finalize_run(
+                                        input,
+                                        generated_items,
+                                        raw_responses,
+                                        value,
+                                        &current_agent,
+                                        max_turns,
+                                        usage,
+                                        &context,
+                                        options.hooks.as_ref(),
+                                        &options.run_config.output_guardrails,
+                                        input_guardrail_results,
+                                        None,
+                                    )
+                                    .await;
+                                }
+                                Err(error) => error,
+                            }
+                        };
+                        let handled = invoke_run_error_handler(
+                            options.error_handlers.invalid_final_output.clone(),
+                            RunHandledError::InvalidFinalOutput(invalid.clone()),
+                            &context,
+                            error_data(&generated_items),
                         )
-                        .into());
+                        .await?;
+                        match handled {
+                            Some(handled) => {
+                                accept_handler_output(&current_agent, handled, &mut generated_items)?
+                            }
+                            // Python: an empty structured answer that no handler fixes asks the
+                            // model again; an unparsable one raises.
+                            None if final_text.is_empty() => {
+                                for item in &response.output {
+                                    current_input_items.push(apply_reasoning_item_id_policy(
+                                        item,
+                                        options.run_config.reasoning_item_id_policy,
+                                    ));
+                                }
+                                continue;
+                            }
+                            None => return Err(invalid.into()),
+                        }
                     }
-                    schema.validate_json(&final_text)?
+                    _ => Value::String(final_text),
                 }
-                _ => Value::String(final_text),
             };
             return finalize_run(
                 input,

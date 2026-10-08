@@ -1,0 +1,28 @@
+{
+  "name": "refusal_raises",
+  "input": "hi",
+  "agent": {
+    "name": "assistant"
+  },
+  "steps": [
+    {
+      "output": [
+        {
+          "id": "1",
+          "type": "message",
+          "role": "assistant",
+          "status": "completed",
+          "content": [
+            {
+              "type": "refusal",
+              "refusal": "no can do"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "error": "ModelRefusalError"
+  }
+}

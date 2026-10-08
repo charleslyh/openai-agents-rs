@@ -291,6 +291,22 @@ pub fn extract_message_text(item: &Value) -> Option<String> {
     }
 }
 
+/// Concatenated refusal text of a message item, if it has any
+/// (Python: `ItemHelpers.extract_refusal`).
+pub fn extract_message_refusal(item: &Value) -> Option<String> {
+    if item.get("type").and_then(|t| t.as_str()) != Some("message") {
+        return None;
+    }
+    let refusal: String = item
+        .get("content")?
+        .as_array()?
+        .iter()
+        .filter(|part| part.get("type").and_then(|t| t.as_str()) == Some("refusal"))
+        .filter_map(|part| part.get("refusal").and_then(|r| r.as_str()))
+        .collect();
+    (!refusal.is_empty()).then_some(refusal)
+}
+
 /// True if the item is a function_call.
 pub fn is_function_call(item: &Value) -> bool {
     item.get("type").and_then(|t| t.as_str()) == Some("function_call")

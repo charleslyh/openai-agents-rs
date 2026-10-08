@@ -37,7 +37,7 @@ pub use agent_output::{
     output_schema, AgentOutputSchema, AgentOutputSchemaBase, CustomOutputSchema,
 };
 pub use error::{
-    AgentsError, InputGuardrailTripwireTriggered, MaxTurnsExceeded, ModelError,
+    AgentsError, InputGuardrailTripwireTriggered, MaxTurnsExceeded, ModelError, ModelRefusalError,
     ModelConnectionError, ModelStatusError, ModelTimeoutError,
     OutputGuardrailTripwireTriggered, ToolInputGuardrailTripwireTriggered,
     ToolOutputGuardrailTripwireTriggered, ToolTimeoutError, UserError,
@@ -69,7 +69,7 @@ pub use run::{
     CallModelData, CallModelInputFilter, ModelInputData, OutputGuardrailBlockedMessage,
     OutputGuardrailBlockedMessageArgs, OUTPUT_GUARDRAIL_BLOCKED_TOOL_OUTPUT, ToolErrorFormatter, ToolErrorFormatterArgs,
     ToolErrorKind, ToolExecutionConfig, ToolNameCollisionPolicy, RunErrorData, RunErrorHandler, RunErrorHandlerInput,
-    RunErrorHandlerResult, RunErrorHandlers,
+    RunErrorHandlerResult, RunErrorHandlers, RunHandledError,
     default_trace_include_sensitive_data, set_default_openai_api, DefaultOpenAiApi, RunConfig,
     RunOptions, Runner, ToolNotFoundBehavior, DEFAULT_MAX_TURNS,
 };

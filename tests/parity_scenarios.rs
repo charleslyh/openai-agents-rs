@@ -225,6 +225,7 @@ fn python_error_name(err: &AgentsError) -> &'static str {
         AgentsError::Model(ModelError::Behavior(_)) => "ModelBehaviorError",
         AgentsError::User(_) => "UserError",
         AgentsError::MaxTurns(_) => "MaxTurnsExceeded",
+        AgentsError::ModelRefusal(_) => "ModelRefusalError",
         AgentsError::InputGuardrailTripwire(_) => "InputGuardrailTripwireTriggered",
         AgentsError::OutputGuardrailTripwire(_) => "OutputGuardrailTripwireTriggered",
         _ => "Other",
