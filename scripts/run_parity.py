@@ -95,11 +95,15 @@ async def run_scenario(path: Path) -> dict:
     targets = []
     for target in agent_spec.get("handoffs", []):
         target_model = ScriptedModel(steps=_build_steps(target.get("steps", [])))
-        target_models.append(target_model)
+        target_models.append((target["name"], target_model))
         targets.append(_build_agent(target, target_model))
     agent = _build_agent(agent_spec, model, handoffs=targets)
     expect = scenario.get("expect", {})
     run_kwargs = {}
+    if scenario.get("run_config"):
+        from agents import RunConfig
+
+        run_kwargs["run_config"] = RunConfig(**scenario["run_config"])
     if "max_turns" in scenario:
         run_kwargs["max_turns"] = scenario["max_turns"]
     if "max_turns_handler_output" in scenario:
@@ -134,6 +138,15 @@ async def run_scenario(path: Path) -> dict:
             1 for item in result.new_items if item.type == "tool_call_output_item"
         ),
     }
+    # What each handoff target's model received on its first call: the observable contract of
+    # handoff input filtering and history nesting.
+    handoff_inputs = {
+        name: target_model.calls[0].input
+        for name, target_model in target_models
+        if target_model.calls
+    }
+    if handoff_inputs:
+        golden["handoff_inputs"] = handoff_inputs
     for key, value in expect.items():
         actual = golden.get(key)
         if key == "final_output":

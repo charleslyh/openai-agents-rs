@@ -1,0 +1,34 @@
+{
+  "name": "handoff_nested_history",
+  "final_output": "b done",
+  "raw_response_count": 3,
+  "last_agent": "B",
+  "new_item_count": 7,
+  "tool_output_count": 1,
+  "handoff_inputs": {
+    "B": [
+      {
+        "role": "assistant",
+        "content": "For context, here is the conversation so far between the user and the previous agent:\n<CONVERSATION HISTORY>\n1. user: hello\n2. {\"arguments\": \"{}\", \"call_id\": \"c1\", \"name\": \"echo\", \"type\": \"function_call\", \"id\": \"1\"}\n3. {\"call_id\": \"c1\", \"output\": \"x\", \"type\": \"function_call_output\"}\n4. {\"id\": \"r1\", \"summary\": [{\"text\": \"s\", \"type\": \"summary_text\"}], \"type\": \"reasoning\"}\n</CONVERSATION HISTORY>"
+      },
+      {
+        "id": "1",
+        "content": [
+          {
+            "annotations": [],
+            "text": "thinking",
+            "type": "output_text",
+            "logprobs": []
+          }
+        ],
+        "role": "assistant",
+        "status": "completed",
+        "type": "message"
+      },
+      {
+        "role": "assistant",
+        "content": "For context, here is the conversation so far between the user and the previous agent:\n<CONVERSATION HISTORY>\n1. {\"arguments\": \"{}\", \"call_id\": \"h1\", \"name\": \"transfer_to_b\", \"type\": \"function_call\", \"id\": \"1\"}\n2. {\"call_id\": \"h1\", \"output\": \"{\\\"assistant\\\": \\\"B\\\"}\", \"type\": \"function_call_output\"}\n</CONVERSATION HISTORY>"
+      }
+    ]
+  }
+}

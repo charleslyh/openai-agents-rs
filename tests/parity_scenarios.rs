@@ -28,6 +28,15 @@ struct Scenario {
     /// When set, a `max_turns` error handler returns this as the final output.
     #[serde(default)]
     max_turns_handler_output: Option<String>,
+    /// `RunConfig` fields the scenario sets.
+    #[serde(default)]
+    run_config: Option<RunConfigSpec>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RunConfigSpec {
+    #[serde(default)]
+    nest_handoff_history: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -103,6 +112,9 @@ struct Golden {
     tool_output_count: Option<usize>,
     #[serde(default)]
     error: Option<String>,
+    /// First model input of every handoff target that ran, by agent name.
+    #[serde(default)]
+    handoff_inputs: Option<std::collections::BTreeMap<String, Value>>,
 }
 
 fn scenario_dir() -> PathBuf {
@@ -204,7 +216,7 @@ async fn parity_scenarios_match_expect_and_golden() {
         let mut handoffs = Vec::new();
         for target in scenario.agent.handoffs {
             let target_model = scripted(target.steps);
-            handoff_models.push(target_model.clone());
+            handoff_models.push((target.name.clone(), target_model.clone()));
             handoffs.push(handoff(Agent::new(target.name).model(target_model)));
         }
         let mut agent = Agent::new(scenario.agent.name)
@@ -217,6 +229,9 @@ async fn parity_scenarios_match_expect_and_golden() {
         }
 
         let mut options = RunOptions::default();
+        if let Some(run_config) = &scenario.run_config {
+            options.run_config.nest_handoff_history = run_config.nest_handoff_history;
+        }
         if let Some(max_turns) = scenario.max_turns {
             options.max_turns = Some(max_turns);
         }
@@ -261,7 +276,7 @@ async fn parity_scenarios_match_expect_and_golden() {
             assert_eq!(&result.last_agent_name, last_agent, "{name}");
         }
         model.assert_complete();
-        for m in &handoff_models {
+        for (_, m) in &handoff_models {
             m.assert_complete();
         }
 
@@ -284,6 +299,17 @@ async fn parity_scenarios_match_expect_and_golden() {
             }
             if let Some(count) = golden.tool_output_count {
                 assert_eq!(tool_output_count(&result), count, "golden tool outputs {name}");
+            }
+            if let Some(expected) = &golden.handoff_inputs {
+                for (target, input) in expected {
+                    let model = &handoff_models
+                        .iter()
+                        .find(|(n, _)| n == target)
+                        .unwrap_or_else(|| panic!("{name}: no handoff target {target}"))
+                        .1;
+                    let actual = model.calls().first().expect("target was called").input.clone();
+                    assert_eq!(&actual, input, "golden handoff input for {target} in {name}");
+                }
             }
         }
     }

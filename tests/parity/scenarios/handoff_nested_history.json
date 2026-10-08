@@ -1,0 +1,94 @@
+{
+  "name": "handoff_nested_history",
+  "input": "hello",
+  "agent": {
+    "name": "A",
+    "tools": [
+      {
+        "name": "echo",
+        "return_value": "x"
+      }
+    ],
+    "handoffs": [
+      {
+        "name": "B",
+        "steps": [
+          {
+            "output": [
+              {
+                "id": "1",
+                "type": "message",
+                "role": "assistant",
+                "status": "completed",
+                "content": [
+                  {
+                    "type": "output_text",
+                    "text": "b done",
+                    "annotations": [],
+                    "logprobs": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "output": [
+        {
+          "id": "1",
+          "type": "function_call",
+          "name": "echo",
+          "arguments": "{}",
+          "call_id": "c1"
+        }
+      ]
+    },
+    {
+      "output": [
+        {
+          "id": "r1",
+          "type": "reasoning",
+          "summary": [
+            {
+              "type": "summary_text",
+              "text": "s"
+            }
+          ]
+        },
+        {
+          "id": "1",
+          "type": "message",
+          "role": "assistant",
+          "status": "completed",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "thinking",
+              "annotations": [],
+              "logprobs": []
+            }
+          ]
+        },
+        {
+          "id": "1",
+          "type": "function_call",
+          "name": "transfer_to_b",
+          "arguments": "{}",
+          "call_id": "h1"
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "final_output": "b done",
+    "raw_response_count": 3,
+    "last_agent": "B"
+  },
+  "run_config": {
+    "nest_handoff_history": true
+  }
+}
