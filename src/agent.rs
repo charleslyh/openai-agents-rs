@@ -5,8 +5,10 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use crate::agent_output::AgentOutputSchemaBase;
+use crate::error::AgentsError;
 use crate::guardrail::{InputGuardrail, OutputGuardrail};
 use crate::handoffs::Handoff;
+use crate::mcp::{McpConfig, McpServer};
 use crate::lifecycle::AgentHooks;
 use crate::model::Model;
 use crate::model_settings::{get_default_model_settings, ModelSettings};
@@ -172,6 +174,10 @@ pub struct Agent {
     pub output_guardrails: Vec<OutputGuardrail>,
     /// Lifecycle hooks scoped to this agent (Python: `Agent.hooks`).
     pub hooks: Option<Arc<dyn AgentHooks>>,
+    /// MCP servers whose tools the agent can call (Python: `Agent.mcp_servers`).
+    pub mcp_servers: Vec<Arc<dyn McpServer>>,
+    /// How MCP tools become function tools (Python: `Agent.mcp_config`).
+    pub mcp_config: McpConfig,
 }
 
 impl std::fmt::Debug for Agent {
@@ -187,6 +193,7 @@ impl std::fmt::Debug for Agent {
             .field("tool_use_behavior", &self.tool_use_behavior)
             .field("reset_tool_choice", &self.reset_tool_choice)
             .field("model_bound", &self.model.is_some())
+            .field("mcp_servers", &self.mcp_servers)
             .finish()
     }
 }
@@ -209,7 +216,21 @@ impl Agent {
             input_guardrails: Vec::new(),
             output_guardrails: Vec::new(),
             hooks: None,
+            mcp_servers: Vec::new(),
+            mcp_config: McpConfig::default(),
         }
+    }
+
+    /// MCP servers whose tools this agent can call. Each turn lists their tools again.
+    pub fn mcp_servers(mut self, servers: Vec<Arc<dyn McpServer>>) -> Self {
+        self.mcp_servers = servers;
+        self
+    }
+
+    /// Settings for converting MCP tools.
+    pub fn mcp_config(mut self, config: McpConfig) -> Self {
+        self.mcp_config = config;
+        self
     }
 
     /// Set instructions.
@@ -323,6 +344,22 @@ impl Agent {
             }
         }
         out
+    }
+
+    /// Every function tool for this turn: the enabled local tools, then those of the MCP
+    /// servers (Python: `Agent.get_all_tools`).
+    pub async fn all_function_tools(
+        &self,
+        context: &RunContextWrapper,
+    ) -> Result<Vec<FunctionTool>, AgentsError> {
+        let mut tools = self.enabled_tools(context).await;
+        if !self.mcp_servers.is_empty() {
+            tools.extend(
+                crate::mcp::mcp_function_tools(&self.mcp_servers, &self.mcp_config, context, self)
+                    .await?,
+            );
+        }
+        Ok(tools)
     }
 
     /// Enabled handoffs for this turn (evaluates each handoff's `is_enabled`).

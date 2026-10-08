@@ -13,6 +13,7 @@ pub mod handoffs;
 pub mod items;
 pub mod lifecycle;
 pub mod context;
+pub mod mcp;
 pub mod memory;
 pub mod model;
 pub mod model_settings;
@@ -59,6 +60,12 @@ pub use items::{
     ToolCallOutputItem,
 };
 pub use lifecycle::{AgentHooks, RunHooks};
+#[cfg(feature = "mcp")]
+pub use mcp::{StdioParams, StreamableHttpParams};
+pub use mcp::{
+    mcp_function_tools, render_tool_result, McpCallToolResult, McpClient, McpConfig, McpError,
+    McpServer, McpTool, RequireApproval, ToolFilter, ToolFilterContext,
+};
 pub use memory::{
     CompactingSession, InMemorySession, ModelSummarizer, Session, SessionInputCallback,
     SessionSettings, Summarizer, DEFAULT_TRIGGER_TOKENS,

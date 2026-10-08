@@ -14,8 +14,10 @@ keywords = ["openai", "agents", "llm", "tools"]
 categories = ["api-bindings", "asynchronous"]
 
 [features]
-default = ["openai"]
+default = ["openai", "mcp"]
 openai = ["dep:async-openai", "dep:reqwest"]
+# MCP client transports: stdio (child process) and streamable HTTP.
+mcp = ["dep:reqwest", "tokio/process", "tokio/io-util"]
 # `SqliteSession`: file or in-memory conversation storage, same schema as the Python SDK.
 sqlite = ["dep:rusqlite"]
 
