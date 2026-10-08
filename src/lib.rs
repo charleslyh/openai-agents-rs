@@ -12,6 +12,7 @@ pub mod guardrail;
 pub mod handoffs;
 pub mod items;
 pub mod lifecycle;
+pub mod memory;
 pub mod model;
 pub mod model_settings;
 pub mod result;
@@ -49,6 +50,7 @@ pub use items::{
     ToolCallOutputItem,
 };
 pub use lifecycle::{AgentHooks, RunHooks};
+pub use memory::{InMemorySession, Session};
 pub use model::{
     default_model_provider, MissingProvider, Model, ModelProvider, ModelRef, ModelRequest,
     ModelTracing, MultiProvider,

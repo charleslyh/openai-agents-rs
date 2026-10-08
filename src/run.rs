@@ -20,6 +20,7 @@ use crate::items::{
     ReasoningItem, ResponseOutputItem, RunItem, ToolApprovalItem, ToolCallItem, ToolCallOutputItem,
 };
 use crate::lifecycle::RunHooks;
+use crate::memory::Session;
 use crate::model::{
     default_model_provider, Model, ModelInput, ModelProvider, ModelRef, ModelRequest, ModelTracing,
 };
@@ -238,6 +239,12 @@ pub struct RunOptions {
     pub context: Option<ContextValue>,
     /// Run-level lifecycle hooks (Python: `RunOptions.hooks`).
     pub hooks: Option<Arc<dyn RunHooks>>,
+    /// Conversation memory (Python: `Runner.run(session=...)`).
+    ///
+    /// History is prepended to a fresh run's input. When the run finishes (not when it pauses
+    /// for approval, and not on error) its input and new items are appended. After an approval
+    /// pause, pass the same session to [`Runner::run_state`] so the resumed run is saved.
+    pub session: Option<Arc<dyn Session>>,
 }
 
 impl Default for RunOptions {
@@ -252,6 +259,7 @@ impl Default for RunOptions {
             conversation_id: None,
             context: None,
             hooks: None,
+            session: None,
         }
     }
 }
@@ -265,6 +273,7 @@ impl std::fmt::Debug for RunOptions {
             .field("conversation_id", &self.conversation_id)
             .field("has_context", &self.context.is_some())
             .field("has_hooks", &self.hooks.is_some())
+            .field("has_session", &self.session.is_some())
             .finish()
     }
 }
@@ -432,11 +441,28 @@ async fn run_loop(
     snapshot: Option<Arc<Mutex<StreamingSnapshot>>>,
 ) -> Result<RunResult, AgentsError> {
     let run_tracing_disabled = options.run_config.tracing_disabled;
-    crate::tracing::with_run_tracing_disabled(
+    let session = options.session.clone();
+    let result = crate::tracing::with_run_tracing_disabled(
         run_tracing_disabled,
         run_loop_inner(starting_agent, start, options, events, snapshot),
     )
-    .await
+    .await?;
+    // Python saves the turn's input and generated items to the session; a run paused for
+    // approval is saved when it is resumed with the same session.
+    if let Some(session) = session {
+        if result.interruptions.is_empty() {
+            let mut items = ItemHelpers::input_to_new_input_list(&result.input);
+            items.extend(
+                result
+                    .new_items
+                    .iter()
+                    .filter(|i| i.is_model_input())
+                    .map(|i| i.raw_item().clone()),
+            );
+            session.add_items(items).await?;
+        }
+    }
+    Ok(result)
 }
 
 async fn run_loop_inner(
@@ -474,6 +500,7 @@ async fn run_loop_inner(
     let mut raw_responses: Vec<ModelResponse> = Vec::new();
     let mut usage = Usage::default();
     let input: InputLike;
+    let original_input_len: usize;
     let mut current_input_items: Vec<_>;
     let mut previous_response_id = options.previous_response_id.clone();
     let mut turn = 0usize;
@@ -487,9 +514,17 @@ async fn run_loop_inner(
         LoopStart::Fresh { input: fresh } => {
             input = fresh;
             current_input_items = ItemHelpers::input_to_new_input_list(&input);
+            // Python (`prepare_input_with_session`): stored history comes before the new input.
+            if let Some(session) = &options.session {
+                let mut prepared = session.get_items(None).await?;
+                prepared.extend(current_input_items);
+                current_input_items = prepared;
+            }
+            original_input_len = current_input_items.len();
         }
         LoopStart::Resume { state } => {
             input = state.input.clone();
+            original_input_len = ItemHelpers::input_to_new_input_list(&input).len();
             current_agent = resolve_agent_by_name(&current_agent, &state.current_agent_name)?;
             generated_items = state.generated_items;
             // Drop prior ToolApproval placeholders; resume will re-create if still pending.
@@ -1139,8 +1174,7 @@ async fn run_loop_inner(
                     )
                     .into());
                 }
-                let original_len =
-                    ItemHelpers::input_to_new_input_list(&input).len().min(turn_start_len);
+                let original_len = original_input_len.min(turn_start_len);
                 let filtered = filter(HandoffInputData {
                     input_history: current_input_items[..original_len].to_vec(),
                     pre_handoff_items: current_input_items[original_len..turn_start_len].to_vec(),
