@@ -1215,3 +1215,13 @@ async fn invalid_final_output_is_handled_or_retried() {
     assert_eq!(result.raw_responses.len(), 2);
     assert_eq!(result.new_items.len(), 2);
 }
+
+/// `Session::replace_items`: the in-memory store swaps its history in one step.
+#[tokio::test]
+async fn in_memory_session_replace_items() {
+    use openai_agents::{InMemorySession, Session};
+    let session = InMemorySession::shared("s");
+    session.add_items(vec![json!({"role": "user", "content": "a"})]).await.unwrap();
+    session.replace_items(vec![json!({"role": "user", "content": "b"})]).await.unwrap();
+    assert_eq!(session.get_items(None).await.unwrap(), vec![json!({"role": "user", "content": "b"})]);
+}
