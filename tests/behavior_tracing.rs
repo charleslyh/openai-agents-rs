@@ -414,3 +414,45 @@ async fn task_and_turn_spans_nest_like_python() {
         ]
     );
 }
+
+/// D-039: the summary call a `CompactingSession` makes while a run saves its turn is traced
+/// under that run, and its usage is readable from the session.
+#[tokio::test]
+async fn compaction_summary_is_a_span_of_the_run_that_triggered_it() {
+    use openai_agents::{CompactingSession, InMemorySession, ModelSummarizer, Session};
+    let _guard = tracing_test_lock().lock().unwrap();
+    tracing::set_tracing_disabled(false);
+
+    let summary_model = Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::text_message("notes"))]));
+    let session = Arc::new(
+        CompactingSession::new(
+            InMemorySession::shared("s"),
+            Arc::new(ModelSummarizer::new(summary_model)),
+        )
+        .trigger_items(3)
+        .keep_recent_turns(1),
+    );
+    session
+        .add_items(vec![
+            serde_json::json!({"role": "user", "content": "t1"}),
+            serde_json::json!({"role": "assistant", "content": "a1"}),
+            serde_json::json!({"role": "user", "content": "t2"}),
+        ])
+        .await
+        .unwrap();
+
+    let proc = InMemoryProcessor::install();
+    let agent = Agent::new("a")
+        .model(Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::text_message("hi"))])));
+    let mut options = RunOptions::default();
+    options.session = Some(session.clone());
+    Runner::run(&agent, "t3", options).await.expect("run");
+
+    let started = proc.started_spans.lock().unwrap().clone();
+    let summary = started
+        .iter()
+        .find(|s| matches!(&s.data, SpanData::Custom { name } if name == "conversation_summary"))
+        .expect("summary span");
+    assert!(summary.parent_id.is_some(), "it hangs under the run, not at the trace root");
+    assert_eq!(session.summarizer_usage().requests, 1);
+}

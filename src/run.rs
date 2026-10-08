@@ -1093,7 +1093,10 @@ async fn run_loop(
     result.reasoning_item_id_policy = reasoning_policy;
     if let Some(writer) = writer.as_mut() {
         if result.interruptions.is_empty() {
-            writer.flush(&result.new_items).await?;
+            // The run's trace has ended by now, so work a session does here (a compaction
+            // summary, say) must not emit spans of its own.
+            crate::tracing::with_run_tracing_disabled(true, writer.flush(&result.new_items))
+                .await?;
         } else if let Some(snapshot) = result.interrupt_state.as_mut() {
             // A run paused for approval keeps the turn in flight out of the session until it is
             // resumed; remember how far it got so the resume saves only the rest.
