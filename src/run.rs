@@ -330,7 +330,7 @@ impl Runner {
             ..Default::default()
         }));
         let snap = Arc::clone(&snapshot);
-        tokio::spawn(async move {
+        let task = tokio::spawn(async move {
             let result = run_loop(
                 starting_agent,
                 LoopStart::Fresh { input },
@@ -343,7 +343,12 @@ impl Runner {
                 Ok(r) => {
                     let mut s = snap.lock().expect("snapshot");
                     s.is_complete = true;
-                    s.final_output = if r.interruptions.is_empty() {
+                    // A graceful cancel returns a result without a real final output.
+                    let stopped_early = s.cancel_after_turn;
+                    if stopped_early {
+                        s.is_cancelled = true;
+                    }
+                    s.final_output = if r.interruptions.is_empty() && !stopped_early {
                         Some(r.final_output.clone())
                     } else {
                         None
@@ -364,7 +369,7 @@ impl Runner {
                 }
             }
         });
-        RunResultStreaming::new(snapshot, max_turns, rx)
+        RunResultStreaming::new(snapshot, max_turns, rx).with_task(task)
     }
 
     /// Blocking wrapper (Python: `run_sync` → Rust `run_blocking`, see D-001).
@@ -569,6 +574,24 @@ async fn run_loop_inner(
             let mut s = snap.lock().expect("snapshot");
             s.current_turn = turn;
             s.current_agent_name = current_agent.name.clone();
+        }
+        // Graceful cancel (`CancelMode::AfterTurn`): stop before a new turn begins.
+        if turn > 1 {
+            let cancelled = snapshot
+                .as_ref()
+                .map(|snap| snap.lock().expect("snapshot").cancel_after_turn)
+                .unwrap_or(false);
+            if cancelled {
+                return Ok(finished_result(
+                    input,
+                    generated_items,
+                    raw_responses,
+                    Value::Null,
+                    Arc::new(current_agent.clone()),
+                    max_turns,
+                    usage,
+                ));
+            }
         }
         if turn > max_turns {
             return Err(MaxTurnsExceeded { max_turns }.into());

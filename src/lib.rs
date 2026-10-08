@@ -54,7 +54,7 @@ pub use model::{
     ModelTracing, MultiProvider,
 };
 pub use model_settings::{ModelSettings, ToolChoice, Truncation, Verbosity};
-pub use result::{RunResult, RunResultStreaming, StreamingSnapshot};
+pub use result::{CancelMode, RunResult, RunResultStreaming, StreamingSnapshot};
 pub use run::{
     CallModelData, CallModelInputFilter, ModelInputData,
     default_trace_include_sensitive_data, set_default_openai_api, DefaultOpenAiApi, RunConfig,

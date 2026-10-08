@@ -157,6 +157,20 @@ pub struct StreamingSnapshot {
     pub interruptions: Vec<ToolApprovalItem>,
     /// Error if the background task failed after events stopped.
     pub error: Option<String>,
+    /// A graceful cancel was requested: stop before the next turn begins.
+    pub cancel_after_turn: bool,
+    /// The run was cancelled, so `final_output` is intentionally absent.
+    pub is_cancelled: bool,
+}
+
+/// How [`RunResultStreaming::cancel`] stops a run (Python: `cancel(mode=...)`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CancelMode {
+    /// Stop now: the background task is aborted and the event queue is closed.
+    #[default]
+    Immediate,
+    /// Let the current turn (model call and tool calls) finish, then stop before the next one.
+    AfterTurn,
 }
 
 /// Streaming run handle (Python: `RunResultStreaming`).
@@ -166,6 +180,7 @@ pub struct RunResultStreaming {
     /// Max turns configured.
     pub max_turns: Option<usize>,
     rx: mpsc::Receiver<Result<StreamEvent, AgentsError>>,
+    task: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl RunResultStreaming {
@@ -179,7 +194,46 @@ impl RunResultStreaming {
             snapshot,
             max_turns,
             rx,
+            task: None,
         }
+    }
+
+    /// Remember the background task so [`cancel`](Self::cancel) can abort it.
+    pub(crate) fn with_task(mut self, task: tokio::task::JoinHandle<()>) -> Self {
+        self.task = Some(task);
+        self
+    }
+
+    /// Cancel the run (Python: `RunResultStreaming.cancel`).
+    ///
+    /// `Immediate` aborts the background task and drops queued events. `AfterTurn` lets the
+    /// current turn finish and stops before the next one; keep consuming events until the stream
+    /// ends. Either way the run reports no `final_output` and [`is_cancelled`](Self::is_cancelled)
+    /// becomes true. Cancelling a finished run has no effect.
+    pub fn cancel(&mut self, mode: CancelMode) {
+        let mut snap = self.snapshot.lock().expect("snapshot");
+        if snap.is_complete {
+            return;
+        }
+        match mode {
+            CancelMode::AfterTurn => snap.cancel_after_turn = true,
+            CancelMode::Immediate => {
+                snap.is_cancelled = true;
+                snap.is_complete = true;
+                snap.final_output = None;
+                drop(snap);
+                if let Some(task) = &self.task {
+                    task.abort();
+                }
+                self.rx.close();
+                while self.rx.try_recv().is_ok() {}
+            }
+        }
+    }
+
+    /// Whether the run was cancelled before producing a final output.
+    pub fn is_cancelled(&self) -> bool {
+        self.snapshot.lock().expect("snapshot").is_cancelled
     }
 
     /// Whether the agent has finished running.
