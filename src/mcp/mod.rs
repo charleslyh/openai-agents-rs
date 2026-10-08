@@ -21,12 +21,14 @@
 //! (`include_server_in_tool_names`), `tool_meta_resolver`, per-server retries and tool guardrails.
 //! The OpenAI-hosted MCP tool (`HostedMCPTool`) is out of scope.
 
+mod manager;
 mod rpc;
 
 #[cfg(feature = "mcp")]
 mod http;
 #[cfg(feature = "mcp")]
 mod stdio;
+pub use manager::McpServerManager;
 
 use std::collections::HashSet;
 use std::future::Future;
@@ -308,6 +310,9 @@ pub struct McpClient {
     tool_filter: Option<ToolFilter>,
     require_approval: RequireApproval,
     use_structured_content: bool,
+    max_retry_attempts: i32,
+    retry_backoff_base: Duration,
+    retry_backoff_max: Option<Duration>,
 }
 
 impl std::fmt::Debug for McpClient {
@@ -334,6 +339,9 @@ impl McpClient {
             tool_filter: None,
             require_approval: RequireApproval::Never,
             use_structured_content: false,
+            max_retry_attempts: 0,
+            retry_backoff_base: Duration::from_secs(1),
+            retry_backoff_max: None,
         }
     }
 
@@ -389,6 +397,23 @@ impl McpClient {
         self
     }
 
+    /// Retry a failed request this many times (Python: `max_retry_attempts`; default 0, `-1`
+    /// retries forever). The wait before retry `n` is `backoff_base * 2^(n-1)`, see
+    /// [`retry_backoff`](Self::retry_backoff). Every request is retried, including
+    /// `tools/call`, so a tool that is not idempotent may run more than once.
+    pub fn max_retry_attempts(mut self, attempts: i32) -> Self {
+        self.max_retry_attempts = attempts;
+        self
+    }
+
+    /// Wait `base * 2^(n-1)` before retry `n`, at most `max` when given
+    /// (Python: `retry_backoff_seconds_base` / `retry_backoff_seconds_max`; base defaults to 1s).
+    pub fn retry_backoff(mut self, base: Duration, max: Option<Duration>) -> Self {
+        self.retry_backoff_base = base;
+        self.retry_backoff_max = max;
+        self
+    }
+
     /// Wrap in an `Arc`, ready for [`Agent::mcp_servers`](crate::Agent::mcp_servers).
     pub fn shared(self) -> Arc<Self> {
         Arc::new(self)
@@ -412,7 +437,32 @@ impl McpClient {
         Ok(transport)
     }
 
+    /// One request, retried as configured (Python: `_run_with_retries`).
     async fn request(&self, method: &str, params: Option<Value>) -> Result<Value, AgentsError> {
+        let mut attempts: i32 = 0;
+        loop {
+            match self.request_once(method, params.clone()).await {
+                Ok(value) => return Ok(value),
+                Err(error) => {
+                    attempts = attempts.saturating_add(1);
+                    if self.max_retry_attempts != -1 && attempts > self.max_retry_attempts {
+                        return Err(error);
+                    }
+                    tokio::time::sleep(self.backoff_after(attempts - 1)).await;
+                }
+            }
+        }
+    }
+
+    /// The wait after `taken` earlier retries: `base * 2^taken`, capped.
+    fn backoff_after(&self, taken: i32) -> Duration {
+        let factor = 2f64.powi(taken.clamp(0, 62));
+        let wait = self.retry_backoff_base.as_secs_f64() * factor;
+        let wait = Duration::try_from_secs_f64(wait).unwrap_or(Duration::MAX);
+        self.retry_backoff_max.map_or(wait, |max| wait.min(max))
+    }
+
+    async fn request_once(&self, method: &str, params: Option<Value>) -> Result<Value, AgentsError> {
         let transport = self.transport().await?;
         match transport.request(method, params, self.request_timeout).await {
             Ok(value) => Ok(value),
@@ -665,6 +715,8 @@ mod tests {
         requests: Mutex<Vec<(String, Option<Value>)>>,
         /// Fail the next request as if the connection died.
         die_once: std::sync::atomic::AtomicBool,
+        /// Fail this many more requests the same way.
+        deaths: AtomicUsize,
     }
 
     #[async_trait]
@@ -676,7 +728,12 @@ mod tests {
             _timeout: Duration,
         ) -> Result<Value, McpError> {
             self.requests.lock().unwrap().push((method.to_string(), params.clone()));
-            if self.die_once.swap(false, Ordering::SeqCst) {
+            if self.die_once.swap(false, Ordering::SeqCst)
+                || self
+                    .deaths
+                    .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+                    .is_ok()
+            {
                 return Err(McpError::Closed("gone".into()));
             }
             match method {
@@ -801,6 +858,40 @@ mod tests {
         client.cleanup().await.unwrap();
         client.connect().await.unwrap();
         assert_eq!(connector.connects.load(Ordering::SeqCst), 3);
+    }
+
+    /// Fail the next `n` requests as if the connection died.
+    impl FakeTransport {
+        fn die_times(&self, n: usize) {
+            self.deaths.store(n, Ordering::SeqCst);
+        }
+    }
+
+    #[tokio::test]
+    async fn failed_requests_are_retried_with_backoff() {
+        let ms = Duration::from_millis;
+        let (client, transport, connector) = fake(vec![json!({"tools": [tool_json("a")]})]);
+        let client = client.max_retry_attempts(2).retry_backoff(ms(1), Some(ms(2)));
+        transport.die_times(2);
+        assert!(client.call_tool("a", None).await.is_ok(), "two failures fit in two retries");
+        assert_eq!(connector.connects.load(Ordering::SeqCst), 3, "each retry reconnected");
+
+        transport.die_times(3);
+        assert!(client.call_tool("a", None).await.is_err(), "a third failure is reported");
+
+        // The default is no retry, and -1 never gives up.
+        let (client, transport, _) = fake(vec![json!({"tools": [tool_json("a")]})]);
+        transport.die_times(1);
+        assert!(client.call_tool("a", None).await.is_err());
+        let client = client.max_retry_attempts(-1).retry_backoff(ms(1), None);
+        transport.die_times(5);
+        assert!(client.call_tool("a", None).await.is_ok());
+
+        // base * 2^n, capped.
+        let client = client.retry_backoff(Duration::from_secs(1), Some(Duration::from_secs(5)));
+        let waits: Vec<_> = (0..5).map(|n| client.backoff_after(n).as_secs()).collect();
+        assert_eq!(waits, [1, 2, 4, 5, 5]);
+        assert_eq!(client.backoff_after(i32::MAX), Duration::from_secs(5), "no overflow");
     }
 
     #[test]
