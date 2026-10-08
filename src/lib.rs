@@ -12,6 +12,7 @@ pub mod guardrail;
 pub mod handoffs;
 pub mod items;
 pub mod lifecycle;
+pub mod context;
 pub mod memory;
 pub mod model;
 pub mod model_settings;
@@ -94,6 +95,10 @@ pub use tool_guardrails::{
     ToolGuardrailBehavior, ToolGuardrailFunctionOutput, ToolInputGuardrail, ToolInputGuardrailData,
     ToolInputGuardrailResult, ToolOutputGuardrail, ToolOutputGuardrailData,
     ToolOutputGuardrailResult,
+};
+pub use context::{
+    chain_input_filters, default_token_counter, estimate_item_tokens, input_filter,
+    ContextWindowTrimmer, TokenCounter, ToolOutputTrimmer,
 };
 pub use items::ReasoningItemIdPolicy;
 pub use retry::{
