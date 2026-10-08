@@ -85,6 +85,39 @@ pub fn default_trace_include_sensitive_data() -> bool {
     }
 }
 
+/// The input and instructions about to be sent to the model
+/// (Python: `ModelInputData`).
+#[derive(Debug, Clone)]
+pub struct ModelInputData {
+    /// Responses input items.
+    pub input: Vec<Value>,
+    /// System instructions.
+    pub instructions: Option<String>,
+}
+
+/// Payload given to [`RunConfig::call_model_input_filter`] (Python: `CallModelData`).
+#[derive(Clone)]
+pub struct CallModelData {
+    /// The model input as prepared by the runner.
+    pub model_data: ModelInputData,
+    /// The agent about to be called.
+    pub agent: Arc<Agent>,
+    /// The run context.
+    pub context: RunContextWrapper,
+}
+
+/// Rewrites the model input right before each model call (Python: `CallModelInputFilter`).
+///
+/// The filtered data is used for this call only; the run history is unchanged.
+pub type CallModelInputFilter = Arc<
+    dyn Fn(
+            CallModelData,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<ModelInputData, AgentsError>> + Send>,
+        > + Send
+        + Sync,
+>;
+
 /// Name of the stand-in tool recorded for a call to a tool the agent does not have.
 const TOOL_NOT_FOUND_PLACEHOLDER: &str = "__tool_not_found__";
 
@@ -134,6 +167,20 @@ pub struct RunConfig {
     pub output_guardrails: Vec<OutputGuardrail>,
     /// Behavior when the model calls an unknown tool (Python: `RunConfig.tool_not_found_behavior`).
     pub tool_not_found_behavior: ToolNotFoundBehavior,
+    /// Edit the model input just before each call (Python: `RunConfig.call_model_input_filter`).
+    pub call_model_input_filter: Option<CallModelInputFilter>,
+}
+
+impl RunConfig {
+    /// Install a [`CallModelInputFilter`] from an async closure.
+    pub fn with_call_model_input_filter<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(CallModelData) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<ModelInputData, AgentsError>> + Send + 'static,
+    {
+        self.call_model_input_filter = Some(Arc::new(move |data| Box::pin(f(data))));
+        self
+    }
 }
 
 impl Default for RunConfig {
@@ -151,6 +198,7 @@ impl Default for RunConfig {
             input_guardrails: Vec::new(),
             output_guardrails: Vec::new(),
             tool_not_found_behavior: ToolNotFoundBehavior::default(),
+            call_model_input_filter: None,
         }
     }
 }
@@ -546,13 +594,34 @@ async fn run_loop_inner(
             let _gen_span =
                 generation_span(current_agent.model_name.as_deref().unwrap_or("scripted"));
             // Python: `instructions` may be a callable of `(context, agent)`.
-            let system_instructions = current_agent.resolve_instructions(&context).await;
+            let resolved_instructions = current_agent.resolve_instructions(&context).await;
+            // Python (`maybe_filter_model_input`): the filter runs before the LLM hooks and
+            // only affects this call.
+            let model_data = match &options.run_config.call_model_input_filter {
+                Some(filter) => {
+                    filter(CallModelData {
+                        model_data: ModelInputData {
+                            input: current_input_items.clone(),
+                            instructions: resolved_instructions,
+                        },
+                        agent: Arc::new(current_agent.clone()),
+                        context: context.clone(),
+                    })
+                    .await?
+                }
+                None => ModelInputData {
+                    input: current_input_items.clone(),
+                    instructions: resolved_instructions,
+                },
+            };
+            let system_instructions = model_data.instructions;
+            let model_input_items = model_data.input;
             if let Some(h) = &options.hooks {
                 h.on_llm_start(
                     context.clone(),
                     &current_agent,
                     system_instructions.as_deref(),
-                    &current_input_items,
+                    &model_input_items,
                 )
                 .await;
             }
@@ -561,7 +630,7 @@ async fn run_loop_inner(
                     context.clone(),
                     &current_agent,
                     system_instructions.as_deref(),
-                    &current_input_items,
+                    &model_input_items,
                 )
                 .await;
             }
@@ -569,7 +638,7 @@ async fn run_loop_inner(
                 let model_fut = async {
                     let req = ModelRequest {
                         system_instructions: system_instructions.as_deref(),
-                        input: ModelInput::Items(&current_input_items),
+                        input: ModelInput::Items(&model_input_items),
                         model_settings: &model_settings,
                         tools: &tools,
                         // Python maps `trace_include_sensitive_data=False` to
