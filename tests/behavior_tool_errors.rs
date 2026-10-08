@@ -916,3 +916,101 @@ async fn session_settings_limit_and_input_callback() {
         .collect();
     assert_eq!(saved[..2], [json!("note"), json!("new")], "{saved:?}");
 }
+
+/// D-029: tool input guardrails can allow, reject (the body and hooks never run) or stop the run.
+#[tokio::test]
+async fn tool_input_guardrails_allow_reject_and_raise() {
+    use openai_agents::{ToolGuardrailBehavior, ToolGuardrailFunctionOutput, ToolInputGuardrail};
+    let body_runs = Arc::new(AtomicUsize::new(0));
+    let build = |guardrail: ToolInputGuardrail| {
+        let runs = Arc::clone(&body_runs);
+        let tool = FunctionTool::new(
+            "t",
+            "t",
+            json!({"type": "object", "properties": {}, "additionalProperties": false}),
+            move |_ctx, _args| {
+                let runs = Arc::clone(&runs);
+                async move {
+                    runs.fetch_add(1, Ordering::SeqCst);
+                    Ok(json!("body"))
+                }
+            },
+        )
+        .with_tool_input_guardrails(vec![guardrail]);
+        let model = Arc::new(ScriptedModel::new([
+            ModelStep::from(ItemHelpers::function_tool_call("t", "{}", "c1")),
+            ModelStep::from(ItemHelpers::text_message("done")),
+        ]));
+        Agent::new("a").model(model).tools(vec![tool])
+    };
+    let guard = |out: fn() -> ToolGuardrailFunctionOutput| {
+        ToolInputGuardrail::new("g", move |_data| async move { out() })
+    };
+
+    let result = Runner::run(
+        &build(guard(|| ToolGuardrailFunctionOutput::allow(json!({"ok": true})))),
+        "go",
+        RunOptions::default(),
+    )
+    .await
+    .expect("allow");
+    assert_eq!(body_runs.load(Ordering::SeqCst), 1);
+    assert_eq!(tool_output_texts(&result.new_items), vec!["body"]);
+    assert_eq!(result.tool_input_guardrail_results.len(), 1);
+    assert_eq!(result.tool_input_guardrail_results[0].guardrail_name, "g");
+    assert_eq!(result.tool_input_guardrail_results[0].output.behavior, ToolGuardrailBehavior::Allow);
+
+    body_runs.store(0, Ordering::SeqCst);
+    let result = Runner::run(
+        &build(guard(|| ToolGuardrailFunctionOutput::reject_content("blocked", json!(null)))),
+        "go",
+        RunOptions::default(),
+    )
+    .await
+    .expect("reject");
+    assert_eq!(body_runs.load(Ordering::SeqCst), 0, "the tool body must not run");
+    assert_eq!(tool_output_texts(&result.new_items), vec!["blocked"]);
+    assert!(result.tool_output_guardrail_results.is_empty(), "output guardrails are skipped");
+
+    let err = Runner::run(
+        &build(guard(|| ToolGuardrailFunctionOutput::raise_exception(json!(null)))),
+        "go",
+        RunOptions::default(),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(err, AgentsError::ToolInputGuardrailTripwire(ref t) if t.guardrail_name == "g"), "{err}");
+    assert_eq!(body_runs.load(Ordering::SeqCst), 0);
+}
+
+/// D-029: tool output guardrails see the result and can replace it or stop the run.
+#[tokio::test]
+async fn tool_output_guardrails_replace_or_raise() {
+    use openai_agents::{ToolGuardrailFunctionOutput, ToolOutputGuardrail};
+    let build = |guardrail: ToolOutputGuardrail| {
+        let model = Arc::new(ScriptedModel::new([
+            ModelStep::from(ItemHelpers::function_tool_call("t", "{}", "c1")),
+            ModelStep::from(ItemHelpers::text_message("done")),
+        ]));
+        Agent::new("a").model(model).tools(vec![
+            FunctionTool::constant("t", "t", "secret-123").with_tool_output_guardrails(vec![guardrail]),
+        ])
+    };
+
+    let redact = ToolOutputGuardrail::new("redact", |data| async move {
+        if data.output.as_str().is_some_and(|s| s.contains("secret")) {
+            ToolGuardrailFunctionOutput::reject_content("[redacted]", json!({"matched": true}))
+        } else {
+            ToolGuardrailFunctionOutput::allow(json!(null))
+        }
+    });
+    let result = Runner::run(&build(redact), "go", RunOptions::default()).await.expect("run");
+    assert_eq!(tool_output_texts(&result.new_items), vec!["[redacted]"]);
+    assert_eq!(result.tool_output_guardrail_results[0].output.output_info, json!({"matched": true}));
+
+    let stop = ToolOutputGuardrail::new("stop", |_| async {
+        ToolGuardrailFunctionOutput::raise_exception(json!(null))
+    });
+    let err = Runner::run(&build(stop), "go", RunOptions::default()).await.unwrap_err();
+    assert!(matches!(err, AgentsError::ToolOutputGuardrailTripwire(_)), "{err}");
+}

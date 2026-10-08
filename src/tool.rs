@@ -10,6 +10,7 @@ use crate::error::AgentsError;
 use crate::items::ToolApprovalItem;
 use crate::run_context::RunContextWrapper;
 use crate::run_state::RunState;
+use crate::tool_guardrails::{ToolInputGuardrail, ToolOutputGuardrail};
 
 /// Default rejection text when a tool call is rejected (Python: `DEFAULT_APPROVAL_REJECTION_MESSAGE`).
 pub const DEFAULT_APPROVAL_REJECTION_MESSAGE: &str = "Tool execution was not approved.";
@@ -258,6 +259,10 @@ pub struct FunctionTool {
     pub needs_approval: NeedsApproval,
     /// How a returned error is surfaced (Python: `failure_error_function`).
     pub failure_error_function: ToolFailureHandling,
+    /// Checks that run before the tool body (Python: `tool_input_guardrails`).
+    pub tool_input_guardrails: Vec<ToolInputGuardrail>,
+    /// Checks that run on the tool result (Python: `tool_output_guardrails`).
+    pub tool_output_guardrails: Vec<ToolOutputGuardrail>,
     /// Timeout for each invocation, in seconds (Python: `timeout_seconds`).
     pub timeout_seconds: Option<f64>,
     /// How a timeout is handled (Python: `timeout_behavior`).
@@ -326,10 +331,24 @@ impl FunctionTool {
             is_enabled: ToolEnabled::Fixed(true),
             needs_approval: NeedsApproval::Fixed(false),
             failure_error_function: ToolFailureHandling::Default,
+            tool_input_guardrails: Vec::new(),
+            tool_output_guardrails: Vec::new(),
             timeout_seconds: None,
             timeout_behavior: ToolTimeoutBehavior::default(),
             timeout_error_function: None,
         }
+    }
+
+    /// Run `guardrails` before the tool body (Python: `tool_input_guardrails`).
+    pub fn with_tool_input_guardrails(mut self, guardrails: Vec<ToolInputGuardrail>) -> Self {
+        self.tool_input_guardrails = guardrails;
+        self
+    }
+
+    /// Run `guardrails` on the tool result (Python: `tool_output_guardrails`).
+    pub fn with_tool_output_guardrails(mut self, guardrails: Vec<ToolOutputGuardrail>) -> Self {
+        self.tool_output_guardrails = guardrails;
+        self
     }
 
     /// Limit each invocation to `seconds` (Python: `timeout_seconds`).

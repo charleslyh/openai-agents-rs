@@ -6,6 +6,7 @@ use tokio::sync::mpsc;
 
 use crate::agent::Agent;
 use crate::error::AgentsError;
+use crate::tool_guardrails::{ToolInputGuardrailResult, ToolOutputGuardrailResult};
 use crate::guardrail::{InputGuardrailResult, OutputGuardrailResult};
 use crate::items::{ItemHelpers, InputLike, ModelResponse, ResponseInputItem, RunItem, ToolApprovalItem};
 use crate::model_settings::ModelSettings;
@@ -38,6 +39,10 @@ pub struct RunResult {
     pub input_guardrail_results: Vec<InputGuardrailResult>,
     /// Results of the output guardrails that ran (Python: `output_guardrail_results`).
     pub output_guardrail_results: Vec<OutputGuardrailResult>,
+    /// Results of the tool input guardrails that ran (Python: `tool_input_guardrail_results`).
+    pub tool_input_guardrail_results: Vec<ToolInputGuardrailResult>,
+    /// Results of the tool output guardrails that ran (Python: `tool_output_guardrail_results`).
+    pub tool_output_guardrail_results: Vec<ToolOutputGuardrailResult>,
     /// Internal snapshot used by [`Self::to_state`] when interrupted.
     pub(crate) interrupt_state: Option<InterruptSnapshot>,
 }

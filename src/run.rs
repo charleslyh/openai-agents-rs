@@ -39,6 +39,10 @@ use crate::tool::{
     default_tool_timeout_error_message, FunctionTool, ToolContext, ToolResult, ToolTimeoutBehavior,
     DEFAULT_APPROVAL_REJECTION_MESSAGE,
 };
+use crate::tool_guardrails::{
+    run_tool_input_guardrails, run_tool_output_guardrails, ToolInputGuardrailResult,
+    ToolOutputGuardrailResult,
+};
 use crate::tracing::{agent_span, function_span, generation_span, handoff_span};
 use crate::model::wire_events::FAKE_RESPONSES_ID;
 use crate::usage::Usage;
@@ -460,6 +464,15 @@ impl std::fmt::Debug for RunOptions {
     }
 }
 
+/// Tool guardrail results collected while a run executes tools.
+#[derive(Debug, Default)]
+struct ToolGuardrailLog {
+    input: Vec<ToolInputGuardrailResult>,
+    output: Vec<ToolOutputGuardrailResult>,
+}
+
+type SharedToolGuardrailLog = Arc<Mutex<ToolGuardrailLog>>;
+
 type EventTx = mpsc::Sender<Result<StreamEvent, AgentsError>>;
 
 /// Facade entry point (Python: `Runner`).
@@ -743,11 +756,24 @@ async fn run_loop(
         }
         (start, _) => start,
     };
-    let result = crate::tracing::with_run_tracing_disabled(
+    let tool_guardrail_log = SharedToolGuardrailLog::default();
+    let mut result = crate::tracing::with_run_tracing_disabled(
         run_tracing_disabled,
-        run_loop_inner(starting_agent, start, options, events, snapshot),
+        run_loop_inner(
+            starting_agent,
+            start,
+            options,
+            events,
+            snapshot,
+            Arc::clone(&tool_guardrail_log),
+        ),
     )
     .await?;
+    {
+        let mut log = tool_guardrail_log.lock().expect("tool guardrail log");
+        result.tool_input_guardrail_results = std::mem::take(&mut log.input);
+        result.tool_output_guardrail_results = std::mem::take(&mut log.output);
+    }
     // Python saves the turn's input and generated items to the session; a run paused for
     // approval is saved when it is resumed with the same session.
     if let Some(session) = session {
@@ -773,6 +799,7 @@ async fn run_loop_inner(
     options: RunOptions,
     events: Option<EventTx>,
     snapshot: Option<Arc<Mutex<StreamingSnapshot>>>,
+    tool_guardrail_log: SharedToolGuardrailLog,
 ) -> Result<RunResult, AgentsError> {
     let max_turns = options.max_turns.unwrap_or(DEFAULT_MAX_TURNS);
     // Python raises `ValueError` when the config is built; Rust has no constructor to hook, so
@@ -1314,6 +1341,7 @@ async fn run_loop_inner(
                     &context,
                     options.hooks.as_ref(),
                     max_tool_concurrency,
+                    &tool_guardrail_log,
                 )
                 .await?;
                 for (_tool, output, call_id) in &auto_results {
@@ -1390,6 +1418,7 @@ async fn run_loop_inner(
             &context,
             options.hooks.as_ref(),
             max_tool_concurrency,
+            &tool_guardrail_log,
         )
         .await?;
         if !nested_interruptions.is_empty() {
@@ -1959,6 +1988,7 @@ async fn execute_planned_tools(
     context: &RunContextWrapper,
     hooks: Option<&Arc<dyn RunHooks>>,
     max_concurrency: Option<usize>,
+    guardrail_log: &SharedToolGuardrailLog,
 ) -> Result<
     (
         Vec<(FunctionTool, Value, String)>,
@@ -1994,6 +2024,7 @@ async fn execute_planned_tools(
         let call_id = call_id.clone();
         let resume_map = resume_map.clone();
         let agent = agent.clone();
+        let guardrail_log = Arc::clone(guardrail_log);
         let context = context.clone();
         let hooks = hooks.clone();
         let agent_hooks = agent_hooks.clone();
@@ -2006,6 +2037,29 @@ async fn execute_planned_tools(
                 context.clone(),
             );
             let hook_ctx = ctx.clone();
+            // Python: input guardrails run before the start hooks; a rejection replaces the
+            // call, so neither the hooks, the body nor the output guardrails run.
+            let guardrail_agent = Arc::new(agent.clone());
+            let mut input_results = Vec::new();
+            let rejection = run_tool_input_guardrails(
+                &tool.tool_input_guardrails,
+                &ctx,
+                &guardrail_agent,
+                &mut input_results,
+            )
+            .await;
+            guardrail_log
+                .lock()
+                .expect("tool guardrail log")
+                .input
+                .extend(input_results);
+            if let Some(message) = rejection? {
+                return Ok::<_, AgentsError>((
+                    tool,
+                    call_id,
+                    ToolResult::output(Value::String(message)),
+                ));
+            }
             if let Some(h) = &hooks {
                 h.on_tool_start(hook_ctx.clone(), &agent, &tool).await;
             }
@@ -2050,6 +2104,26 @@ async fn execute_planned_tools(
                     ToolResult::output(Value::String(message))
                 }
             };
+            let mut result = result;
+            // Python: output guardrails see the result (including an error message) unless the
+            // call paused for a nested approval.
+            if result.interruptions.is_empty() {
+                let mut output_results = Vec::new();
+                let guarded = run_tool_output_guardrails(
+                    &tool.tool_output_guardrails,
+                    &hook_ctx,
+                    &guardrail_agent,
+                    result.output.clone().unwrap_or(Value::Null),
+                    &mut output_results,
+                )
+                .await;
+                guardrail_log
+                    .lock()
+                    .expect("tool guardrail log")
+                    .output
+                    .extend(output_results);
+                result.output = Some(guarded?);
+            }
             let output = result.output.clone().unwrap_or(Value::Null);
             if let Some(h) = &hooks {
                 h.on_tool_end(hook_ctx.clone(), &agent, &tool, &output)
@@ -2147,6 +2221,8 @@ fn finished_result(
         interruptions: Vec::new(),
         input_guardrail_results: Vec::new(),
         output_guardrail_results: Vec::new(),
+        tool_input_guardrail_results: Vec::new(),
+        tool_output_guardrail_results: Vec::new(),
         interrupt_state: None,
     }
 }
@@ -2174,6 +2250,8 @@ fn interrupted_result(
         interruptions,
         input_guardrail_results: Vec::new(),
         output_guardrail_results: Vec::new(),
+        tool_input_guardrail_results: Vec::new(),
+        tool_output_guardrail_results: Vec::new(),
         interrupt_state: Some(interrupt_state),
     }
 }

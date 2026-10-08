@@ -29,6 +29,12 @@ pub enum AgentsError {
         #[source]
         source: Option<Box<dyn std::error::Error + Send + Sync>>,
     },
+    /// A tool input guardrail halted the run (Python: `ToolInputGuardrailTripwireTriggered`).
+    #[error(transparent)]
+    ToolInputGuardrailTripwire(#[from] ToolInputGuardrailTripwireTriggered),
+    /// A tool output guardrail halted the run (Python: `ToolOutputGuardrailTripwireTriggered`).
+    #[error(transparent)]
+    ToolOutputGuardrailTripwire(#[from] ToolOutputGuardrailTripwireTriggered),
     /// A function tool exceeded its timeout with `ToolTimeoutBehavior::RaiseException`
     /// (Python: `ToolTimeoutError`).
     #[error(transparent)]
@@ -82,6 +88,26 @@ impl AgentsError {
             source: Some(Box::new(source)),
         }
     }
+}
+
+/// Raised when a tool input guardrail asks to stop the run.
+#[derive(Debug, Error, Clone)]
+#[error("Tool input guardrail `{guardrail_name}` triggered a tripwire")]
+pub struct ToolInputGuardrailTripwireTriggered {
+    /// Name of the guardrail that tripped.
+    pub guardrail_name: String,
+    /// What the guardrail returned.
+    pub output: crate::tool_guardrails::ToolGuardrailFunctionOutput,
+}
+
+/// Raised when a tool output guardrail asks to stop the run.
+#[derive(Debug, Error, Clone)]
+#[error("Tool output guardrail `{guardrail_name}` triggered a tripwire")]
+pub struct ToolOutputGuardrailTripwireTriggered {
+    /// Name of the guardrail that tripped.
+    pub guardrail_name: String,
+    /// What the guardrail returned.
+    pub output: crate::tool_guardrails::ToolGuardrailFunctionOutput,
 }
 
 /// Raised when a function tool invocation exceeds its timeout (Python: `ToolTimeoutError`).
