@@ -10,7 +10,7 @@ use std::sync::Arc;
 use openai_agents::testing::{ModelStep, ScriptedModel};
 use openai_agents::{
     handoff, Agent, AgentsError, CustomOutputSchema, FunctionTool, ModelError, RunItem,
-    RunOptions, RunResult, Runner, ToolUseBehavior,
+    RunErrorHandlerResult, RunErrorHandlers, RunOptions, RunResult, Runner, ToolUseBehavior,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -22,6 +22,12 @@ struct Scenario {
     agent: AgentSpec,
     steps: Vec<StepSpec>,
     expect: Expect,
+    /// `Runner.run(max_turns=...)`.
+    #[serde(default)]
+    max_turns: Option<usize>,
+    /// When set, a `max_turns` error handler returns this as the final output.
+    #[serde(default)]
+    max_turns_handler_output: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -210,7 +216,17 @@ async fn parity_scenarios_match_expect_and_golden() {
             agent = agent.output_type(Arc::new(CustomOutputSchema::new("output", schema, true)));
         }
 
-        let outcome = Runner::run(&agent, scenario.input, RunOptions::default()).await;
+        let mut options = RunOptions::default();
+        if let Some(max_turns) = scenario.max_turns {
+            options.max_turns = Some(max_turns);
+        }
+        if let Some(output) = scenario.max_turns_handler_output {
+            options.error_handlers = RunErrorHandlers::default().on_max_turns(move |_| {
+                let output = output.clone();
+                async move { Ok(Some(RunErrorHandlerResult::new(output))) }
+            });
+        }
+        let outcome = Runner::run(&agent, scenario.input, options).await;
         let expect = scenario.expect;
 
         let golden_path = path.with_extension("golden.json");

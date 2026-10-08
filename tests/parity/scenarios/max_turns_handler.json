@@ -1,0 +1,44 @@
+{
+  "name": "max_turns_handler",
+  "input": "loop",
+  "max_turns": 2,
+  "max_turns_handler_output": "gave up",
+  "agent": {
+    "name": "assistant",
+    "tools": [
+      {
+        "name": "echo",
+        "return_value": "x"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "output": [
+        {
+          "id": "1",
+          "type": "function_call",
+          "name": "echo",
+          "arguments": "{}",
+          "call_id": "c1"
+        }
+      ]
+    },
+    {
+      "output": [
+        {
+          "id": "1",
+          "type": "function_call",
+          "name": "echo",
+          "arguments": "{}",
+          "call_id": "c2"
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "final_output": "gave up",
+    "raw_response_count": 2,
+    "tool_output_count": 2
+  }
+}
