@@ -106,6 +106,26 @@ needs `expect` to run; the `.golden.json` produced by the Python oracle is optio
 when present. Regenerate it with `.venv/bin/python scripts/run_parity.py --write-golden` on a
 machine that has `openai-agents==0.23.1` installed.
 
+## Keeping context short
+
+Long chats and tool-heavy runs outgrow the model's context. Two provider-neutral tools:
+
+- **Per call (history untouched):** `ToolOutputTrimmer` shortens old tool outputs and
+  `ContextWindowTrimmer` drops the oldest turns; set one as `RunConfig.call_model_input_filter`
+  (combine with `chain_input_filters`).
+- **Stored history:** wrap a session in `CompactingSession` with a `ModelSummarizer` (any model).
+  Old turns become a short summary once the history passes a token or item trigger.
+
+```rust
+let session = CompactingSession::new(
+    InMemorySession::shared("chat"),
+    Arc::new(ModelSummarizer::new(summary_model)),
+)
+.trigger_tokens(6_000)
+.keep_recent_turns(3)
+.shared();
+```
+
 ## Compatibility & deviations
 
 - [`docs/COMPAT.md`](./docs/COMPAT.md) — support matrix

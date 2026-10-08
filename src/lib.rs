@@ -59,7 +59,10 @@ pub use items::{
     ToolCallOutputItem,
 };
 pub use lifecycle::{AgentHooks, RunHooks};
-pub use memory::{InMemorySession, Session, SessionInputCallback, SessionSettings};
+pub use memory::{
+    CompactingSession, InMemorySession, ModelSummarizer, Session, SessionInputCallback,
+    SessionSettings, Summarizer, DEFAULT_TRIGGER_TOKENS,
+};
 #[cfg(feature = "sqlite")]
 pub use memory::SqliteSession;
 pub use model::{

@@ -14,6 +14,9 @@ use serde_json::Value;
 
 use crate::error::AgentsError;
 
+mod compaction;
+pub use compaction::{CompactingSession, ModelSummarizer, Summarizer, DEFAULT_TRIGGER_TOKENS};
+
 #[cfg(feature = "sqlite")]
 mod sqlite;
 #[cfg(feature = "sqlite")]

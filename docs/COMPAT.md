@@ -143,6 +143,9 @@ dictionaries are merged (`model_settings.py:273`).
 | `RunConfig.session_input_callback`, `SessionSettings.limit` | S | Checked against Python (D-027) |
 | `SqliteSession` (feature `sqlite`) | S | Python-compatible schema; files interchangeable (D-038) |
 | OpenAI-conversations session, `responses.compact` compaction | X | OpenAI-hosted |
+| `ToolOutputTrimmer` | P | Checked against Python; string outputs only (D-039) |
+| `ContextWindowTrimmer`, `chain_input_filters` | S | New, provider-neutral (D-039) |
+| `CompactingSession`, `Summarizer`, `ModelSummarizer`, `Session::replace_items` | S | New, replaces the OpenAI-only compaction (D-039) |
 
 ## Context, guardrails, hooks
 
