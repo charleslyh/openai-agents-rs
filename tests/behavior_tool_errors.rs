@@ -408,3 +408,35 @@ async fn dynamic_is_enabled_hides_tools_and_handoffs() {
     assert!(calls[1].tool_names.contains(&"flagged".to_string()));
     assert!(!calls[1].tool_names.iter().any(|n| n.starts_with("transfer_to")));
 }
+
+/// D-031: `cancel(AfterTurn)` finishes the turn and stops; `cancel(Immediate)` closes the stream.
+#[tokio::test]
+async fn streaming_cancel_after_turn_stops_before_next_turn() {
+    use openai_agents::CancelMode;
+    let model = Arc::new(ScriptedModel::new([
+        ModelStep::from(ItemHelpers::function_tool_call("echo", "{}", "c1")),
+        ModelStep::from(ItemHelpers::text_message("never reached")),
+    ]));
+    let agent = Agent::new("a")
+        .model(model.clone())
+        .tools(vec![FunctionTool::constant("echo", "e", "x")]);
+    let mut streamed = Runner::run_streamed(agent, "go", RunOptions::default());
+    streamed.cancel(CancelMode::AfterTurn);
+    let _ = streamed.collect_events().await;
+    assert!(streamed.is_complete());
+    assert!(streamed.is_cancelled());
+    assert_eq!(streamed.final_output(), None);
+    assert_eq!(model.calls().len(), 1, "second turn must not start");
+}
+
+#[tokio::test]
+async fn streaming_cancel_immediate_closes_stream() {
+    use openai_agents::CancelMode;
+    let model = Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::text_message("hi"))]));
+    let agent = Agent::new("a").model(model);
+    let mut streamed = Runner::run_streamed(agent, "go", RunOptions::default());
+    streamed.cancel(CancelMode::Immediate);
+    assert!(streamed.next_event().await.is_none());
+    assert!(streamed.is_cancelled() && streamed.is_complete());
+    assert_eq!(streamed.final_output(), None);
+}
