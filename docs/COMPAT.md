@@ -40,7 +40,8 @@ Legend: **S** = supported · **P** = partial · **N** = not supported · **D** =
 | Default API = Responses | S | `set_default_openai_api` |
 | `ModelProvider` / `MultiProvider` | S | `prefix/model` routing, default prefix `openai` |
 | `OpenAIProvider` | S | Reads `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL`; caches per name |
-| Model retry (`ModelRetrySettings`) | N | |
+| Model retry (`ModelSettings.retry`, `retry_policies`) | S | Checked against Python scenario by scenario; typed `ModelError::Status` / `Connection` (D-034) |
+| Per-attempt `ModelSettings.timeout` | S | `ModelError::Timeout`; retryable (D-034) |
 | Litellm / other providers | N | Register a custom `ModelProvider` |
 
 ## Streaming wire events

@@ -59,7 +59,7 @@ Rust language difference) · **Gap** (known missing capability, tracked by COMPA
 | D-024 | `extra_args` collision error type | A colliding `extra_args` key returns `ModelError::Behavior` (surfacing as `AgentsError::Model`) | Python raises a bare `TypeError` from the client call; Rust has no kwargs layer to raise from, so the message mirrors Python's (`… got multiple values for keyword argument 'x'`) and the failure travels through the typed error channel | Accepted |
 | D-025 | `extra_args` accepts arbitrary keys | Any key is written straight into the request body | The openai SDK's `create()` has no `**kwargs`: `extra_args` keys must be *typed* SDK parameters (`service_tier`, `prompt_cache_key`, `logprobs`, …) and an unknown key raises `TypeError: … got an unexpected keyword argument`. Arbitrary body fields belong in `extra_body` ("Add additional JSON properties to the request"). Rust has no typed SDK surface to validate against, and an OpenAI-specific allowlist would reject legitimate OpenAI-compatible gateway parameters, so it stays permissive | Accepted — prefer `extra_body` for arbitrary fields |
 | D-019 | `agents.testing` has no HTTP mocks | `ScriptedModel` is the only shipped test double. HTTP contract tests live in `tests/openai_wiremock.rs` and drive `wiremock` directly, so no mock layer is part of the public API | Aligns the `testing` surface with Python; the old `MockResponses` / `MockCompletions` wrappers were removed | Accepted |
-| D-020 | `ModelStep.responder` / `stream_events` / `retry_advice` | Not ported; steps are a plain output/error pair | Advanced streaming and retry features are out of scope | Later phase |
+| D-020 | `ModelStep.responder` / `stream_events` | Not ported; steps are a plain output/error pair. `retry_advice` is ported (`ModelStep::with_retry_advice`, and `raise_model_error` for typed errors) | Advanced streaming features are out of scope | Later phase |
 | D-021 | `ModelCall` recorded fields | Records `streamed` and `output_schema_name`, but not `output_schema`, `handoffs` or `prompt` objects | `ModelRequest` does not carry handoffs; Python exposes the live objects | Later phase |
 | D-018 | `function_tool` variadic / `Annotated` parameters | Not supported; the macro accepts plain owned-typed identifiers and an optional leading context parameter | Rust signatures cannot express `*args` / `**kwargs` with types | Accepted |
 | D-023 | Chat Completions synthesized response id | The synthesized `response` object and `ModelResponse.response_id` carry the provider's `id` (e.g. `chatcmpl-…`) when the gateway sends one; `FAKE_RESPONSES_ID` only when it does not | Python always uses `FAKE_RESPONSES_ID` for Chat Completions. The id is only fed back as `previous_response_id`, which the Chat Completions adapter ignores | Accepted |
@@ -81,6 +81,35 @@ Verified to **match** Python in this audit: `AgentHooks.on_handoff(context, agen
 is invoked on the *source* agent's hooks; output guardrails combine `RunConfig` + agent guardrails
 and trip as `OutputGuardrailTripwireTriggered`; `tool_choice` reset; `HandoffCallItem` /
 `HandoffOutputItem` payload (`{"assistant": name}`); input guardrails run only on the first agent.
+
+## Model retries (D-034)
+
+`ModelSettings.retry` ports Python's runner-managed retries (`retry.py`, `run_internal/model_retry.py`),
+and the Python behavior was checked against the vendored SDK scenario by scenario (backoff waits,
+`Retry-After` precedence, exhausted budgets, stateful and replay-unsafe vetoes, `provider_suggested`,
+`all` / `any`, the `conversation_locked` compatibility replay, usage accounting).
+
+Ported: `ModelRetrySettings` (`max_retries`, `backoff`, `policy`; merged field by field in
+`ModelSettings::resolve`, serialized without the policy), `ModelRetryBackoffSettings`, `RetryDecision`
+(`approve_unsafe_replay`, delay, reason), `RetryPolicyContext`, `ModelRetryAdvice` /
+`ModelRetryNormalizedError` / `ModelRetryAdviceRequest`, `retry_policies` (`never`, `provider_suggested`,
+`network_error`, `retry_after`, `http_status`, `all`, `any`), per-attempt `ModelSettings.timeout`
+(`ModelError::Timeout`, enforced by the runner for every `Model`, streamed or not), failed attempts
+counted in `Usage` (zero-token `request_usage_entries`), the `conversation_locked` replay (3 times, 1s / 2s /
+4s, disabled by `max_retries = 0`), and OpenAI advice (`x-should-retry`, 408 / 409 / 429 / 5xx, network
+failures, `retry-after-ms` / `retry-after`).
+
+Differences, all intentional:
+
+| Area | Rust behavior | Reason |
+|------|---------------|--------|
+| Error type | HTTP failures are `ModelError::Status(ModelStatusError)` (status, headers, body), connection / timeout / body-read failures are `ModelError::Connection`; `Transport(String)` remains for undecodable bodies. The message text is unchanged. `ModelError` is now `Clone` | Retry policies need the status, headers and error code, which a string loses. Code that matched `ModelError::Transport` for an HTTP failure must match `Status` |
+| Policies | Async closures returning `bool` or `RetryDecision` (`RetryPolicy::new`); built-ins are functions in `retry_policies` taking `Vec<RetryPolicy>` for `all` / `any` | No variadic arguments |
+| Hidden client retries | None exist, so nothing is disabled between attempts | Python's OpenAI client retries by itself and the runner has to switch that off |
+| Not ported | `replay_unsafe_request` (programmatic tool calling), `rewind` (no server conversation tracker), websocket retries, abort detection (cancelling a run drops the future, so there is no error to classify), `RetryPolicyContext.response_started` and the policy capability markers | No Rust counterpart |
+| Streaming | A replay is blocked once an event other than `response.created` / `response.in_progress` reached the consumer, as in Python. The timeout covers a whole attempt (Python's covers waiting for each event) | The Rust adapters return the assembled response, so there is no per-event wait to time |
+| `Retry-After` | Seconds, milliseconds (`retry-after-ms`) and the IMF-fixdate HTTP date; other date forms are ignored | No date parser dependency |
+| Jitter | +-12.5% from a v4 UUID's random bits | No `rand` dependency |
 
 ## Streaming wire contract
 

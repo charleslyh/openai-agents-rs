@@ -2,6 +2,7 @@
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
@@ -1086,42 +1087,81 @@ async fn run_loop_inner(
                 .await;
             }
             let (response, early_guardrails) = {
-                let model_fut = async {
-                    let req = ModelRequest {
-                        system_instructions: system_instructions.as_deref(),
-                        input: ModelInput::Items(&model_input_items),
-                        model_settings: &model_settings,
-                        tools: &tools,
-                        // Python maps `trace_include_sensitive_data=False` to
-                        // `ModelTracing.ENABLED_WITHOUT_DATA`, so adapters drop payloads.
-                        tracing: if crate::tracing::tracing_disabled() {
-                            ModelTracing::Disabled
-                        } else if options.run_config.trace_include_sensitive_data {
-                            ModelTracing::Enabled
-                        } else {
-                            ModelTracing::EnabledWithoutData
-                        },
-                        previous_response_id: previous_response_id.as_deref(),
-                        conversation_id: options.conversation_id.as_deref(),
-                        output_schema: current_agent.output_type.as_deref(),
-                    };
-                    if events.is_some() {
-                        let (raw_tx, mut raw_rx) = mpsc::channel::<Value>(64);
-                        let forward = {
-                            let events = events.clone();
-                            tokio::spawn(async move {
-                                while let Some(data) = raw_rx.recv().await {
-                                    emit(&events, StreamEvent::RawResponse { data }).await;
-                                }
-                            })
-                        };
-                        let response = model.stream_response(req, raw_tx).await?;
-                        let _ = forward.await;
-                        Ok::<ModelResponse, AgentsError>(response)
-                    } else {
-                        Ok::<ModelResponse, AgentsError>(model.get_response(req).await?)
-                    }
+                // Everything an attempt reads is a plain reference, so each attempt rebuilds its
+                // request and a retry can start it again from scratch.
+                let model_ref: &dyn Model = &*model;
+                let instructions_ref = system_instructions.as_deref();
+                let input_ref = &model_input_items;
+                let settings_ref = &model_settings;
+                let tools_ref = &tools;
+                let events_ref = &events;
+                let emitted_unsafe = Arc::new(AtomicBool::new(false));
+                // Python maps `trace_include_sensitive_data=False` to
+                // `ModelTracing.ENABLED_WITHOUT_DATA`, so adapters drop payloads.
+                let tracing_mode = if crate::tracing::tracing_disabled() {
+                    ModelTracing::Disabled
+                } else if options.run_config.trace_include_sensitive_data {
+                    ModelTracing::Enabled
+                } else {
+                    ModelTracing::EnabledWithoutData
                 };
+                let previous_ref = previous_response_id.as_deref();
+                let conversation_ref = options.conversation_id.as_deref();
+                let output_schema_ref = current_agent.output_type.as_deref();
+                let attempt_flag = Arc::clone(&emitted_unsafe);
+                let model_fut = crate::retry::call_with_retry(
+                    crate::retry::RetryCall {
+                        settings: model_settings.retry.as_ref(),
+                        previous_response_id: previous_ref,
+                        conversation_id: conversation_ref,
+                        timeout: model_settings.timeout,
+                        stream: events.is_some(),
+                        emitted_unsafe_event: events.is_some().then_some(&*emitted_unsafe),
+                    },
+                    |request| model_ref.get_retry_advice(request),
+                    move || {
+                        let attempt_flag = Arc::clone(&attempt_flag);
+                        async move {
+                            let req = ModelRequest {
+                                system_instructions: instructions_ref,
+                                input: ModelInput::Items(input_ref),
+                                model_settings: settings_ref,
+                                tools: tools_ref,
+                                tracing: tracing_mode,
+                                previous_response_id: previous_ref,
+                                conversation_id: conversation_ref,
+                                output_schema: output_schema_ref,
+                            };
+                            if events_ref.is_some() {
+                                let (raw_tx, mut raw_rx) = mpsc::channel::<Value>(64);
+                                let forward = {
+                                    let events = events_ref.clone();
+                                    tokio::spawn(async move {
+                                        while let Some(data) = raw_rx.recv().await {
+                                            // Python: once an event other than `response.created` /
+                                            // `response.in_progress` reached the consumer, a
+                                            // replay would show it output twice.
+                                            let kind = data.get("type").and_then(Value::as_str);
+                                            if !matches!(
+                                                kind,
+                                                Some("response.created" | "response.in_progress")
+                                            ) {
+                                                attempt_flag.store(true, Ordering::SeqCst);
+                                            }
+                                            emit(&events, StreamEvent::RawResponse { data }).await;
+                                        }
+                                    })
+                                };
+                                let outcome = model_ref.stream_response(req, raw_tx).await;
+                                let _ = forward.await;
+                                outcome
+                            } else {
+                                model_ref.get_response(req).await
+                            }
+                        }
+                    },
+                );
+                let model_fut = async move { model_fut.await.map_err(AgentsError::from) };
                 tokio::pin!(model_fut);
                 // Python cancels the in-flight model call when a concurrent input guardrail
                 // trips, so a tripwire never waits for (or pays for) the full response.

@@ -357,6 +357,54 @@ pub(crate) fn map_transport(err: impl std::fmt::Display) -> ModelError {
     ModelError::Transport(err.to_string())
 }
 
+/// Classify a `reqwest` failure: connection, timeout and body-read errors are the ones a retry
+/// policy may replay; an undecodable body is not (Python: `APIConnectionError` / `APITimeoutError`).
+pub(crate) fn map_reqwest(err: reqwest::Error) -> ModelError {
+    if err.is_timeout() {
+        return ModelError::Connection(crate::error::ModelConnectionError {
+            message: err.to_string(),
+            is_timeout: true,
+        });
+    }
+    if err.is_connect() || err.is_request() || err.is_body() {
+        return ModelError::Connection(crate::error::ModelConnectionError {
+            message: err.to_string(),
+            is_timeout: false,
+        });
+    }
+    ModelError::Transport(err.to_string())
+}
+
+/// Turn a non-success HTTP response into a [`ModelError::Status`] that keeps the status, headers
+/// and body the retry layer reads (`Retry-After`, `x-should-retry`, the error code).
+pub(crate) async fn status_error(label: &str, resp: reqwest::Response) -> ModelError {
+    let status = resp.status();
+    let headers = resp
+        .headers()
+        .iter()
+        .filter_map(|(name, value)| {
+            value
+                .to_str()
+                .ok()
+                .map(|v| (name.as_str().to_ascii_lowercase(), v.to_string()))
+        })
+        .collect();
+    let text = resp.text().await.unwrap_or_default();
+    let body = serde_json::from_str::<serde_json::Value>(&text).unwrap_or_else(|_| {
+        if text.is_empty() {
+            serde_json::Value::Null
+        } else {
+            serde_json::Value::String(text)
+        }
+    });
+    ModelError::Status(crate::error::ModelStatusError {
+        status_code: status.as_u16(),
+        message: format!("{label} status={status} body={body}"),
+        body,
+        headers,
+    })
+}
+
 /// Whether a response carries a plain JSON body instead of an SSE stream.
 ///
 /// Some gateways (and wiremock) ignore `stream: true` and answer with the full object, so

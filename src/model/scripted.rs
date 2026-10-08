@@ -15,6 +15,7 @@ use crate::model::wire_events::{emit_response_stream, response_object};
 use crate::model::wire_events::{SCRIPTED_MODEL, SCRIPTED_RESPONSE_ID};
 use crate::model::{Model, ModelRequest};
 use crate::model_settings::ModelSettings;
+use crate::retry::{ModelRetryAdvice, ModelRetryAdviceRequest};
 use crate::usage::Usage;
 
 use super::ModelTracing;
@@ -121,6 +122,11 @@ pub struct ModelStep {
     pub request_id: Option<String>,
     /// If set, the model call fails with this message.
     pub error: Option<String>,
+    /// If set, the model call fails with this typed error (for example an HTTP status).
+    pub model_error: Option<ModelError>,
+    /// Provider retry guidance attached to the error this step raises
+    /// (Python: `ModelStep.retry_advice`).
+    pub retry_advice: Option<ModelRetryAdvice>,
 }
 
 impl ModelStep {
@@ -132,6 +138,8 @@ impl ModelStep {
             response_id: Some("resp-789".into()),
             request_id: None,
             error: None,
+            model_error: None,
+            retry_advice: None,
         }
     }
 
@@ -143,12 +151,34 @@ impl ModelStep {
             response_id: None,
             request_id: None,
             error: Some(message.into()),
+            model_error: None,
+            retry_advice: None,
         }
+    }
+
+    /// Create a step that fails with a typed [`ModelError`], e.g. a 429 or a dropped connection.
+    pub fn raise_model_error(error: ModelError) -> Self {
+        Self {
+            model_error: Some(error),
+            ..Self::raise_error("")
+        }
+        .without_message()
+    }
+
+    fn without_message(mut self) -> Self {
+        self.error = None;
+        self
+    }
+
+    /// Attach provider retry guidance to the error this step raises.
+    pub fn with_retry_advice(mut self, advice: ModelRetryAdvice) -> Self {
+        self.retry_advice = Some(advice);
+        self
     }
 
     /// Python rejects steps that combine an error with output items.
     fn validate(&self, input_index: usize) -> Result<(), ModelScriptError> {
-        if self.error.is_some() && !self.output.is_empty() {
+        if (self.error.is_some() || self.model_error.is_some()) && !self.output.is_empty() {
             return Err(ModelScriptError::InvalidModelStep {
                 message: format!(
                     "Scripted model step #{} cannot combine error and output outcomes.",
@@ -181,6 +211,8 @@ pub struct ScriptedModel {
     steps: Mutex<VecDeque<ModelStep>>,
     calls: Mutex<Vec<ModelCall>>,
     default_usage: Mutex<Option<Usage>>,
+    /// Advice attached to scripted errors, matched by error text when asked for.
+    advice_by_error: Mutex<Vec<(String, ModelRetryAdvice)>>,
 }
 
 impl ScriptedModel {
@@ -199,6 +231,7 @@ impl ScriptedModel {
             steps: Mutex::new(steps),
             calls: Mutex::new(Vec::new()),
             default_usage: Mutex::new(None),
+            advice_by_error: Mutex::new(Vec::new()),
         }
     }
 
@@ -258,6 +291,18 @@ impl ScriptedModel {
 
 #[async_trait]
 impl Model for ScriptedModel {
+    /// The advice attached to the exact scripted error that was raised
+    /// (Python: `ScriptedModel.get_retry_advice`).
+    fn get_retry_advice(&self, request: &ModelRetryAdviceRequest) -> Option<ModelRetryAdvice> {
+        let text = request.error.to_string();
+        self.advice_by_error
+            .lock()
+            .expect("scripted lock")
+            .iter()
+            .find(|(error, _)| *error == text)
+            .map(|(_, advice)| advice.clone())
+    }
+
     async fn get_response(&self, request: ModelRequest<'_>) -> Result<ModelResponse, ModelError> {
         self.record(request, false);
 
@@ -275,8 +320,8 @@ impl Model for ScriptedModel {
             )
         })?;
 
-        if let Some(err) = step.error {
-            return Err(ModelError::Script(err));
+        if let Some(err) = self.step_error(&step) {
+            return Err(err);
         }
         let usage = self.resolve_usage(&step);
 
@@ -309,8 +354,8 @@ impl Model for ScriptedModel {
             )
         })?;
 
-        if let Some(err) = step.error {
-            return Err(ModelError::Script(err));
+        if let Some(err) = self.step_error(&step) {
+            return Err(err);
         }
 
         let usage = self.resolve_usage(&step);
@@ -342,6 +387,22 @@ impl Model for ScriptedModel {
 }
 
 impl ScriptedModel {
+    /// The error a failing step raises, remembering its retry advice.
+    fn step_error(&self, step: &ModelStep) -> Option<ModelError> {
+        let error = match (&step.model_error, &step.error) {
+            (Some(error), _) => error.clone(),
+            (None, Some(message)) => ModelError::Script(message.clone()),
+            (None, None) => return None,
+        };
+        if let Some(advice) = &step.retry_advice {
+            self.advice_by_error
+                .lock()
+                .expect("scripted lock")
+                .push((error.to_string(), advice.clone()));
+        }
+        Some(error)
+    }
+
     /// Python: an empty usage falls back to the configured default, else `Usage(requests=1)`.
     fn resolve_usage(&self, step: &ModelStep) -> Usage {
         if step.usage == Usage::default() {

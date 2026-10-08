@@ -1135,3 +1135,133 @@ async fn chat_usage_details_and_missing_usage() {
     assert_eq!(second.usage.total_tokens, 0);
     assert!(second.usage.request_usage_entries.is_empty());
 }
+
+/// Test-local responder that replays queued full responses (status, headers and body).
+struct QueuedResponses(Mutex<VecDeque<ResponseTemplate>>);
+
+impl wiremock::Respond for QueuedResponses {
+    fn respond(&self, _request: &wiremock::Request) -> ResponseTemplate {
+        self.0
+            .lock()
+            .expect("queue")
+            .pop_front()
+            .unwrap_or_else(|| ResponseTemplate::new(500))
+    }
+}
+
+fn retrying_agent(model: Arc<dyn openai_agents::Model>, policy: openai_agents::RetryPolicy) -> Agent {
+    Agent::new("a").model(model).model_settings(ModelSettings {
+        retry: Some(
+            openai_agents::ModelRetrySettings::new(2, policy).with_backoff(
+                openai_agents::ModelRetryBackoffSettings {
+                    initial_delay: Some(0.01),
+                    jitter: Some(false),
+                    ..Default::default()
+                },
+            ),
+        ),
+        ..Default::default()
+    })
+}
+
+/// A 429 with `retry-after-ms` is retried after that wait, on both OpenAI APIs and for streamed
+/// runs; the failed attempt shows up in the usage.
+#[tokio::test]
+async fn http_429_is_retried_using_the_provider_retry_after() {
+    use openai_agents::retry_policies;
+    let ok_responses = json!({"id": "r", "output": text_output("done"),
+        "usage": {"input_tokens": 1, "output_tokens": 1}});
+    let ok_chat = json!({"id": "c", "choices": [{"index": 0, "finish_reason": "stop",
+        "message": {"role": "assistant", "content": "done"}}],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}});
+    for (route, body, chat) in [("/v1/responses", ok_responses, false), ("/v1/chat/completions", ok_chat, true)] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path(route))
+            .respond_with(QueuedResponses(Mutex::new(
+                vec![
+                    ResponseTemplate::new(429)
+                        .insert_header("retry-after-ms", "20")
+                        .set_body_json(json!({"error": {"code": "rate_limit_exceeded", "message": "slow down"}})),
+                    ResponseTemplate::new(200).set_body_json(body),
+                ]
+                .into(),
+            )))
+            .mount(&server)
+            .await;
+        let base = format!("{}/v1", server.uri());
+        let model: Arc<dyn openai_agents::Model> = if chat {
+            Arc::new(OpenAIChatCompletionsModel::new("m", "sk-test", Some(&base)))
+        } else {
+            Arc::new(OpenAIResponsesModel::new("m", "sk-test", Some(&base)))
+        };
+        let agent = retrying_agent(model, openai_agents::retry_policies::provider_suggested());
+        let started = std::time::Instant::now();
+        let result = Runner::run(&agent, "hi", RunOptions::default()).await.expect(route);
+        assert!(started.elapsed() >= std::time::Duration::from_millis(20), "{route}: waited for retry-after-ms");
+        assert_eq!(result.final_output_as_str(), Some("done"), "{route}");
+        assert_eq!(result.usage.requests, 2, "{route}: failed attempt counted");
+        assert_eq!(server.received_requests().await.unwrap().len(), 2, "{route}");
+        let _ = retry_policies::never();
+    }
+}
+
+/// `x-should-retry: false` stops `provider_suggested`; other statuses and 4xx are not retried.
+#[tokio::test]
+async fn http_errors_the_provider_says_not_to_retry_are_returned() {
+    for (status, header) in [(500, Some("false")), (400, None), (401, None)] {
+        let server = MockServer::start().await;
+        let mut template = ResponseTemplate::new(status).set_body_json(json!({"error": {"message": "no"}}));
+        if let Some(value) = header {
+            template = template.insert_header("x-should-retry", value);
+        }
+        Mock::given(method("POST"))
+            .and(path("/v1/responses"))
+            .respond_with(template)
+            .mount(&server)
+            .await;
+        let model = Arc::new(OpenAIResponsesModel::new("m", "sk-test", Some(&format!("{}/v1", server.uri()))));
+        let agent = retrying_agent(model, openai_agents::retry_policies::provider_suggested());
+        let err = Runner::run(&agent, "hi", RunOptions::default()).await.unwrap_err();
+        match err {
+            openai_agents::AgentsError::Model(openai_agents::ModelError::Status(e)) => {
+                assert_eq!(e.status_code, status);
+                assert!(e.to_string().contains(&format!("status={status}")), "{e}");
+            }
+            other => panic!("expected a status error, got {other}"),
+        }
+        assert_eq!(server.received_requests().await.unwrap().len(), 1, "status {status}");
+    }
+}
+
+/// 5xx and a refused connection are retried by `provider_suggested`.
+#[tokio::test]
+async fn http_5xx_and_connection_failures_are_retried() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(QueuedResponses(Mutex::new(
+            vec![
+                ResponseTemplate::new(503).set_body_json(json!({"error": {"message": "busy"}})),
+                ResponseTemplate::new(200).set_body_json(
+                    json!({"id": "r", "output": text_output("up"), "usage": {"input_tokens": 1, "output_tokens": 1}}),
+                ),
+            ]
+            .into(),
+        )))
+        .mount(&server)
+        .await;
+    let model = Arc::new(OpenAIResponsesModel::new("m", "sk-test", Some(&format!("{}/v1", server.uri()))));
+    let agent = retrying_agent(model, openai_agents::retry_policies::provider_suggested());
+    let result = Runner::run(&agent, "hi", RunOptions::default()).await.expect("recovered");
+    assert_eq!(result.final_output_as_str(), Some("up"));
+
+    // Nothing listens on this port: a connection error, which `network_error` retries.
+    let dead = Arc::new(OpenAIResponsesModel::new("m", "sk-test", Some("http://127.0.0.1:9/v1")));
+    let agent = retrying_agent(dead, openai_agents::retry_policies::network_error());
+    let err = Runner::run(&agent, "hi", RunOptions::default()).await.unwrap_err();
+    assert!(
+        matches!(err, openai_agents::AgentsError::Model(openai_agents::ModelError::Connection(_))),
+        "{err}"
+    );
+}
