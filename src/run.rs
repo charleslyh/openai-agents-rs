@@ -7,25 +7,25 @@ use std::sync::{Arc, Mutex, OnceLock};
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 
-use crate::agent::{Agent, AsToolConfig, ToolUseBehavior};
+use crate::agent::{Agent, AsToolConfig, FunctionToolResult, ToolUseBehavior};
 use crate::error::{
     AgentsError, InputGuardrailTripwireTriggered, MaxTurnsExceeded, ModelError,
     OutputGuardrailTripwireTriggered, UserError,
 };
 use crate::guardrail::{InputGuardrail, InputGuardrailResult, OutputGuardrail};
 use crate::handoffs::Handoff;
-use crate::lifecycle::RunHooks;
-use crate::run_context::{ContextValue, RunContextWrapper};
 use crate::items::{
-    extract_message_text, is_function_call, is_reasoning, required_function_call_parts, InputLike,
-    ItemHelpers, HandoffCallItem, HandoffOutputItem, MessageOutputItem, ModelResponse,
+    extract_message_text, is_function_call, is_reasoning, required_function_call_parts,
+    HandoffCallItem, HandoffOutputItem, InputLike, ItemHelpers, MessageOutputItem, ModelResponse,
     ReasoningItem, ResponseOutputItem, RunItem, ToolApprovalItem, ToolCallItem, ToolCallOutputItem,
 };
+use crate::lifecycle::RunHooks;
 use crate::model::{
     default_model_provider, Model, ModelInput, ModelProvider, ModelRef, ModelRequest, ModelTracing,
 };
 use crate::model_settings::ModelSettings;
 use crate::result::{InterruptSnapshot, RunResult, RunResultStreaming, StreamingSnapshot};
+use crate::run_context::{ContextValue, RunContextWrapper};
 use crate::run_state::{ApprovalDecision, ApprovalStore, RunState};
 use crate::stream_events::{RunItemStreamName, StreamEvent};
 use crate::tool::{FunctionTool, ToolContext, ToolResult};
@@ -85,6 +85,24 @@ pub fn default_trace_include_sensitive_data() -> bool {
     }
 }
 
+/// Name of the stand-in tool recorded for a call to a tool the agent does not have.
+const TOOL_NOT_FOUND_PLACEHOLDER: &str = "__tool_not_found__";
+
+/// Output sent for every handoff after the first in one turn (Python: same literal).
+const MULTIPLE_HANDOFFS_MESSAGE: &str = "Multiple handoffs detected, ignoring this one.";
+
+/// What to do when the model calls a tool the agent does not have
+/// (Python: `RunConfig.tool_not_found_behavior`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ToolNotFoundBehavior {
+    /// Fail the run with a model behavior error (Python: `"raise_error"`, default).
+    #[default]
+    RaiseError,
+    /// Send an error output back to the model so it can recover
+    /// (Python: `"return_error_to_model"`).
+    ReturnErrorToModel,
+}
+
 /// Run configuration subset (Python: `RunConfig`).
 #[derive(Clone)]
 pub struct RunConfig {
@@ -114,6 +132,8 @@ pub struct RunConfig {
     pub input_guardrails: Vec<InputGuardrail>,
     /// Output guardrails applied to the run (Python: `RunConfig.output_guardrails`).
     pub output_guardrails: Vec<OutputGuardrail>,
+    /// Behavior when the model calls an unknown tool (Python: `RunConfig.tool_not_found_behavior`).
+    pub tool_not_found_behavior: ToolNotFoundBehavior,
 }
 
 impl Default for RunConfig {
@@ -130,6 +150,7 @@ impl Default for RunConfig {
             trace_include_sensitive_data: default_trace_include_sensitive_data(),
             input_guardrails: Vec::new(),
             output_guardrails: Vec::new(),
+            tool_not_found_behavior: ToolNotFoundBehavior::default(),
         }
     }
 }
@@ -143,7 +164,10 @@ impl std::fmt::Debug for RunConfig {
             .field("workflow_name", &self.workflow_name)
             .field("trace_id", &self.trace_id)
             .field("group_id", &self.group_id)
-            .field("trace_include_sensitive_data", &self.trace_include_sensitive_data)
+            .field(
+                "trace_include_sensitive_data",
+                &self.trace_include_sensitive_data,
+            )
             .finish()
     }
 }
@@ -433,38 +457,42 @@ async fn run_loop_inner(
     )
     .await;
 
-    // Python runs input guardrails concurrently with the agent's first turn.
-    let input_guardrails: Vec<InputGuardrail> = options
-        .run_config
-        .input_guardrails
-        .iter()
-        .chain(current_agent.input_guardrails.iter())
-        .cloned()
-        .collect();
-    let mut pending_input_guardrails = if input_guardrails.is_empty() {
-        None
-    } else {
-        let guardrails = input_guardrails.clone();
+    // Python splits input guardrails by `run_in_parallel`: blocking ones finish before the first
+    // model call, the rest run concurrently with it.
+    let (parallel_guardrails, blocking_guardrails): (Vec<InputGuardrail>, Vec<InputGuardrail>) =
+        options
+            .run_config
+            .input_guardrails
+            .iter()
+            .chain(current_agent.input_guardrails.iter())
+            .cloned()
+            .partition(|g| g.run_in_parallel);
+    let run_input_guardrails = |guardrails: Vec<InputGuardrail>| {
         let agent = Arc::new(current_agent.clone());
         let run_input = input.clone();
         let ctx = context.clone();
+        async move {
+            let futs = guardrails.into_iter().map(|g| {
+                let agent = Arc::clone(&agent);
+                let run_input = run_input.clone();
+                let ctx = ctx.clone();
+                async move { g.run(agent, run_input, ctx).await }
+            });
+            futures::future::join_all(futs).await
+        }
+    };
+    let mut pending_input_guardrails = if parallel_guardrails.is_empty() {
+        None
+    } else {
         // `tokio::spawn` does not inherit task-locals, so the run's tracing switch has to be
         // re-established inside the task; otherwise spans opened by a guardrail (Python runs
         // them concurrently with the first turn) escape `RunConfig.tracing_disabled`.
         let run_tracing_disabled = options.run_config.tracing_disabled;
-        Some(tokio::spawn(async move {
-            crate::tracing::with_run_tracing_disabled(run_tracing_disabled, async move {
-                let futs = guardrails.iter().map(|g| {
-                    let g = g.clone();
-                    let agent = Arc::clone(&agent);
-                    let run_input = run_input.clone();
-                    let ctx = ctx.clone();
-                    async move { g.run(agent, run_input, ctx).await }
-                });
-                futures::future::join_all(futs).await
-            })
-            .await
-        }))
+        let fut = run_input_guardrails(parallel_guardrails);
+        Some(tokio::spawn(crate::tracing::with_run_tracing_disabled(
+            run_tracing_disabled,
+            fut,
+        )))
     };
 
     // `on_agent_start` is called once per agent, including after each handoff.
@@ -473,6 +501,14 @@ async fn run_loop_inner(
     }
     if let Some(ah) = &current_agent.hooks {
         ah.on_start(context.clone(), &current_agent).await;
+    }
+
+    if !blocking_guardrails.is_empty() {
+        let results = run_input_guardrails(blocking_guardrails).await;
+        if let Some(r) = results.iter().find(|r| r.output.tripwire_triggered) {
+            return Err(InputGuardrailTripwireTriggered { result: r.clone() }.into());
+        }
+        input_guardrail_results = results;
     }
 
     loop {
@@ -502,33 +538,35 @@ async fn run_loop_inner(
 
         let _agent_span = agent_span(&current_agent.name);
 
-        let (response, approvals_map, from_resume) =
-            if let Some((pending, approvals)) = resume_pending.take() {
-                (pending, approvals, true)
-            } else {
-                let _gen_span =
-                    generation_span(current_agent.model_name.as_deref().unwrap_or("scripted"));
-                // Python: `instructions` may be a callable of `(context, agent)`.
-                let system_instructions = current_agent.resolve_instructions(&context).await;
-                if let Some(h) = &options.hooks {
-                    h.on_llm_start(
-                        context.clone(),
-                        &current_agent,
-                        system_instructions.as_deref(),
-                        &current_input_items,
-                    )
-                    .await;
-                }
-                if let Some(ah) = &current_agent.hooks {
-                    ah.on_llm_start(
-                        context.clone(),
-                        &current_agent,
-                        system_instructions.as_deref(),
-                        &current_input_items,
-                    )
-                    .await;
-                }
-                let response = {
+        let (response, approvals_map, from_resume) = if let Some((pending, approvals)) =
+            resume_pending.take()
+        {
+            (pending, approvals, true)
+        } else {
+            let _gen_span =
+                generation_span(current_agent.model_name.as_deref().unwrap_or("scripted"));
+            // Python: `instructions` may be a callable of `(context, agent)`.
+            let system_instructions = current_agent.resolve_instructions(&context).await;
+            if let Some(h) = &options.hooks {
+                h.on_llm_start(
+                    context.clone(),
+                    &current_agent,
+                    system_instructions.as_deref(),
+                    &current_input_items,
+                )
+                .await;
+            }
+            if let Some(ah) = &current_agent.hooks {
+                ah.on_llm_start(
+                    context.clone(),
+                    &current_agent,
+                    system_instructions.as_deref(),
+                    &current_input_items,
+                )
+                .await;
+            }
+            let (response, early_guardrails) = {
+                let model_fut = async {
                     let req = ModelRequest {
                         system_instructions: system_instructions.as_deref(),
                         input: ModelInput::Items(&current_input_items),
@@ -559,43 +597,73 @@ async fn run_loop_inner(
                         };
                         let response = model.stream_response(req, raw_tx).await?;
                         let _ = forward.await;
-                        response
+                        Ok::<ModelResponse, AgentsError>(response)
                     } else {
-                        model.get_response(req).await?
+                        Ok::<ModelResponse, AgentsError>(model.get_response(req).await?)
                     }
                 };
-                if let Some(id) = &response.response_id {
-                    previous_response_id = Some(id.clone());
-                }
-                usage.add(&response.usage);
-                context.add_usage(&response.usage);
-                raw_responses.push(response.clone());
-                if let Some(snap) = &snapshot {
-                    let mut s = snap.lock().expect("snapshot");
-                    s.new_items = generated_items.clone();
-                    s.raw_responses = raw_responses.clone();
-                    s.usage = usage.clone();
-                }
-                if let Some(h) = &options.hooks {
-                    h.on_llm_end(context.clone(), &current_agent, &response).await;
-                }
-                if let Some(ah) = &current_agent.hooks {
-                    ah.on_llm_end(context.clone(), &current_agent, &response).await;
-                }
-                (response, live_approvals.clone(), false)
+                tokio::pin!(model_fut);
+                // Python cancels the in-flight model call when a concurrent input guardrail
+                // trips, so a tripwire never waits for (or pays for) the full response.
+                let mut early_guardrails = None;
+                let response = match pending_input_guardrails.as_mut() {
+                    Some(task) => tokio::select! {
+                        joined = &mut *task => {
+                            let results = joined.map_err(|e| {
+                                AgentsError::internal(format!("input guardrail task failed: {e}"))
+                            })?;
+                            if let Some(r) = results.iter().find(|r| r.output.tripwire_triggered) {
+                                return Err(
+                                    InputGuardrailTripwireTriggered { result: r.clone() }.into()
+                                );
+                            }
+                            early_guardrails = Some(results);
+                            (&mut model_fut).await?
+                        }
+                        response = &mut model_fut => response?,
+                    },
+                    None => (&mut model_fut).await?,
+                };
+                (response, early_guardrails)
             };
+            if let Some(results) = early_guardrails {
+                pending_input_guardrails = None;
+                input_guardrail_results.extend(results);
+            }
+            if let Some(id) = &response.response_id {
+                previous_response_id = Some(id.clone());
+            }
+            usage.add(&response.usage);
+            context.add_usage(&response.usage);
+            raw_responses.push(response.clone());
+            if let Some(snap) = &snapshot {
+                let mut s = snap.lock().expect("snapshot");
+                s.new_items = generated_items.clone();
+                s.raw_responses = raw_responses.clone();
+                s.usage = usage.clone();
+            }
+            if let Some(h) = &options.hooks {
+                h.on_llm_end(context.clone(), &current_agent, &response)
+                    .await;
+            }
+            if let Some(ah) = &current_agent.hooks {
+                ah.on_llm_end(context.clone(), &current_agent, &response)
+                    .await;
+            }
+            (response, live_approvals.clone(), false)
+        };
 
         // Input guardrails ran alongside the first turn; a tripwire aborts the run.
         if let Some(task) = pending_input_guardrails.take() {
-            let results = task.await.map_err(|e| {
-                AgentsError::internal(format!("input guardrail task failed: {e}"))
-            })?;
+            let results = task
+                .await
+                .map_err(|e| AgentsError::internal(format!("input guardrail task failed: {e}")))?;
             for r in &results {
                 if r.output.tripwire_triggered {
                     return Err(InputGuardrailTripwireTriggered { result: r.clone() }.into());
                 }
             }
-            input_guardrail_results = results;
+            input_guardrail_results.extend(results);
         }
 
         let mut function_calls: Vec<Value> = Vec::new();
@@ -717,86 +785,25 @@ async fn run_loop_inner(
         // turn (`AgentToolUseTracker.record_processed_response`).
         agents_used_tools.insert(current_agent.name.clone());
 
-        // Prefer the first handoff call if present (Python ignores extras).
-        let mut handoff_done = false;
+        // Python (`execute_tools_and_side_effects`) runs the function tools of the turn first and
+        // then performs the first handoff; extra handoffs are answered but ignored.
+        let mut handoff_calls: Vec<(Handoff, Value, String)> = Vec::new();
+        let mut tool_calls: Vec<Value> = Vec::new();
         for call in &function_calls {
             let (name, _args, call_id) = required_function_call_parts(call)?;
-            let Some(h) = current_agent
-                .handoffs
-                .iter()
-                .find(|h| h.tool_name == name)
-                .cloned()
-            else {
-                continue;
-            };
-
-            let _handoff_span = handoff_span(&current_agent.name, &h.agent.name);
-
-            let transfer = json!({"assistant": h.agent.name}).to_string();
-            let source_agent_name = current_agent.name.clone();
-            let target_agent_name = h.agent.name.clone();
-            let out_item = RunItem::HandoffOutput(HandoffOutputItem {
-                agent_name: source_agent_name.clone(),
-                raw_item: ItemHelpers::function_call_output(&call_id, transfer.clone()),
-                source_agent_name,
-                target_agent_name,
-            });
-            emit(
-                &events,
-                StreamEvent::RunItem {
-                    name: RunItemStreamName::HandoffOccured,
-                    item: out_item.clone(),
-                },
-            )
-            .await;
-            generated_items.push(out_item);
-
-            for item in &response.output {
-                current_input_items.push(item.clone());
+            match current_agent.handoffs.iter().find(|h| h.tool_name == name) {
+                Some(h) => handoff_calls.push((h.clone(), call.clone(), call_id)),
+                None => tool_calls.push(call.clone()),
             }
-            current_input_items.push(ItemHelpers::function_call_output(&call_id, transfer));
-
-            let source_agent = current_agent.clone();
-            current_agent = (*h.agent).clone();
-
-            // Python: `hooks.on_handoff(context, from_agent, to_agent)` and the agent-level
-            // `on_handoff(context, agent=new_agent, source=old_agent)`.
-            if let Some(hooks) = &options.hooks {
-                hooks
-                    .on_handoff(context.clone(), &source_agent, &current_agent)
-                    .await;
-            }
-            if let Some(ah) = &source_agent.hooks {
-                ah.on_handoff(context.clone(), &current_agent, &source_agent)
-                    .await;
-            }
-
-            emit(
-                &events,
-                StreamEvent::AgentUpdated {
-                    agent_name: current_agent.name.clone(),
-                },
-            )
-            .await;
-            if let Some(hooks) = &options.hooks {
-                hooks.on_agent_start(context.clone(), &current_agent).await;
-            }
-            if let Some(ah) = &current_agent.hooks {
-                ah.on_start(context.clone(), &current_agent).await;
-            }
-            handoff_done = true;
-            break;
-        }
-        if handoff_done {
-            continue;
         }
 
         let tool_plan = plan_tool_calls(
             &current_agent,
             &tools,
-            &function_calls,
+            &tool_calls,
             &approvals_map,
             &generated_items,
+            options.run_config.tool_not_found_behavior,
         )
         .await?;
 
@@ -939,6 +946,87 @@ async fn run_loop_inner(
             .await;
         }
 
+        if !handoff_calls.is_empty() {
+            for item in &response.output {
+                current_input_items.push(item.clone());
+            }
+            for (_tool, output, call_id) in &tool_results {
+                current_input_items.push(ItemHelpers::function_call_output(
+                    call_id,
+                    value_to_tool_string(output),
+                ));
+            }
+            // Python: every handoff after the first gets a plain tool output.
+            for (_h, _call, call_id) in handoff_calls.iter().skip(1) {
+                let message = Value::String(MULTIPLE_HANDOFFS_MESSAGE.to_string());
+                push_tool_output(
+                    &events,
+                    &mut generated_items,
+                    &current_agent.name,
+                    call_id,
+                    &message,
+                )
+                .await;
+                current_input_items.push(ItemHelpers::function_call_output(
+                    call_id,
+                    MULTIPLE_HANDOFFS_MESSAGE.to_string(),
+                ));
+            }
+
+            let (h, _call, call_id) = handoff_calls[0].clone();
+            let _handoff_span = handoff_span(&current_agent.name, &h.agent.name);
+
+            let transfer = json!({"assistant": h.agent.name}).to_string();
+            let source_agent_name = current_agent.name.clone();
+            let target_agent_name = h.agent.name.clone();
+            let out_item = RunItem::HandoffOutput(HandoffOutputItem {
+                agent_name: source_agent_name.clone(),
+                raw_item: ItemHelpers::function_call_output(&call_id, transfer.clone()),
+                source_agent_name,
+                target_agent_name,
+            });
+            emit(
+                &events,
+                StreamEvent::RunItem {
+                    name: RunItemStreamName::HandoffOccured,
+                    item: out_item.clone(),
+                },
+            )
+            .await;
+            generated_items.push(out_item);
+            current_input_items.push(ItemHelpers::function_call_output(&call_id, transfer));
+
+            let source_agent = current_agent.clone();
+            current_agent = (*h.agent).clone();
+
+            // Python: `hooks.on_handoff(context, from_agent, to_agent)` and the agent-level
+            // `on_handoff(context, agent=new_agent, source=old_agent)`.
+            if let Some(hooks) = &options.hooks {
+                hooks
+                    .on_handoff(context.clone(), &source_agent, &current_agent)
+                    .await;
+            }
+            if let Some(ah) = &source_agent.hooks {
+                ah.on_handoff(context.clone(), &current_agent, &source_agent)
+                    .await;
+            }
+
+            emit(
+                &events,
+                StreamEvent::AgentUpdated {
+                    agent_name: current_agent.name.clone(),
+                },
+            )
+            .await;
+            if let Some(hooks) = &options.hooks {
+                hooks.on_agent_start(context.clone(), &current_agent).await;
+            }
+            if let Some(ah) = &current_agent.hooks {
+                ah.on_start(context.clone(), &current_agent).await;
+            }
+            continue;
+        }
+
         match &current_agent.tool_use_behavior {
             ToolUseBehavior::StopOnFirstTool => {
                 if let Some((_tool, output, _call_id)) = tool_results.first() {
@@ -976,6 +1064,34 @@ async fn run_loop_inner(
                         )
                         .await;
                     }
+                }
+            }
+            ToolUseBehavior::Custom(decide) => {
+                let results: Vec<FunctionToolResult> = tool_results
+                    .iter()
+                    .map(|(tool, output, call_id)| FunctionToolResult {
+                        tool_name: tool.name.clone(),
+                        call_id: call_id.clone(),
+                        output: output.clone(),
+                    })
+                    .collect();
+                let decision = decide(&context, &results);
+                if decision.is_final_output {
+                    let output = decision.final_output.unwrap_or(Value::Null);
+                    return finalize_run(
+                        input,
+                        generated_items,
+                        raw_responses,
+                        finalize_tool_output(&current_agent, &output),
+                        &current_agent,
+                        max_turns,
+                        usage,
+                        &context,
+                        options.hooks.as_ref(),
+                        &options.run_config.output_guardrails,
+                        input_guardrail_results,
+                    )
+                    .await;
                 }
             }
             ToolUseBehavior::RunLlmAgain => {}
@@ -1121,6 +1237,7 @@ async fn plan_tool_calls(
     function_calls: &[ResponseOutputItem],
     approvals: &ApprovalStore,
     generated_items: &[RunItem],
+    not_found: ToolNotFoundBehavior,
 ) -> Result<ToolPlan, AgentsError> {
     let mut plan = ToolPlan {
         interruptions: Vec::new(),
@@ -1131,11 +1248,25 @@ async fn plan_tool_calls(
 
     for call in function_calls {
         let (name, arguments, call_id) = required_function_call_parts(call)?;
-        let tool = tools
-            .iter()
-            .find(|t| t.name == name)
-            .cloned()
-            .ok_or_else(|| UserError::new(format!("Tool not found: {name}")))?;
+        let Some(tool) = tools.iter().find(|t| t.name == name).cloned() else {
+            // Python: `ModelBehaviorError("Tool X not found in agent Y")`, unless the run asks
+            // for the error to be returned to the model.
+            if not_found != ToolNotFoundBehavior::ReturnErrorToModel {
+                return Err(ModelError::Behavior(format!(
+                    "Tool {name} not found in agent {}",
+                    agent.name
+                ))
+                .into());
+            }
+            // The placeholder keeps the tool name out of `StopAtTools` matching.
+            let placeholder = FunctionTool::constant(TOOL_NOT_FOUND_PLACEHOLDER, "", "");
+            plan.ready_outputs.push((
+                placeholder,
+                Value::String(format!("Tool '{name}' not found.")),
+                call_id,
+            ));
+            continue;
+        };
 
         if let Some(existing) = existing_tool_output(generated_items, &call_id) {
             plan.already_done.push((tool, existing, call_id));
@@ -1227,14 +1358,24 @@ async fn execute_planned_tools(
             if let Some(ah) = &agent_hooks {
                 ah.on_tool_start(hook_ctx.clone(), &agent, &tool).await;
             }
-            let result = NESTED_RESUME_STATES
+            // Python (`failure_error_function`): a failing tool is reported to the model so it
+            // can retry, instead of aborting the run.
+            let result = match NESTED_RESUME_STATES
                 .scope(RefCell::new(resume_map), async {
                     (tool.on_invoke_tool)(ctx, arguments).await
                 })
-                .await?;
+                .await
+            {
+                Ok(result) => result,
+                Err(error) => {
+                    let message = tool.failure_error_function.handle(&context, error)?;
+                    ToolResult::output(Value::String(message))
+                }
+            };
             let output = result.output.clone().unwrap_or(Value::Null);
             if let Some(h) = &hooks {
-                h.on_tool_end(hook_ctx.clone(), &agent, &tool, &output).await;
+                h.on_tool_end(hook_ctx.clone(), &agent, &tool, &output)
+                    .await;
             }
             if let Some(ah) = &agent_hooks {
                 ah.on_tool_end(hook_ctx, &agent, &tool, &output).await;
