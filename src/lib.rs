@@ -40,7 +40,9 @@ pub use guardrail::{
     input_guardrail, output_guardrail, GuardrailFunctionOutput, InputGuardrail,
     InputGuardrailResult, OutputGuardrail, OutputGuardrailResult,
 };
-pub use handoffs::{handoff, handoff_with, Handoff};
+pub use handoffs::{
+    handoff, handoff_input_filter, handoff_with, Handoff, HandoffInputData, HandoffInputFilter,
+};
 pub use items::{
     HandoffCallItem, HandoffOutputItem, InputLike, ItemHelpers, MessageOutputItem, ModelResponse,
     ReasoningItem, ResponseInputItem, ResponseOutputItem, RunItem, ToolApprovalItem, ToolCallItem,
