@@ -1,7 +1,7 @@
 //! Run state for HITL pause/resume (Python: `agents.run_state.RunState` subset).
 //!
 //! Supports in-memory sticky approvals and JSON round-trip (`to_json` / `from_json`).
-//! Schema id: `openai-agents-rust/2` (not the Python 1.18 wire format — see D-012).
+//! Schema id: `openai-agents-rs/2` (not the Python 1.18 wire format — see D-012).
 
 use std::collections::HashMap;
 
@@ -17,10 +17,18 @@ use crate::tool::DEFAULT_APPROVAL_REJECTION_MESSAGE;
 use crate::usage::Usage;
 
 /// Schema version embedded in [`RunState::to_json`].
-pub const RUN_STATE_SCHEMA_VERSION: &str = "openai-agents-rust/2";
+pub const RUN_STATE_SCHEMA_VERSION: &str = "openai-agents-rs/2";
 
 /// Older schema ids that [`RunState::from_json`] still accepts.
-pub const SUPPORTED_RUN_STATE_SCHEMAS: &[&str] = &["openai-agents-rust/1", RUN_STATE_SCHEMA_VERSION];
+///
+/// The `openai-agents-rust/*` ids were emitted before the project was renamed to
+/// `openai-agents-rs`; snapshots persisted by earlier versions carry them and must stay
+/// loadable. They are accepted but never re-emitted by [`RunState::to_json`].
+pub const SUPPORTED_RUN_STATE_SCHEMAS: &[&str] = &[
+    "openai-agents-rust/1",
+    "openai-agents-rust/2",
+    RUN_STATE_SCHEMA_VERSION,
+];
 
 /// Decision recorded for a pending tool call.
 #[derive(Debug, Clone, PartialEq, Eq)]

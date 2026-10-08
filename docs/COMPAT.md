@@ -115,7 +115,7 @@ dictionaries are merged (`model_settings.py:273`).
 | `needs_approval` (fixed or dynamic) | S | |
 | `interruptions`, `RunState` approve/reject | S | |
 | Sticky `always_approve` / `always_reject` | S | |
-| `to_json` / `from_json` | S | Schema `openai-agents-rust/2` (D-012); v1 payloads still load |
+| `to_json` / `from_json` | S | Schema `openai-agents-rs/2` (D-012); older `openai-agents-rust/1` and `openai-agents-rust/2` payloads still load |
 | `Agent.as_tool` nested approvals | S | Bubbles to the outer `RunState` |
 | Custom output extractor / `on_stream` | N | |
 

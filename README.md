@@ -99,7 +99,7 @@ machine that has `openai-agents==0.23.1` installed.
 
 HITL is supported: `needs_approval` (fixed or dynamic), `RunState` approve/reject, sticky
 `always_approve` / `always_reject`, and `Agent.as_tool` nested approvals. The Rust `RunState` JSON
-schema `openai-agents-rust/2` is a process-local snapshot format and is intentionally **not**
+schema `openai-agents-rs/2` is a process-local snapshot format and is intentionally **not**
 Python 1.18 wire-compatible (D-012) — use one language per durable state store.
 
 ## Still out of scope
