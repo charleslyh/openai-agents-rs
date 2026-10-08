@@ -66,7 +66,13 @@ async fn run_state_json_accepts_previous_schema_version() {
         RunState::from_json("assistant", value.clone()).expect("v1 payload must still load");
     assert_eq!(restored.interruptions.len(), 1);
 
-    value["$schemaVersion"] = serde_json::json!("openai-agents-rust/99");
+    // Ids emitted before the `openai-agents-rust` → `openai-agents-rs` rename stay loadable.
+    value["$schemaVersion"] = serde_json::json!("openai-agents-rust/2");
+    let restored =
+        RunState::from_json("assistant", value.clone()).expect("legacy v2 payload must still load");
+    assert_eq!(restored.interruptions.len(), 1);
+
+    value["$schemaVersion"] = serde_json::json!("openai-agents-rs/99");
     assert!(RunState::from_json("assistant", value).is_err());
 }
 

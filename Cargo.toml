@@ -9,7 +9,7 @@ edition = "2021"
 description = "Rust port of the OpenAI Agents Python SDK (core loop, tools, handoffs, HITL, guardrails, structured output)"
 license = "MIT"
 readme = "README.md"
-repository = "https://github.com/charleslyh/openai-agents-rust"
+repository = "https://github.com/charleslyh/openai-agents-rs"
 keywords = ["openai", "agents", "llm", "tools"]
 categories = ["api-bindings", "asynchronous"]
 
