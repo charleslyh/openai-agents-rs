@@ -174,6 +174,40 @@ impl SqliteSession {
     }
 }
 
+/// Append `items` and bump the session row, creating it when missing.
+fn insert_items(
+    tx: &rusqlite::Transaction<'_>,
+    this: &SqliteSession,
+    items: &[Value],
+) -> rusqlite::Result<()> {
+    tx.execute(
+        &format!(
+            "INSERT OR IGNORE INTO {} (session_id) VALUES (?1)",
+            this.sessions_table
+        ),
+        params![&*this.session_id],
+    )?;
+    {
+        let mut insert = tx.prepare(&format!(
+            "INSERT INTO {} (session_id, message_data) VALUES (?1, ?2)",
+            this.messages_table
+        ))?;
+        for item in items {
+            let text = serde_json::to_string(item)
+                .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+            insert.execute(params![&*this.session_id, text])?;
+        }
+    }
+    tx.execute(
+        &format!(
+            "UPDATE {} SET updated_at = CURRENT_TIMESTAMP WHERE session_id = ?1",
+            this.sessions_table
+        ),
+        params![&*this.session_id],
+    )?;
+    Ok(())
+}
+
 #[async_trait]
 impl Session for SqliteSession {
     fn session_id(&self) -> &str {
@@ -214,31 +248,21 @@ impl Session for SqliteSession {
         }
         self.with_connection(move |conn, this| {
             let tx = conn.transaction()?;
+            insert_items(&tx, this, &items)?;
+            tx.commit()
+        })
+        .await
+    }
+
+    async fn replace_items(&self, items: Vec<Value>) -> Result<(), AgentsError> {
+        self.with_connection(move |conn, this| {
+            // One transaction: readers see the old history or the new one, never a mix.
+            let tx = conn.transaction()?;
             tx.execute(
-                &format!(
-                    "INSERT OR IGNORE INTO {} (session_id) VALUES (?1)",
-                    this.sessions_table
-                ),
+                &format!("DELETE FROM {} WHERE session_id = ?1", this.messages_table),
                 params![&*this.session_id],
             )?;
-            {
-                let mut insert = tx.prepare(&format!(
-                    "INSERT INTO {} (session_id, message_data) VALUES (?1, ?2)",
-                    this.messages_table
-                ))?;
-                for item in &items {
-                    let text = serde_json::to_string(item)
-                        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
-                    insert.execute(params![&*this.session_id, text])?;
-                }
-            }
-            tx.execute(
-                &format!(
-                    "UPDATE {} SET updated_at = CURRENT_TIMESTAMP WHERE session_id = ?1",
-                    this.sessions_table
-                ),
-                params![&*this.session_id],
-            )?;
+            insert_items(&tx, this, &items)?;
             tx.commit()
         })
         .await

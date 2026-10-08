@@ -160,3 +160,21 @@ asyncio.run(main(sys.argv[1]))
     drop(session);
     assert_eq!(run_python(), "2", "Python sees the item Rust added");
 }
+
+#[tokio::test]
+async fn replace_items_swaps_the_history_atomically() {
+    let db = TempDb::new();
+    let a = SqliteSession::open("a", &db.0).unwrap();
+    let b = SqliteSession::open("b", &db.0).unwrap();
+    a.add_items(vec![msg("user", "1"), msg("assistant", "2")]).await.unwrap();
+    b.add_items(vec![msg("user", "other")]).await.unwrap();
+
+    a.replace_items(vec![msg("user", "summary")]).await.unwrap();
+    assert_eq!(a.get_items(None).await.unwrap(), vec![msg("user", "summary")]);
+    assert_eq!(b.get_items(None).await.unwrap(), vec![msg("user", "other")], "other sessions untouched");
+
+    a.replace_items(vec![]).await.unwrap();
+    assert!(a.get_items(None).await.unwrap().is_empty());
+    a.add_items(vec![msg("user", "again")]).await.unwrap();
+    assert_eq!(a.get_items(None).await.unwrap().len(), 1, "an emptied session is still usable");
+}

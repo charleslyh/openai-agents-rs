@@ -73,6 +73,16 @@ pub trait Session: Send + Sync {
 
     /// Remove every item.
     async fn clear_session(&self) -> Result<(), AgentsError>;
+
+    /// Replace the whole conversation with `items`.
+    ///
+    /// Used by context compaction to swap old history for a summary. The default clears and then
+    /// appends, so a failure in between loses the history; stores that can do better (the bundled
+    /// ones) override it with a single atomic write.
+    async fn replace_items(&self, items: Vec<Value>) -> Result<(), AgentsError> {
+        self.clear_session().await?;
+        self.add_items(items).await
+    }
 }
 
 /// Process-local [`Session`] (Python has `SQLiteSession(":memory:")`; persistence is not ported).
@@ -122,6 +132,11 @@ impl Session for InMemorySession {
 
     async fn clear_session(&self) -> Result<(), AgentsError> {
         self.items.lock().expect("session items").clear();
+        Ok(())
+    }
+
+    async fn replace_items(&self, items: Vec<Value>) -> Result<(), AgentsError> {
+        *self.items.lock().expect("session items") = items;
         Ok(())
     }
 }
