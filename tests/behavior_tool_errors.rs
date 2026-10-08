@@ -242,3 +242,22 @@ async fn custom_tool_use_behavior_can_finalize() {
     let result = Runner::run(&agent, "go", RunOptions::default()).await.expect("run");
     assert_eq!(result.final_output_as_str(), Some("got echo"));
 }
+
+/// D-026: `call_model_input_filter` rewrites one call without touching the run history.
+#[tokio::test]
+async fn call_model_input_filter_edits_input_and_instructions() {
+    use openai_agents::{ModelInputData, RunConfig};
+    let model = Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::text_message("ok"))]));
+    let agent = Agent::new("a").model(model.clone()).instructions("original");
+    let mut options = RunOptions::default();
+    options.run_config = RunConfig::default().with_call_model_input_filter(|data| async move {
+        let mut input = data.model_data.input;
+        input.push(json!({"role": "user", "content": "extra"}));
+        Ok(ModelInputData { input, instructions: Some("filtered".into()) })
+    });
+    let result = Runner::run(&agent, "hi", options).await.expect("run");
+    let call = &model.calls()[0];
+    assert_eq!(call.system_instructions.as_deref(), Some("filtered"));
+    assert_eq!(call.input.as_array().map(Vec::len), Some(2));
+    assert_eq!(result.to_input_list().len(), 2, "history keeps only input + output");
+}
