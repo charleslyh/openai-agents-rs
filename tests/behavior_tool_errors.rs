@@ -737,3 +737,110 @@ async fn nest_handoff_history_mapper_and_flattening() {
     assert_eq!(text.matches("<CONVERSATION HISTORY>").count(), 1, "{text}");
     assert!(text.contains("1. user: hi"), "{text}");
 }
+
+/// D-029: `max_function_tool_concurrency` caps how many tools of one turn run at once, results
+/// stay in call order, and 0 is rejected.
+#[tokio::test]
+async fn max_function_tool_concurrency_limits_parallelism() {
+    use openai_agents::{RunConfig, ToolExecutionConfig};
+    let running = Arc::new(AtomicUsize::new(0));
+    let peak = Arc::new(AtomicUsize::new(0));
+    let slow = |name: &'static str| {
+        let (running, peak) = (Arc::clone(&running), Arc::clone(&peak));
+        FunctionTool::new(
+            name,
+            "slow",
+            json!({"type": "object", "properties": {}, "additionalProperties": false}),
+            move |_ctx, _args| {
+                let (running, peak) = (Arc::clone(&running), Arc::clone(&peak));
+                async move {
+                    let now = running.fetch_add(1, Ordering::SeqCst) + 1;
+                    peak.fetch_max(now, Ordering::SeqCst);
+                    tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+                    running.fetch_sub(1, Ordering::SeqCst);
+                    Ok(json!(name))
+                }
+            },
+        )
+    };
+    let run = |limit: Option<usize>| {
+        let model = Arc::new(ScriptedModel::new([
+            ModelStep::from(vec![
+                ItemHelpers::function_tool_call("a", "{}", "c1"),
+                ItemHelpers::function_tool_call("b", "{}", "c2"),
+                ItemHelpers::function_tool_call("c", "{}", "c3"),
+            ]),
+            ModelStep::from(ItemHelpers::text_message("done")),
+        ]));
+        let agent = Agent::new("x")
+            .model(model)
+            .tools(vec![slow("a"), slow("b"), slow("c")]);
+        let mut options = RunOptions::default();
+        options.run_config = RunConfig {
+            tool_execution: Some(ToolExecutionConfig { max_function_tool_concurrency: limit }),
+            ..RunConfig::default()
+        };
+        async move { Runner::run(&agent, "go", options).await }
+    };
+
+    peak.store(0, Ordering::SeqCst);
+    run(None).await.expect("unlimited");
+    assert_eq!(peak.load(Ordering::SeqCst), 3);
+
+    peak.store(0, Ordering::SeqCst);
+    let result = run(Some(2)).await.expect("limited");
+    assert_eq!(peak.load(Ordering::SeqCst), 2);
+    assert_eq!(tool_output_texts(&result.new_items), vec!["a", "b", "c"], "call order kept");
+
+    assert!(matches!(run(Some(0)).await.unwrap_err(), AgentsError::User(_)));
+}
+
+/// D-029: per-tool timeouts. The default reports a model-visible message, a formatter can
+/// replace it, and `RaiseException` fails the run without going through `failure_error_function`.
+#[tokio::test]
+async fn tool_timeout_behaviors() {
+    use openai_agents::ToolTimeoutBehavior;
+    let sleepy = || {
+        FunctionTool::new(
+            "sleepy",
+            "sleeps",
+            json!({"type": "object", "properties": {}, "additionalProperties": false}),
+            |_ctx, _args| async {
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                Ok(json!("late"))
+            },
+        )
+        .with_timeout(0.05)
+    };
+    let run = |tool: FunctionTool| async move {
+        let model = Arc::new(ScriptedModel::new([
+            ModelStep::from(ItemHelpers::function_tool_call("sleepy", "{}", "c1")),
+            ModelStep::from(ItemHelpers::text_message("after")),
+        ]));
+        Runner::run(&Agent::new("a").model(model).tools(vec![tool]), "go", RunOptions::default()).await
+    };
+
+    let result = run(sleepy()).await.expect("error as result");
+    assert_eq!(tool_output_texts(&result.new_items), vec!["Tool 'sleepy' timed out after 0.05 seconds."]);
+
+    let formatted = sleepy().with_timeout_error_function(|_ctx, e| format!("custom: {e}"));
+    let result = run(formatted).await.expect("formatted");
+    assert_eq!(
+        tool_output_texts(&result.new_items),
+        vec!["custom: Tool 'sleepy' timed out after 0.05 seconds."]
+    );
+
+    let raising = sleepy()
+        .with_timeout_behavior(ToolTimeoutBehavior::RaiseException)
+        .with_failure_error_function(|_c, _e| "must not be used".into());
+    let err = run(raising).await.unwrap_err();
+    assert!(
+        matches!(&err, AgentsError::ToolTimeout(t) if t.tool_name == "sleepy" && t.timeout_seconds == 0.05),
+        "{err}"
+    );
+
+    for bad in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+        let err = run(sleepy().with_timeout(bad)).await.unwrap_err();
+        assert!(matches!(err, AgentsError::User(_)), "{bad}: {err}");
+    }
+}

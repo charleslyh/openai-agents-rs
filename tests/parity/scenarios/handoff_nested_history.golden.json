@@ -5,6 +5,9 @@
   "last_agent": "B",
   "new_item_count": 7,
   "tool_output_count": 1,
+  "tool_outputs": [
+    "x"
+  ],
   "handoff_inputs": {
     "B": [
       {

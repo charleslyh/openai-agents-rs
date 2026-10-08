@@ -36,7 +36,7 @@ pub use agent_output::{
 };
 pub use error::{
     AgentsError, InputGuardrailTripwireTriggered, MaxTurnsExceeded, ModelError,
-    OutputGuardrailTripwireTriggered, UserError,
+    OutputGuardrailTripwireTriggered, ToolTimeoutError, UserError,
 };
 pub use guardrail::{
     input_guardrail, output_guardrail, GuardrailFunctionOutput, InputGuardrail,
@@ -63,7 +63,7 @@ pub use model_settings::{ModelSettings, ToolChoice, Truncation, Verbosity};
 pub use result::{CancelMode, RunResult, RunResultStreaming, StreamingSnapshot};
 pub use run::{
     CallModelData, CallModelInputFilter, ModelInputData, ToolErrorFormatter, ToolErrorFormatterArgs,
-    ToolErrorKind, ToolNameCollisionPolicy, RunErrorData, RunErrorHandler, RunErrorHandlerInput,
+    ToolErrorKind, ToolExecutionConfig, ToolNameCollisionPolicy, RunErrorData, RunErrorHandler, RunErrorHandlerInput,
     RunErrorHandlerResult, RunErrorHandlers,
     default_trace_include_sensitive_data, set_default_openai_api, DefaultOpenAiApi, RunConfig,
     RunOptions, Runner, ToolNotFoundBehavior, DEFAULT_MAX_TURNS,
@@ -79,7 +79,7 @@ pub use schemars;
 pub use serde;
 pub use stream_events::{RunItemStreamName, StreamEvent};
 pub use tool::{
-    FunctionTool, IsEnabledFn, NeedsApproval, ToolContext, ToolEnabled, ToolFailureHandling, ToolResult,
+    FunctionTool, IsEnabledFn, NeedsApproval, ToolContext, ToolEnabled, ToolFailureHandling, ToolResult, ToolTimeoutBehavior,
     DEFAULT_APPROVAL_REJECTION_MESSAGE, DEFAULT_TOOL_ERROR_MESSAGE,
 };
 pub use usage::{InputTokensDetails, OutputTokensDetails, RequestUsage, Usage};

@@ -21,7 +21,8 @@ Legend: **S** = supported · **P** = partial · **N** = not supported · **D** =
 | `@function_tool` / proc-macro | S | Full `schemars` schema; `Vec<T>`, nested structs, enums and `Option<T>` supported |
 | Tool context injection | S | Optional first `ToolContext` / `RunContextWrapper` parameter |
 | Parallel function tools | S | `join_all`; results ordered by model tool-call order |
-| `ToolExecutionConfig.max_function_tool_concurrency` | N | All tools in a batch start concurrently |
+| `ToolExecutionConfig.max_function_tool_concurrency` | S | `RunConfig.tool_execution`; slots free on completion, results keep call order (D-029) |
+| `FunctionTool` `timeout_seconds` / `timeout_behavior` / `timeout_error_function` | S | `ToolTimeoutError` for `RaiseException`; parity-tested message (D-029) |
 | `failure_error_function` | P | Sync formatter or `raise_on_error`; default message sent to the model (B7) |
 | `tool_use_behavior` callable | P | Sync `ToolUseBehavior::Custom` |
 | `RunConfig.tool_not_found_behavior` | S | B10 |

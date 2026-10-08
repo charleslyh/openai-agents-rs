@@ -29,6 +29,10 @@ pub enum AgentsError {
         #[source]
         source: Option<Box<dyn std::error::Error + Send + Sync>>,
     },
+    /// A function tool exceeded its timeout with `ToolTimeoutBehavior::RaiseException`
+    /// (Python: `ToolTimeoutError`).
+    #[error(transparent)]
+    ToolTimeout(#[from] ToolTimeoutError),
     /// Unexpected internal failure.
     #[error("internal error: {message}")]
     Internal {
@@ -78,6 +82,16 @@ impl AgentsError {
             source: Some(Box::new(source)),
         }
     }
+}
+
+/// Raised when a function tool invocation exceeds its timeout (Python: `ToolTimeoutError`).
+#[derive(Debug, Error, Clone)]
+#[error("{}", crate::tool::default_tool_timeout_error_message(tool_name, *timeout_seconds))]
+pub struct ToolTimeoutError {
+    /// Name of the tool that timed out.
+    pub tool_name: String,
+    /// The configured timeout.
+    pub timeout_seconds: f64,
 }
 
 /// Raised when `max_turns` is exceeded (Python: `MaxTurnsExceeded`).

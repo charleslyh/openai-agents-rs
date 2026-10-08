@@ -5,6 +5,10 @@
   "last_agent": "B",
   "new_item_count": 7,
   "tool_output_count": 2,
+  "tool_outputs": [
+    "side-ok",
+    "Multiple handoffs detected, ignoring this one."
+  ],
   "handoff_inputs": {
     "B": [
       {

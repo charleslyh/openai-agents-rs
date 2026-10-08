@@ -50,6 +50,22 @@ impl ToolFailureHandling {
     }
 }
 
+/// What happens when a tool exceeds its timeout (Python: `ToolTimeoutBehavior`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ToolTimeoutBehavior {
+    /// Return a model-visible timeout message and keep running (default).
+    #[default]
+    ErrorAsResult,
+    /// Fail the run with [`crate::ToolTimeoutError`].
+    RaiseException,
+}
+
+/// `Tool '<name>' timed out after <n> seconds.` (Python: `default_tool_timeout_error_message`,
+/// formatted with `:g`, so `2.0` prints as `2`).
+pub fn default_tool_timeout_error_message(tool_name: &str, timeout_seconds: f64) -> String {
+    format!("Tool '{tool_name}' timed out after {timeout_seconds} seconds.")
+}
+
 /// Context passed to tool invocations (Python: `ToolContext` subset).
 #[derive(Debug, Clone)]
 pub struct ToolContext {
@@ -242,6 +258,13 @@ pub struct FunctionTool {
     pub needs_approval: NeedsApproval,
     /// How a returned error is surfaced (Python: `failure_error_function`).
     pub failure_error_function: ToolFailureHandling,
+    /// Timeout for each invocation, in seconds (Python: `timeout_seconds`).
+    pub timeout_seconds: Option<f64>,
+    /// How a timeout is handled (Python: `timeout_behavior`).
+    pub timeout_behavior: ToolTimeoutBehavior,
+    /// Formats the model-visible timeout text for `ErrorAsResult`
+    /// (Python: `timeout_error_function`).
+    pub timeout_error_function: Option<ToolErrorFn>,
 }
 
 impl std::fmt::Debug for FunctionTool {
@@ -303,7 +326,33 @@ impl FunctionTool {
             is_enabled: ToolEnabled::Fixed(true),
             needs_approval: NeedsApproval::Fixed(false),
             failure_error_function: ToolFailureHandling::Default,
+            timeout_seconds: None,
+            timeout_behavior: ToolTimeoutBehavior::default(),
+            timeout_error_function: None,
         }
+    }
+
+    /// Limit each invocation to `seconds` (Python: `timeout_seconds`).
+    ///
+    /// Must be finite and greater than zero; this is checked when the run starts.
+    pub fn with_timeout(mut self, seconds: f64) -> Self {
+        self.timeout_seconds = Some(seconds);
+        self
+    }
+
+    /// Choose what a timeout does (Python: `timeout_behavior`).
+    pub fn with_timeout_behavior(mut self, behavior: ToolTimeoutBehavior) -> Self {
+        self.timeout_behavior = behavior;
+        self
+    }
+
+    /// Format the timeout message sent to the model (Python: `timeout_error_function`).
+    pub fn with_timeout_error_function<F>(mut self, f: F) -> Self
+    where
+        F: Fn(&RunContextWrapper, &AgentsError) -> String + Send + Sync + 'static,
+    {
+        self.timeout_error_function = Some(Arc::new(f));
+        self
     }
 
     /// Format tool errors for the model with `f` instead of the default message.
