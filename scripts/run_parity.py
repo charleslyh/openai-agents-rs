@@ -62,6 +62,14 @@ def _build_tools(tool_specs: list[dict]):
     return tools
 
 
+def _canonical_json(text):
+    """Canonical form for JSON text so key order does not matter; other text is unchanged."""
+    try:
+        return json.dumps(json.loads(text), sort_keys=True, separators=(",", ":"))
+    except (TypeError, ValueError):
+        return text
+
+
 async def run_scenario(path: Path) -> dict:
     from agents import Agent, Runner
     from agents.testing import ScriptedModel
@@ -79,17 +87,26 @@ async def run_scenario(path: Path) -> dict:
     result = await Runner.run(agent, scenario["input"])
     final = result.final_output
     if not isinstance(final, str):
-        final = str(final)
+        # Structured outputs are compared as canonical JSON, like the Rust test does.
+        try:
+            final = json.dumps(final, sort_keys=True, separators=(",", ":"))
+        except TypeError:
+            final = str(final)
     golden = {
         "name": scenario["name"],
         "final_output": final,
         "raw_response_count": len(result.raw_responses),
         "last_agent": result.last_agent.name,
         "new_item_count": len(result.new_items),
+        "tool_output_count": sum(
+            1 for item in result.new_items if item.type == "tool_call_output_item"
+        ),
     }
     expect = scenario.get("expect", {})
     for key, value in expect.items():
         actual = golden.get(key)
+        if key == "final_output":
+            value, actual = _canonical_json(value), _canonical_json(actual)
         if actual != value:
             raise AssertionError(
                 f"{scenario['name']}: expect {key}={value!r}, python got {actual!r}"

@@ -1,6 +1,6 @@
 {
-  "name": "single_tool_then_text",
-  "final_output": "done",
+  "name": "tool_error_recovers",
+  "final_output": "recovered",
   "raw_response_count": 2,
   "last_agent": "assistant",
   "new_item_count": 3,

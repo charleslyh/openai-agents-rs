@@ -67,6 +67,10 @@ struct Golden {
     final_output: String,
     raw_response_count: usize,
     last_agent: String,
+    #[serde(default)]
+    new_item_count: Option<usize>,
+    #[serde(default)]
+    tool_output_count: Option<usize>,
 }
 
 fn scenario_dir() -> PathBuf {
@@ -176,12 +180,31 @@ async fn parity_scenarios_match_expect_and_golden() {
         if golden_path.exists() {
             let golden: Golden =
                 serde_json::from_str(&fs::read_to_string(&golden_path).unwrap()).unwrap();
+            // Python's golden stores the final output as text; structured outputs are compared
+            // as parsed JSON so key order does not matter.
+            let golden_output: Value = serde_json::from_str(&golden.final_output)
+                .unwrap_or_else(|_| Value::String(golden.final_output.clone()));
             assert_eq!(
-                result.final_output_as_str(),
-                Some(golden.final_output.as_str()),
+                result.final_output, golden_output,
                 "golden mismatch {}",
                 scenario.name
             );
+            if let Some(count) = golden.new_item_count {
+                assert_eq!(
+                    result.new_items.len(),
+                    count,
+                    "golden new_item_count mismatch {}",
+                    scenario.name
+                );
+            }
+            if let Some(count) = golden.tool_output_count {
+                let actual = result
+                    .new_items
+                    .iter()
+                    .filter(|i| matches!(i, RunItem::ToolCallOutput(_)))
+                    .count();
+                assert_eq!(actual, count, "golden tool_output_count mismatch {}", scenario.name);
+            }
             assert_eq!(
                 result.raw_responses.len(),
                 golden.raw_response_count,

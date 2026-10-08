@@ -1,6 +1,6 @@
 {
-  "name": "plain_text",
-  "final_output": "world",
+  "name": "structured_output",
+  "final_output": "{\"text\": \"42\", \"confidence\": 0.9}",
   "raw_response_count": 1,
   "last_agent": "assistant",
   "new_item_count": 1,
