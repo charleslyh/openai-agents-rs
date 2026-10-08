@@ -1225,3 +1225,59 @@ async fn in_memory_session_replace_items() {
     session.replace_items(vec![json!({"role": "user", "content": "b"})]).await.unwrap();
     assert_eq!(session.get_items(None).await.unwrap(), vec![json!({"role": "user", "content": "b"})]);
 }
+
+/// Sets a flag when dropped, to observe that a spawned future was torn down.
+struct DropFlag(Arc<AtomicBool>);
+
+impl Drop for DropFlag {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+}
+
+/// A streamed run that is stuck waiting on a slow parallel input guardrail, and the flag that
+/// shows whether the guardrail future was dropped.
+async fn streamed_run_with_slow_guardrail() -> (openai_agents::RunResultStreaming, Arc<AtomicBool>) {
+    use openai_agents::{GuardrailFunctionOutput, InputGuardrail};
+    let dropped = Arc::new(AtomicBool::new(false));
+    let flag = dropped.clone();
+    let agent = Agent::new("a")
+        .model(Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::text_message("hi"))])))
+        .input_guardrails(vec![InputGuardrail::new("slow", move |_c, _a, _i| {
+            let guard = DropFlag(flag.clone());
+            async move {
+                let _guard = guard;
+                tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                GuardrailFunctionOutput::pass(Value::Null)
+            }
+        })]);
+    let streamed = Runner::run_streamed(agent, "go", RunOptions::default());
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    (streamed, dropped)
+}
+
+/// D-031: an immediate cancel also stops the run's child tasks, not just the run task.
+#[tokio::test]
+async fn immediate_cancel_aborts_parallel_input_guardrails() {
+    use openai_agents::CancelMode;
+    let (mut streamed, dropped) = streamed_run_with_slow_guardrail().await;
+    assert!(!dropped.load(Ordering::SeqCst), "the guardrail is still running");
+    streamed.cancel(CancelMode::Immediate);
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    assert!(dropped.load(Ordering::SeqCst), "the guardrail task must be aborted with the run");
+}
+
+/// D-031: `cancel_on_drop` turns a dropped stream into an immediate cancel; the default keeps
+/// the run going like Python.
+#[tokio::test]
+async fn cancel_on_drop_is_opt_in() {
+    let (streamed, dropped) = streamed_run_with_slow_guardrail().await;
+    drop(streamed);
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    assert!(!dropped.load(Ordering::SeqCst), "default: the run outlives its handle");
+
+    let (streamed, dropped) = streamed_run_with_slow_guardrail().await;
+    drop(streamed.cancel_on_drop(true));
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    assert!(dropped.load(Ordering::SeqCst), "opt-in: dropping the handle stops the run");
+}
