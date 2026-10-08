@@ -759,17 +759,130 @@ impl Runner {
     }
 
     /// Blocking wrapper (Python: `run_sync` → Rust `run_blocking`, see D-001).
+    ///
+    /// Works from any thread, with or without a Tokio runtime around it:
+    /// - **No runtime** (a plain `fn main`, a worker thread): the run executes on a shared,
+    ///   lazily started multi-thread runtime, so no runtime is built per call and HTTP
+    ///   connection pools survive between calls.
+    /// - **Inside a multi-thread runtime** (for example from a `spawn_blocking` closure or a
+    ///   synchronous callback): the run executes on that runtime and the calling worker is
+    ///   handed over with `block_in_place`, so it does not panic with "cannot start a runtime
+    ///   from within a runtime".
+    /// - **Inside a current-thread runtime** (`#[tokio::test]`, `Runtime::new_current_thread`):
+    ///   the calling thread cannot be lent out, so the run executes on the shared runtime from a
+    ///   helper thread while the caller waits. The caller's runtime is stalled meanwhile; await
+    ///   [`Runner::run`] instead when you can.
+    ///
+    /// Use [`Runner::run_blocking_on`] to choose the runtime yourself.
     pub fn run_blocking(
         starting_agent: &Agent,
         input: impl Into<InputLike>,
         options: RunOptions,
     ) -> Result<RunResult, AgentsError> {
         let input = input.into();
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|e| AgentsError::internal_with_source("could not start a Tokio runtime", e))?;
-        rt.block_on(Self::run(starting_agent, input, options))
+        block_on_any(None, move || Self::run(starting_agent, input, options))?
+    }
+
+    /// [`Runner::run_blocking`] on a runtime you provide (it must be a multi-thread runtime,
+    /// otherwise nothing would drive it while the caller blocks).
+    pub fn run_blocking_on(
+        runtime: &tokio::runtime::Handle,
+        starting_agent: &Agent,
+        input: impl Into<InputLike>,
+        options: RunOptions,
+    ) -> Result<RunResult, AgentsError> {
+        let input = input.into();
+        block_on_any(Some(runtime.clone()), move || {
+            Self::run(starting_agent, input, options)
+        })?
+    }
+}
+
+/// The runtime behind `run_blocking` when the caller has none of its own.
+fn shared_runtime() -> Result<&'static tokio::runtime::Runtime, AgentsError> {
+    static RUNTIME: std::sync::OnceLock<Result<tokio::runtime::Runtime, String>> =
+        std::sync::OnceLock::new();
+    RUNTIME
+        .get_or_init(|| {
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .thread_name("openai-agents-blocking")
+                .build()
+                .map_err(|e| e.to_string())
+        })
+        .as_ref()
+        .map_err(|e| AgentsError::internal(format!("could not start a Tokio runtime: {e}")))
+}
+
+/// Run a future to completion on the calling thread's behalf, whatever the thread is doing.
+///
+/// `make` builds the future on the thread that drives it, so the future itself need not be `Send`.
+fn block_on_any<R, F, Fut>(
+    target: Option<tokio::runtime::Handle>,
+    make: F,
+) -> Result<R, AgentsError>
+where
+    R: Send,
+    F: FnOnce() -> Fut + Send,
+    Fut: std::future::Future<Output = R>,
+{
+    use tokio::runtime::{Handle, RuntimeFlavor};
+    let inside = Handle::try_current().ok();
+    let target = match target {
+        Some(handle) => {
+            if handle.runtime_flavor() != RuntimeFlavor::MultiThread {
+                return Err(UserError::new(
+                    "run_blocking_on needs a handle to a multi-thread runtime: nothing would \
+                     drive a current-thread runtime while this thread blocks",
+                )
+                .into());
+            }
+            handle
+        }
+        None => match &inside {
+            Some(current) if current.runtime_flavor() == RuntimeFlavor::MultiThread => {
+                current.clone()
+            }
+            _ => shared_runtime()?.handle().clone(),
+        },
+    };
+    match inside {
+        None => Ok(target.block_on(make())),
+        Some(current) if current.runtime_flavor() == RuntimeFlavor::MultiThread => {
+            Ok(tokio::task::block_in_place(|| target.block_on(make())))
+        }
+        Some(_) => std::thread::scope(|scope| {
+            match scope.spawn(|| target.block_on(make())).join() {
+                Ok(value) => Ok(value),
+                Err(panic) => std::panic::resume_unwind(panic),
+            }
+        }),
+    }
+}
+
+/// A spawned child task that is aborted when its owner goes away.
+///
+/// `tokio::spawn` detaches: dropping a `JoinHandle` leaves the task running. A run that is
+/// cancelled (`CancelMode::Immediate` aborts the run task, which drops its futures) or fails
+/// must not leave its input guardrails or event forwarder running, so children are held in this
+/// wrapper. Awaiting it behaves like awaiting the handle.
+struct AbortOnDrop<T>(tokio::task::JoinHandle<T>);
+
+impl<T> std::future::Future for AbortOnDrop<T> {
+    type Output = Result<T, tokio::task::JoinError>;
+
+    fn poll(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        std::pin::Pin::new(&mut self.0).poll(cx)
+    }
+}
+
+impl<T> Drop for AbortOnDrop<T> {
+    fn drop(&mut self) {
+        // A no-op once the task has finished.
+        self.0.abort();
     }
 }
 
@@ -1119,7 +1232,7 @@ async fn run_loop_inner(
     // ones finish first, then the parallel ones are spawned alongside the model call.
     let mut parallel_guardrails = Some(parallel_guardrails);
     let mut blocking_guardrails = Some(blocking_guardrails);
-    let mut pending_input_guardrails: Option<tokio::task::JoinHandle<Vec<InputGuardrailResult>>> =
+    let mut pending_input_guardrails: Option<AbortOnDrop<Vec<InputGuardrailResult>>> =
         None;
 
     // `on_agent_start` is called once per agent, including after each handoff.
@@ -1216,9 +1329,9 @@ async fn run_loop_inner(
             // guardrail escape `RunConfig.tracing_disabled` and lose their parent.
             let run_tracing_disabled = options.run_config.tracing_disabled;
             let fut = run_input_guardrails(parallel);
-            pending_input_guardrails = Some(tokio::spawn(
+            pending_input_guardrails = Some(AbortOnDrop(tokio::spawn(
                 crate::tracing::with_run_tracing_disabled(run_tracing_disabled, fut),
-            ));
+            )));
         }
 
         // Python recomputes model settings at the start of every turn
@@ -1343,7 +1456,7 @@ async fn run_loop_inner(
                                 let (raw_tx, mut raw_rx) = mpsc::channel::<Value>(64);
                                 let forward = {
                                     let events = events_ref.clone();
-                                    tokio::spawn(async move {
+                                    AbortOnDrop(tokio::spawn(async move {
                                         while let Some(data) = raw_rx.recv().await {
                                             // Python: once an event other than `response.created` /
                                             // `response.in_progress` reached the consumer, a
@@ -1357,7 +1470,7 @@ async fn run_loop_inner(
                                             }
                                             emit(&events, StreamEvent::RawResponse { data }).await;
                                         }
-                                    })
+                                    }))
                                 };
                                 let outcome = model_ref.stream_response(req, raw_tx).await;
                                 let _ = forward.await;

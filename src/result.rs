@@ -191,6 +191,7 @@ pub struct RunResultStreaming {
     pub max_turns: Option<usize>,
     rx: mpsc::Receiver<Result<StreamEvent, AgentsError>>,
     task: Option<tokio::task::JoinHandle<()>>,
+    cancel_on_drop: bool,
 }
 
 impl RunResultStreaming {
@@ -205,7 +206,18 @@ impl RunResultStreaming {
             max_turns,
             rx,
             task: None,
+            cancel_on_drop: false,
         }
+    }
+
+    /// Cancel the run immediately when this handle is dropped while the run is still going.
+    ///
+    /// Off by default, like Python: dropping the stream leaves the run going to completion (and
+    /// spending tokens). Turn it on when a consumer that disappears (an SSE client that
+    /// disconnected, a cancelled request) should stop the model and tool calls too.
+    pub fn cancel_on_drop(mut self, enabled: bool) -> Self {
+        self.cancel_on_drop = enabled;
+        self
     }
 
     /// Remember the background task so [`cancel`](Self::cancel) can abort it.
@@ -282,5 +294,13 @@ impl RunResultStreaming {
             }
         }
         Ok(out)
+    }
+}
+
+impl Drop for RunResultStreaming {
+    fn drop(&mut self) {
+        if self.cancel_on_drop {
+            self.cancel(CancelMode::Immediate);
+        }
     }
 }
