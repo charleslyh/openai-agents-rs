@@ -2672,9 +2672,14 @@ async fn execute_planned_tools(
             }
             // Python (`failure_error_function`): a failing tool is reported to the model so it
             // can retry, instead of aborting the run.
-            let call = NESTED_RESUME_STATES.scope(RefCell::new(resume_map), async {
-                (tool.on_invoke_tool)(ctx, arguments).await
-            });
+            // A run the tool starts (an agent used as a tool) nests under this function span.
+            let span_id = _fs.span().span_id.clone();
+            let call = crate::tracing::with_current_span(
+                &span_id,
+                NESTED_RESUME_STATES.scope(RefCell::new(resume_map), async {
+                    (tool.on_invoke_tool)(ctx, arguments).await
+                }),
+            );
             // Python applies the timeout outside the failure handler, so `RaiseException`
             // fails the run instead of being reported to the model.
             let outcome = match tool.timeout_seconds {
