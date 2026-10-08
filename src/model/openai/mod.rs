@@ -1,5 +1,6 @@
 //! OpenAI model adapters built on `async-openai` config + HTTP.
 
+pub mod chat_convert;
 mod chat_completions;
 mod responses;
 
