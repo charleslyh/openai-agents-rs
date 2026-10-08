@@ -164,7 +164,8 @@ dictionaries are merged (`model_settings.py:273`).
 | `trace_include_sensitive_data` | S | Maps to `ModelTracing::EnabledWithoutData` |
 | Processor start events | S | `InMemoryProcessor::started_spans` / `started_traces` |
 | `flush_traces` | S | Calls `TracingProcessor::force_flush` |
-| `task_span` / `turn_span` / speech / transcription spans | N | |
+| `task_span` / `turn_span`, `RunConfig.tracing` (`TracingConfig`) | S | Span tree checked against Python (D-037); `api_key` unused |
+| speech / transcription spans | N | |
 | OpenAI cloud export | N | D-004, not planned |
 
 ## Testing

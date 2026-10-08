@@ -45,7 +45,10 @@ use crate::tool_guardrails::{
     run_tool_input_guardrails, run_tool_output_guardrails, ToolInputGuardrailResult,
     ToolOutputGuardrailResult,
 };
-use crate::tracing::{agent_span, function_span, generation_span, handoff_span};
+use crate::tracing::{
+    agent_span, function_span, generation_span, handoff_span, task_span, turn_span, SpanGuard,
+    TracingConfig,
+};
 use crate::model::wire_events::FAKE_RESPONSES_ID;
 use crate::usage::Usage;
 
@@ -490,6 +493,8 @@ pub struct RunConfig {
     /// Session read settings for this run, overlaid on the session's own
     /// (Python: `RunConfig.session_settings`).
     pub session_settings: Option<SessionSettings>,
+    /// Tracing settings for this run (Python: `RunConfig.tracing`).
+    pub tracing: Option<TracingConfig>,
     /// Placeholder shown instead of a tool output that an output guardrail rejected
     /// (Python: `RunConfig.output_guardrail_blocked_message`).
     pub output_guardrail_blocked_message: Option<OutputGuardrailBlockedMessage>,
@@ -558,6 +563,7 @@ impl Default for RunConfig {
             tool_name_collision_policy: ToolNameCollisionPolicy::default(),
             tool_execution: None,
             reasoning_item_id_policy: None,
+            tracing: None,
             output_guardrail_blocked_message: None,
             session_input_callback: None,
             session_settings: None,
@@ -1014,6 +1020,16 @@ async fn run_loop_inner(
         },
     );
 
+    // Python: the run is wrapped in a task span; each agent gets an agent span (replaced on
+    // handoff) and each turn a turn span, unless `tracing.include_task_and_turn_spans` is off.
+    let use_task_and_turn_spans =
+        TracingConfig::includes_task_and_turn_spans(options.run_config.tracing.as_ref());
+    let mut task_guard: Option<SpanGuard> = use_task_and_turn_spans.then(|| task_span(&workflow));
+    // Held only for its drop: replacing it ends the previous agent's span.
+    #[allow(unused_assignments)]
+    let mut agent_guard: Option<SpanGuard> = None;
+    let mut agent_span_due = true;
+
     let starting_agent_name = starting_agent.name.clone();
     let mut current_agent = starting_agent;
     // Agents that have emitted tool calls, used to reset `tool_choice` (Python:
@@ -1082,10 +1098,13 @@ async fn run_loop_inner(
             .chain(current_agent.input_guardrails.iter())
             .cloned()
             .partition(|g| g.run_in_parallel);
-    let run_input_guardrails = |guardrails: Vec<InputGuardrail>| {
-        let agent = Arc::new(current_agent.clone());
-        let run_input = input.clone();
-        let ctx = context.clone();
+    let guardrail_agent = Arc::new(current_agent.clone());
+    let guardrail_input = input.clone();
+    let guardrail_context = context.clone();
+    let run_input_guardrails = move |guardrails: Vec<InputGuardrail>| {
+        let agent = Arc::clone(&guardrail_agent);
+        let run_input = guardrail_input.clone();
+        let ctx = guardrail_context.clone();
         async move {
             let futs = guardrails.into_iter().map(|g| {
                 let agent = Arc::clone(&agent);
@@ -1096,19 +1115,12 @@ async fn run_loop_inner(
             futures::future::join_all(futs).await
         }
     };
-    let mut pending_input_guardrails = if parallel_guardrails.is_empty() {
-        None
-    } else {
-        // `tokio::spawn` does not inherit task-locals, so the run's tracing switch has to be
-        // re-established inside the task; otherwise spans opened by a guardrail (Python runs
-        // them concurrently with the first turn) escape `RunConfig.tracing_disabled`.
-        let run_tracing_disabled = options.run_config.tracing_disabled;
-        let fut = run_input_guardrails(parallel_guardrails);
-        Some(tokio::spawn(crate::tracing::with_run_tracing_disabled(
-            run_tracing_disabled,
-            fut,
-        )))
-    };
+    // Both groups start inside the first turn (Python runs them under the turn span): blocking
+    // ones finish first, then the parallel ones are spawned alongside the model call.
+    let mut parallel_guardrails = Some(parallel_guardrails);
+    let mut blocking_guardrails = Some(blocking_guardrails);
+    let mut pending_input_guardrails: Option<tokio::task::JoinHandle<Vec<InputGuardrailResult>>> =
+        None;
 
     // `on_agent_start` is called once per agent, including after each handoff.
     if let Some(h) = &options.hooks {
@@ -1116,14 +1128,6 @@ async fn run_loop_inner(
     }
     if let Some(ah) = &current_agent.hooks {
         ah.on_start(context.clone(), &current_agent).await;
-    }
-
-    if !blocking_guardrails.is_empty() {
-        let results = run_input_guardrails(blocking_guardrails).await;
-        if let Some(r) = results.iter().find(|r| r.output.tripwire_triggered) {
-            return Err(InputGuardrailTripwireTriggered { result: r.clone() }.into());
-        }
-        input_guardrail_results = results;
     }
 
     loop {
@@ -1190,6 +1194,33 @@ async fn run_loop_inner(
             .await;
         }
 
+        // A handoff ended the previous agent's span; the new agent's starts with its first turn.
+        if agent_span_due {
+            drop(agent_guard.take());
+            agent_guard = Some(agent_span(&current_agent.name));
+            agent_span_due = false;
+        }
+        let mut turn_guard: Option<SpanGuard> =
+            use_task_and_turn_spans.then(|| turn_span(turn, &current_agent.name));
+
+        if let Some(blocking) = blocking_guardrails.take().filter(|g| !g.is_empty()) {
+            let results = run_input_guardrails(blocking).await;
+            if let Some(r) = results.iter().find(|r| r.output.tripwire_triggered) {
+                return Err(InputGuardrailTripwireTriggered { result: r.clone() }.into());
+            }
+            input_guardrail_results.extend(results);
+        }
+        if let Some(parallel) = parallel_guardrails.take().filter(|g| !g.is_empty()) {
+            // `tokio::spawn` does not inherit task-locals, so the run's tracing switch and the
+            // current span are re-established inside the task; otherwise spans opened by a
+            // guardrail escape `RunConfig.tracing_disabled` and lose their parent.
+            let run_tracing_disabled = options.run_config.tracing_disabled;
+            let fut = run_input_guardrails(parallel);
+            pending_input_guardrails = Some(tokio::spawn(
+                crate::tracing::with_run_tracing_disabled(run_tracing_disabled, fut),
+            ));
+        }
+
         // Python recomputes model settings at the start of every turn
         // (`get_model_settings` then `maybe_reset_tool_choice`), so `tool_choice` is cleared
         // once the agent has used tools — including when the previous turn ended early via
@@ -1213,8 +1244,6 @@ async fn run_loop_inner(
             validate_tool_timeout(tool)?;
         }
         let tools = tools_for_agent(enabled_tools, &enabled_handoffs);
-
-        let _agent_span = agent_span(&current_agent.name);
 
         let (response, approvals_map, from_resume) = if let Some((pending, approvals)) =
             resume_pending.take()
@@ -1372,6 +1401,9 @@ async fn run_loop_inner(
                 previous_response_id = Some(id.clone());
             }
             usage.add(&response.usage);
+            for guard in [task_guard.as_mut(), turn_guard.as_mut()].into_iter().flatten() {
+                guard.add_usage(&response.usage);
+            }
             context.add_usage(&response.usage);
             raw_responses.push(response.clone());
             if let Some(snap) = &snapshot {
@@ -1912,6 +1944,7 @@ async fn run_loop_inner(
             if let Some(ah) = &current_agent.hooks {
                 ah.on_start(context.clone(), &current_agent).await;
             }
+            agent_span_due = true;
             continue;
         }
 
@@ -2034,6 +2067,8 @@ async fn finalize_run(
     input_guardrail_results: Vec<InputGuardrailResult>,
     tool_origin: Option<&RunConfig>,
 ) -> Result<RunResult, AgentsError> {
+    // Python closes the turn span before the run's end hooks and output guardrails.
+    let _outside_turn = crate::tracing::leave_turn_span();
     if let Some(h) = hooks {
         h.on_agent_end(context.clone(), agent, &final_output).await;
     }

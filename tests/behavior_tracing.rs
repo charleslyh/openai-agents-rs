@@ -289,3 +289,128 @@ async fn tracing_disabled_skips_processor() {
     assert!(proc.spans.lock().unwrap().is_empty());
     tracing::set_tracing_disabled(false);
 }
+
+/// Describe the span tree in start order as `kind(detail)<-parent_index` (`-` for the trace root),
+/// the same shape the Python SDK produces for the same scenarios.
+fn span_tree(proc: &InMemoryProcessor) -> Vec<String> {
+    // The scripted model emits no generation span in Python, so leave them out of the shape.
+    let spans: Vec<_> = proc
+        .started_spans
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|s| !matches!(s.data, SpanData::Generation { .. }))
+        .cloned()
+        .collect();
+    let index = |id: &Option<String>| match id {
+        None => "-".to_string(),
+        Some(id) => spans.iter().position(|s| &s.span_id == id).map_or("?".into(), |i| i.to_string()),
+    };
+    spans
+        .iter()
+        .map(|s| {
+            let what = match &s.data {
+                SpanData::Task { .. } => "task".to_string(),
+                SpanData::Agent { name } => format!("agent({name})"),
+                SpanData::Turn { turn, agent_name, .. } => format!("turn({turn},{agent_name})"),
+                SpanData::Function { name } => format!("function({name})"),
+                SpanData::Handoff { .. } => "handoff".to_string(),
+                SpanData::Guardrail { name } => format!("guardrail({name})"),
+                SpanData::Generation { .. } => "generation".to_string(),
+                other => format!("{other:?}"),
+            };
+            format!("{what}<-{}", index(&s.parent_id))
+        })
+        .collect()
+}
+
+/// D-004: task / turn spans nest agent, function, handoff and guardrail spans like Python; the
+/// agent span covers all turns of one agent and is replaced on handoff.
+#[tokio::test]
+async fn task_and_turn_spans_nest_like_python() {
+    use openai_agents::{GuardrailFunctionOutput, InputGuardrail, OutputGuardrail, TracingConfig};
+    let _guard = tracing_test_lock().lock().unwrap();
+    tracing::set_tracing_disabled(false);
+
+    let build = || {
+        let b = Agent::new("B").model(Arc::new(ScriptedModel::new([ModelStep::from(
+            ItemHelpers::text_message("b done"),
+        )])));
+        Agent::new("A")
+            .model(Arc::new(ScriptedModel::new([
+                ModelStep::from(ItemHelpers::function_tool_call("echo", "{}", "c1")),
+                ModelStep::from(ItemHelpers::function_tool_call(
+                    openai_agents::Handoff::default_tool_name("B"),
+                    "{}",
+                    "h1",
+                )),
+            ])))
+            .tools(vec![openai_agents::FunctionTool::constant("echo", "e", "x")])
+            .handoffs(vec![openai_agents::handoff(b)])
+    };
+
+    let proc = InMemoryProcessor::install();
+    Runner::run(&build(), "go", RunOptions::default()).await.expect("run");
+    // Python: task, agent A under task, turn 1 with its function, turn 2 with the handoff,
+    // agent B back under the task.
+    assert_eq!(
+        span_tree(&proc),
+        [
+            "task<--",
+            "agent(A)<-0",
+            "turn(1,A)<-1",
+            "function(echo)<-2",
+            "turn(2,A)<-1",
+            "handoff<-4",
+            "agent(B)<-0",
+            "turn(3,B)<-6",
+        ]
+    );
+    let finished = proc.spans.lock().unwrap().clone();
+    let task = finished.iter().find(|s| matches!(s.data, SpanData::Task { .. })).unwrap();
+    match &task.data {
+        SpanData::Task { name, usage } => {
+            assert_eq!(name, "Agent workflow");
+            assert_eq!(usage.as_ref().unwrap()["requests"], 3);
+        }
+        _ => unreachable!(),
+    }
+    let turn = finished.iter().find(|s| matches!(s.data, SpanData::Turn { .. })).unwrap();
+    assert!(matches!(&turn.data, SpanData::Turn { usage: Some(u), .. } if u.get("requests").is_none()));
+
+    // `include_task_and_turn_spans: false` drops both layers and re-parents the rest.
+    let proc = InMemoryProcessor::install();
+    let mut options = RunOptions::default();
+    options.run_config.tracing = Some(TracingConfig {
+        include_task_and_turn_spans: Some(false),
+        ..TracingConfig::default()
+    });
+    Runner::run(&build(), "go", options).await.expect("run");
+    assert_eq!(
+        span_tree(&proc),
+        ["agent(A)<--", "function(echo)<-0", "handoff<-0", "agent(B)<--"]
+    );
+
+    // Input guardrails run inside the first turn, output guardrails after it, under the agent.
+    let proc = InMemoryProcessor::install();
+    let ok = || GuardrailFunctionOutput::pass(serde_json::Value::Null);
+    let agent = Agent::new("A")
+        .model(Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::text_message("hi"))])))
+        .input_guardrails(vec![
+            InputGuardrail::new("par", move |_c, _a, _i| async move { ok() }),
+            InputGuardrail::new("blk", move |_c, _a, _i| async move { ok() }).run_in_parallel(false),
+        ])
+        .output_guardrails(vec![OutputGuardrail::new("out", move |_c, _a, _o| async move { ok() })]);
+    Runner::run(&agent, "go", RunOptions::default()).await.expect("run");
+    assert_eq!(
+        span_tree(&proc),
+        [
+            "task<--",
+            "agent(A)<-0",
+            "turn(1,A)<-1",
+            "guardrail(blk)<-2",
+            "guardrail(par)<-2",
+            "guardrail(out)<-1",
+        ]
+    );
+}
