@@ -21,6 +21,10 @@ pub struct ModelResponse {
     pub response_id: Option<String>,
     /// Transport request id when available.
     pub request_id: Option<String>,
+    /// The provider's `usage` object exactly as received, kept only when
+    /// `ModelSettings.preserve_raw_usage` is on (Python: `ModelResponse.raw_usage`). Useful for
+    /// non-standard fields a gateway adds (cost, cache hits) that [`Usage`] does not model.
+    pub raw_usage: Option<serde_json::Value>,
 }
 
 impl ModelResponse {

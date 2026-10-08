@@ -108,7 +108,10 @@ impl Model for OpenAIChatCompletionsModel {
         }
         let payload: Value = resp.json().await.map_err(map_reqwest)?;
 
-        chat_payload_to_model_response(payload)
+        chat_payload_to_model_response(
+            payload,
+            request.model_settings.preserve_raw_usage == Some(true),
+        )
     }
 
     async fn stream_response(
@@ -153,7 +156,10 @@ impl Model for OpenAIChatCompletionsModel {
         // Wiremock / non-SSE providers may still return a full JSON body.
         if is_json_response(&resp) {
             let payload: Value = resp.json().await.map_err(map_reqwest)?;
-            let response = chat_payload_to_model_response(payload)?;
+            let response = chat_payload_to_model_response(
+                payload,
+                request.model_settings.preserve_raw_usage == Some(true),
+            )?;
             let wire = response_object(
                 response.response_id.as_deref().unwrap_or(FAKE_RESPONSES_ID),
                 &self.model,
@@ -174,6 +180,7 @@ impl Model for OpenAIChatCompletionsModel {
         let mut layout = ChatStreamLayout::default();
         let mut response_id: Option<String> = None;
         let mut usage: Option<Usage> = None;
+        let mut raw_usage: Option<Value> = None;
         let mut finish_reason: Option<String> = None;
 
         while let Some(chunk) = byte_stream.next().await {
@@ -208,6 +215,9 @@ impl Model for OpenAIChatCompletionsModel {
 
                 if let Some(u) = payload.get("usage").filter(|u| !u.is_null()) {
                     usage = Some(Usage::from_chat_usage(u));
+                    if request.model_settings.preserve_raw_usage == Some(true) && u.is_object() {
+                        raw_usage = Some(u.clone());
+                    }
                 }
 
                 let delta = payload
@@ -442,6 +452,7 @@ impl Model for OpenAIChatCompletionsModel {
             }),
             response_id,
             request_id: None,
+            raw_usage,
         };
         let wire = response_object(
             &id,
@@ -712,7 +723,10 @@ fn input_to_chat_messages(
     Ok(messages)
 }
 
-fn chat_payload_to_model_response(payload: Value) -> Result<ModelResponse, ModelError> {
+fn chat_payload_to_model_response(
+    payload: Value,
+    preserve_raw_usage: bool,
+) -> Result<ModelResponse, ModelError> {
     let choice = payload
         .pointer("/choices/0")
         .ok_or_else(|| ModelError::Behavior("missing choices[0]".into()))?;
@@ -749,6 +763,10 @@ fn chat_payload_to_model_response(payload: Value) -> Result<ModelResponse, Model
     let output: Vec<ResponseOutputItem> = chat_message_to_output_items(&message);
 
     let usage = chat_usage_or_completed_request(payload.get("usage"));
+    let raw_usage = payload
+        .get("usage")
+        .filter(|u| preserve_raw_usage && u.is_object())
+        .cloned();
 
     Ok(ModelResponse {
         output,
@@ -758,6 +776,7 @@ fn chat_payload_to_model_response(payload: Value) -> Result<ModelResponse, Model
             .and_then(|i| i.as_str())
             .map(str::to_string),
         request_id: None,
+        raw_usage,
     })
 }
 

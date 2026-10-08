@@ -540,6 +540,7 @@ fn serialize_model_response(r: &ModelResponse) -> Value {
         "usage": r.usage,
         "response_id": r.response_id,
         "request_id": r.request_id,
+        "raw_usage": r.raw_usage,
     })
 }
 
@@ -560,6 +561,7 @@ fn deserialize_model_response(value: &Value) -> Result<ModelResponse, AgentsErro
             .get("request_id")
             .and_then(|v| v.as_str())
             .map(str::to_string),
+        raw_usage: value.get("raw_usage").filter(|v| !v.is_null()).cloned(),
     })
 }
 

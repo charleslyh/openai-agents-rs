@@ -437,7 +437,38 @@ pub(crate) fn decorate_request(
             }
         }
     }
+    if let Some(query) = &settings.extra_query {
+        let pairs = query_pairs(query);
+        if !pairs.is_empty() {
+            request = request.query(&pairs);
+        }
+    }
     request
+}
+
+/// Flatten `ModelSettings.extra_query` into `key=value` pairs: scalars as text, arrays as
+/// repeated keys, `null` skipped, objects as compact JSON.
+fn query_pairs(query: &serde_json::Map<String, serde_json::Value>) -> Vec<(String, String)> {
+    use serde_json::Value;
+    fn text(value: &Value) -> Option<String> {
+        match value {
+            Value::Null => None,
+            Value::String(s) => Some(s.clone()),
+            Value::Bool(b) => Some(b.to_string()),
+            Value::Number(n) => Some(n.to_string()),
+            other => Some(other.to_string()),
+        }
+    }
+    let mut pairs = Vec::new();
+    for (key, value) in query {
+        match value {
+            Value::Array(items) => {
+                pairs.extend(items.iter().filter_map(text).map(|v| (key.clone(), v)));
+            }
+            other => pairs.extend(text(other).map(|v| (key.clone(), v))),
+        }
+    }
+    pairs
 }
 
 pub(crate) fn tools_as_chat(tools: &[FunctionTool]) -> Vec<serde_json::Value> {

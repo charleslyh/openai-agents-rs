@@ -330,6 +330,7 @@ impl Model for ScriptedModel {
             usage,
             response_id: step.response_id,
             request_id: step.request_id,
+            raw_usage: None,
         })
     }
 
@@ -364,6 +365,7 @@ impl Model for ScriptedModel {
             usage,
             response_id: step.response_id,
             request_id: step.request_id,
+            raw_usage: None,
         };
 
         // Python (`testing/model.py`) expands a step into the standard Responses event sequence;
