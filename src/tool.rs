@@ -167,6 +167,62 @@ impl NeedsApproval {
     }
 }
 
+/// Dynamic enablement policy: `(context, agent) -> enabled`.
+pub type IsEnabledFn = Arc<
+    dyn Fn(RunContextWrapper, Arc<crate::agent::Agent>) -> Pin<Box<dyn Future<Output = bool> + Send>>
+        + Send
+        + Sync,
+>;
+
+/// Whether a tool or handoff is offered to the model (Python: `is_enabled`).
+#[derive(Clone)]
+pub enum ToolEnabled {
+    /// Always (or never) enabled.
+    Fixed(bool),
+    /// Decided per turn from the run context and the current agent.
+    Dynamic(IsEnabledFn),
+}
+
+impl Default for ToolEnabled {
+    fn default() -> Self {
+        Self::Fixed(true)
+    }
+}
+
+impl From<bool> for ToolEnabled {
+    fn from(value: bool) -> Self {
+        Self::Fixed(value)
+    }
+}
+
+impl ToolEnabled {
+    /// Build a dynamic policy from an async closure.
+    pub fn dynamic<F, Fut>(f: F) -> Self
+    where
+        F: Fn(RunContextWrapper, Arc<crate::agent::Agent>) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = bool> + Send + 'static,
+    {
+        Self::Dynamic(Arc::new(move |ctx, agent| Box::pin(f(ctx, agent))))
+    }
+
+    /// Evaluate the policy.
+    pub async fn resolve(&self, context: &RunContextWrapper, agent: &crate::agent::Agent) -> bool {
+        match self {
+            Self::Fixed(v) => *v,
+            Self::Dynamic(f) => f(context.clone(), Arc::new(agent.clone())).await,
+        }
+    }
+}
+
+impl std::fmt::Debug for ToolEnabled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Fixed(v) => write!(f, "Fixed({v})"),
+            Self::Dynamic(_) => f.write_str("Dynamic(..)"),
+        }
+    }
+}
+
 /// A function tool exposed to the model (Python: `FunctionTool`).
 #[derive(Clone)]
 pub struct FunctionTool {
@@ -181,7 +237,7 @@ pub struct FunctionTool {
     /// Whether the schema is strict.
     pub strict_json_schema: bool,
     /// Whether the tool is enabled.
-    pub is_enabled: bool,
+    pub is_enabled: ToolEnabled,
     /// Whether / when the tool pauses for human approval before invoke.
     pub needs_approval: NeedsApproval,
     /// How a returned error is surfaced (Python: `failure_error_function`).
@@ -244,7 +300,7 @@ impl FunctionTool {
                 Box::pin(async move { on_invoke(ctx, args).await })
             }),
             strict_json_schema: true,
-            is_enabled: true,
+            is_enabled: ToolEnabled::Fixed(true),
             needs_approval: NeedsApproval::Fixed(false),
             failure_error_function: ToolFailureHandling::Default,
         }
@@ -262,6 +318,12 @@ impl FunctionTool {
     /// Abort the run when this tool errors (Python: `failure_error_function=None`).
     pub fn raise_on_error(mut self) -> Self {
         self.failure_error_function = ToolFailureHandling::Raise;
+        self
+    }
+
+    /// Enable or disable the tool statically or per turn (Python: `is_enabled`).
+    pub fn with_is_enabled(mut self, enabled: impl Into<ToolEnabled>) -> Self {
+        self.is_enabled = enabled.into();
         self
     }
 

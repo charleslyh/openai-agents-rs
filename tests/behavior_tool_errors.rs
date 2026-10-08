@@ -378,3 +378,33 @@ async fn on_handoff_without_input_runs_and_bad_json_is_behavior_error() {
     let err = Runner::run(&a2, "hi", RunOptions::default()).await.unwrap_err();
     assert!(matches!(err, AgentsError::Model(ModelError::Behavior(_))), "{err}");
 }
+
+/// D-029: `is_enabled` can be decided per turn from the run context; disabled tools and
+/// handoffs are hidden from the model.
+#[tokio::test]
+async fn dynamic_is_enabled_hides_tools_and_handoffs() {
+    use openai_agents::{RunContextWrapper, ToolEnabled};
+    let b = Agent::new("B").model(Arc::new(ScriptedModel::new([])));
+    let hidden_handoff = handoff(b).with_is_enabled(false);
+    let flagged = FunctionTool::constant("flagged", "f", "x").with_is_enabled(ToolEnabled::dynamic(
+        |ctx: RunContextWrapper, _agent| async move { ctx.context::<bool>().copied().unwrap_or(false) },
+    ));
+    let model = Arc::new(ScriptedModel::new([
+        ModelStep::from(ItemHelpers::text_message("one")),
+        ModelStep::from(ItemHelpers::text_message("two")),
+    ]));
+    let agent = Agent::new("A")
+        .model(model.clone())
+        .tools(vec![flagged, FunctionTool::constant("always", "a", "y")])
+        .handoffs(vec![hidden_handoff]);
+
+    Runner::run(&agent, "hi", RunOptions::default()).await.expect("run");
+    let mut options = RunOptions::default();
+    options.context = Some(Arc::new(true));
+    Runner::run(&agent, "hi", options).await.expect("run");
+
+    let calls = model.calls();
+    assert_eq!(calls[0].tool_names, vec!["always"]);
+    assert!(calls[1].tool_names.contains(&"flagged".to_string()));
+    assert!(!calls[1].tool_names.iter().any(|n| n.starts_with("transfer_to")));
+}

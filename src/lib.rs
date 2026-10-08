@@ -71,7 +71,7 @@ pub use schemars;
 pub use serde;
 pub use stream_events::{RunItemStreamName, StreamEvent};
 pub use tool::{
-    FunctionTool, NeedsApproval, ToolContext, ToolFailureHandling, ToolResult,
+    FunctionTool, IsEnabledFn, NeedsApproval, ToolContext, ToolEnabled, ToolFailureHandling, ToolResult,
     DEFAULT_APPROVAL_REJECTION_MESSAGE, DEFAULT_TOOL_ERROR_MESSAGE,
 };
 pub use usage::Usage;

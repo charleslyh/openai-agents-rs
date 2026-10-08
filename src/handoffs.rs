@@ -10,6 +10,7 @@ use serde_json::Value;
 use crate::agent::Agent;
 use crate::error::AgentsError;
 use crate::run_context::RunContextWrapper;
+use crate::tool::ToolEnabled;
 
 /// Conversation handed to the next agent, as seen by an input filter
 /// (Python: `HandoffInputData`, flattened to Responses input items).
@@ -70,6 +71,8 @@ pub struct Handoff {
     ///
     /// `None` means the tool takes no arguments.
     pub input_json_schema: Option<Value>,
+    /// Whether the handoff is offered to the model (Python: `Handoff.is_enabled`).
+    pub is_enabled: ToolEnabled,
 }
 
 impl std::fmt::Debug for Handoff {
@@ -89,6 +92,12 @@ impl Handoff {
     /// Attach an input filter (Python: `handoff(agent, input_filter=...)`).
     pub fn with_input_filter(mut self, filter: HandoffInputFilter) -> Self {
         self.input_filter = Some(filter);
+        self
+    }
+
+    /// Enable or disable the handoff statically or per turn (Python: `handoff(is_enabled=...)`).
+    pub fn with_is_enabled(mut self, enabled: impl Into<ToolEnabled>) -> Self {
+        self.is_enabled = enabled.into();
         self
     }
 
@@ -142,6 +151,7 @@ pub fn handoff(agent: Agent) -> Handoff {
         input_filter: None,
         on_handoff: None,
         input_json_schema: None,
+        is_enabled: ToolEnabled::Fixed(true),
     }
 }
 
@@ -166,6 +176,7 @@ pub fn handoff_with(
         input_filter: None,
         on_handoff: None,
         input_json_schema: None,
+        is_enabled: ToolEnabled::Fixed(true),
     }
 }
 
