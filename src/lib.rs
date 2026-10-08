@@ -54,7 +54,7 @@ pub use items::{
     ToolCallOutputItem,
 };
 pub use lifecycle::{AgentHooks, RunHooks};
-pub use memory::{InMemorySession, Session};
+pub use memory::{InMemorySession, Session, SessionInputCallback, SessionSettings};
 pub use model::{
     default_model_provider, MissingProvider, Model, ModelProvider, ModelRef, ModelRequest,
     ModelTracing, MultiProvider,
