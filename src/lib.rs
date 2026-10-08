@@ -64,7 +64,7 @@ pub use lifecycle::{AgentHooks, RunHooks};
 pub use mcp::{StdioParams, StreamableHttpParams};
 pub use mcp::{
     mcp_function_tools, render_tool_result, McpCallToolResult, McpClient, McpConfig, McpError,
-    McpServer, McpTool, RequireApproval, ToolFilter, ToolFilterContext,
+    McpServer, McpServerManager, McpTool, RequireApproval, ToolFilter, ToolFilterContext,
 };
 pub use memory::{
     CompactingSession, InMemorySession, ModelSummarizer, Session, SessionInputCallback,
