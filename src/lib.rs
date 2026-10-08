@@ -59,6 +59,8 @@ pub use items::{
 };
 pub use lifecycle::{AgentHooks, RunHooks};
 pub use memory::{InMemorySession, Session, SessionInputCallback, SessionSettings};
+#[cfg(feature = "sqlite")]
+pub use memory::SqliteSession;
 pub use model::{
     default_model_provider, MissingProvider, Model, ModelProvider, ModelRef, ModelRequest,
     ModelTracing, MultiProvider,

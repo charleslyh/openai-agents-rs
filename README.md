@@ -84,6 +84,7 @@ bash scripts/sync_vendor.sh --check
 |-------|---------|
 | 1. ScriptedModel behavior | `cargo test --no-default-features` |
 | 2. OpenAI HTTP contracts (wiremock) | `cargo test` (default features; needs `openai`) |
+| SQLite sessions | `cargo test --features sqlite` |
 | 3. Python oracle parity | `.venv/bin/python scripts/run_parity.py --write-golden` then `cargo test --test parity_scenarios` |
 
 Shared scenarios live in [`tests/parity/scenarios/`](./tests/parity/scenarios/). A scenario only
