@@ -125,6 +125,17 @@ const TOOL_NOT_FOUND_PLACEHOLDER: &str = "__tool_not_found__";
 /// Output sent for every handoff after the first in one turn (Python: same literal).
 const MULTIPLE_HANDOFFS_MESSAGE: &str = "Multiple handoffs detected, ignoring this one.";
 
+/// What to do when a function tool and a handoff (or two tools) share a name
+/// (Python: `RunConfig.tool_name_collision_policy`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ToolNameCollisionPolicy {
+    /// Log a warning and expose only the winner of each collision (default).
+    #[default]
+    Warn,
+    /// Fail with a [`UserError`] before the model is called.
+    Error,
+}
+
 /// Which tool error a [`ToolErrorFormatter`] is formatting (Python: `ToolErrorFormatterArgs.kind`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolErrorKind {
@@ -205,6 +216,8 @@ pub struct RunConfig {
     pub output_guardrails: Vec<OutputGuardrail>,
     /// Behavior when the model calls an unknown tool (Python: `RunConfig.tool_not_found_behavior`).
     pub tool_not_found_behavior: ToolNotFoundBehavior,
+    /// Collision handling for tool and handoff names (Python: `tool_name_collision_policy`).
+    pub tool_name_collision_policy: ToolNameCollisionPolicy,
     /// Customize approval-rejection and tool-not-found messages
     /// (Python: `RunConfig.tool_error_formatter`).
     pub tool_error_formatter: Option<ToolErrorFormatter>,
@@ -254,6 +267,7 @@ impl Default for RunConfig {
             call_model_input_filter: None,
             handoff_input_filter: None,
             tool_error_formatter: None,
+            tool_name_collision_policy: ToolNameCollisionPolicy::default(),
         }
     }
 }
@@ -456,6 +470,86 @@ async fn emit(tx: &Option<EventTx>, event: StreamEvent) {
     if let Some(tx) = tx {
         let _ = tx.send(Ok(event)).await;
     }
+}
+
+/// Python (`resolve_tool_name_collisions`): a name used twice is an error under
+/// [`ToolNameCollisionPolicy::Error`]; otherwise a handoff beats a tool, and the last entry of the
+/// winning kind is kept.
+fn resolve_tool_name_collisions(
+    tools: Vec<FunctionTool>,
+    handoffs: Vec<Handoff>,
+    policy: ToolNameCollisionPolicy,
+) -> Result<(Vec<FunctionTool>, Vec<Handoff>), AgentsError> {
+    let mut owners: Vec<(String, Vec<(bool, usize)>)> = Vec::new();
+    let mut add = |name: &str, is_handoff: bool, index: usize| {
+        match owners.iter_mut().find(|(n, _)| n == name) {
+            Some((_, entries)) => entries.push((is_handoff, index)),
+            None => owners.push((name.to_string(), vec![(is_handoff, index)])),
+        }
+    };
+    for (i, t) in tools.iter().enumerate() {
+        add(&t.name, false, i);
+    }
+    for (i, h) in handoffs.iter().enumerate() {
+        if !h.tool_name.is_empty() {
+            add(&h.tool_name, true, i);
+        }
+    }
+
+    let mut drop_tools = HashSet::new();
+    let mut drop_handoffs = HashSet::new();
+    for (name, entries) in owners.iter().filter(|(_, e)| e.len() > 1) {
+        let handoff_count = entries.iter().filter(|(is_handoff, _)| *is_handoff).count();
+        let message = if handoff_count == 0 {
+            format!(
+                "Ambiguous function tool configuration: the tool name `{name}` is used by \
+                 multiple tools. Assign a unique name to every colliding function tool."
+            )
+        } else if handoff_count == entries.len() {
+            format!(
+                "Ambiguous handoff configuration: the handoff tool name `{name}` is used by \
+                 multiple handoffs. Pass a unique tool name to each handoff."
+            )
+        } else {
+            format!(
+                "Ambiguous tool routing configuration: the tool name `{name}` is used by both \
+                 a function tool and a handoff. Assign a unique name to every colliding \
+                 function tool and handoff."
+            )
+        };
+        if policy == ToolNameCollisionPolicy::Error {
+            return Err(UserError::new(message).into());
+        }
+        ::tracing::warn!("{message}");
+        let winner = entries
+            .iter()
+            .rev()
+            .find(|(is_handoff, _)| *is_handoff)
+            .or_else(|| entries.last())
+            .copied()
+            .expect("collision has entries");
+        for entry in entries.iter().filter(|e| **e != winner) {
+            if entry.0 {
+                drop_handoffs.insert(entry.1);
+            } else {
+                drop_tools.insert(entry.1);
+            }
+        }
+    }
+
+    let tools = tools
+        .into_iter()
+        .enumerate()
+        .filter(|(i, _)| !drop_tools.contains(i))
+        .map(|(_, t)| t)
+        .collect();
+    let handoffs = handoffs
+        .into_iter()
+        .enumerate()
+        .filter(|(i, _)| !drop_handoffs.contains(i))
+        .map(|(_, h)| h)
+        .collect();
+    Ok((tools, handoffs))
 }
 
 fn tools_for_agent(mut tools: Vec<FunctionTool>, handoffs: &[Handoff]) -> Vec<FunctionTool> {
@@ -697,8 +791,12 @@ async fn run_loop_inner(
         let model = resolve_model(&current_agent, &options.run_config)?;
         // Python re-evaluates `is_enabled` every turn; disabled tools and handoffs are hidden
         // from the model and calls to them are treated as unknown.
-        let enabled_handoffs = current_agent.enabled_handoffs(&context).await;
-        let tools = tools_for_agent(current_agent.enabled_tools(&context).await, &enabled_handoffs);
+        let (enabled_tools, enabled_handoffs) = resolve_tool_name_collisions(
+            current_agent.enabled_tools(&context).await,
+            current_agent.enabled_handoffs(&context).await,
+            options.run_config.tool_name_collision_policy,
+        )?;
+        let tools = tools_for_agent(enabled_tools, &enabled_handoffs);
 
         let _agent_span = agent_span(&current_agent.name);
 

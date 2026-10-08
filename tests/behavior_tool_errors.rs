@@ -551,3 +551,30 @@ async fn tool_error_formatter_rewrites_default_messages() {
     let result = Runner::run(&agent, "go", options).await.expect("run");
     assert_eq!(tool_output_texts(&result.new_items), vec!["Tool 'nope' not found."]);
 }
+
+/// D-032: a handoff beats a same-named tool; `Error` rejects the configuration up front.
+#[tokio::test]
+async fn tool_name_collision_policy() {
+    use openai_agents::{RunConfig, ToolNameCollisionPolicy};
+    let build = |model: Arc<ScriptedModel>| {
+        let b = Agent::new("B").model(Arc::new(ScriptedModel::new([])));
+        let h = handoff(b);
+        let clash = FunctionTool::constant(h.tool_name.clone(), "clashes with the handoff", "x");
+        Agent::new("A").model(model).tools(vec![clash]).handoffs(vec![h])
+    };
+
+    let model = Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::text_message("ok"))]));
+    Runner::run(&build(model.clone()), "hi", RunOptions::default()).await.expect("warn");
+    let names = &model.calls()[0].tool_names;
+    assert_eq!(names.iter().filter(|n| n.starts_with("transfer_to_b")).count(), 1, "{names:?}");
+
+    let model = Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::text_message("ok"))]));
+    let mut options = RunOptions::default();
+    options.run_config = RunConfig {
+        tool_name_collision_policy: ToolNameCollisionPolicy::Error,
+        ..RunConfig::default()
+    };
+    let err = Runner::run(&build(model.clone()), "hi", options).await.unwrap_err();
+    assert!(matches!(err, AgentsError::User(_)), "{err}");
+    assert!(model.calls().is_empty(), "the model must not be called");
+}
