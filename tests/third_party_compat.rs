@@ -470,3 +470,122 @@ async fn preserve_raw_usage_keeps_the_provider_usage_object() {
     let snapshot = streamed.snapshot.lock().unwrap();
     assert_eq!(snapshot.raw_responses[0].raw_usage, Some(usage));
 }
+
+/// Items written by a Chat Completions model carry a placeholder id and `provider_data`; a
+/// Responses server must not see either, nor another provider's reasoning (Python:
+/// `_remove_openai_responses_api_incompatible_fields`).
+#[tokio::test]
+async fn responses_input_drops_other_providers_bookkeeping() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "r", "object": "response",
+            "output": [{"id": "1", "type": "message", "role": "assistant", "status": "completed",
+                "content": [{"type": "output_text", "text": "ok", "annotations": [], "logprobs": []}]}],
+            "usage": {"input_tokens": 1, "output_tokens": 1}
+        })))
+        .mount(&server)
+        .await;
+    let model = Arc::new(OpenAIResponsesModel::new("m", "k", Some(&format!("{}/v1", server.uri()))));
+    let history = vec![
+        json!({"role": "user", "content": "go"}),
+        json!({"id": "__fake_id__", "type": "reasoning", "summary": [],
+               "provider_data": {"model": "claude-sonnet"}}),
+        json!({"id": "__fake_id__", "type": "function_call", "call_id": "c1", "name": "t",
+               "arguments": "{}", "provider_data": {"model": "gemini", "thought_signature": "S"}}),
+        json!({"type": "function_call_output", "call_id": "c1", "output": "x"}),
+        json!({"id": "fc_real", "type": "function_call", "call_id": "c2", "name": "t", "arguments": "{}"}),
+        json!({"type": "function_call_output", "call_id": "c2", "output": "y"}),
+    ];
+    let agent = Agent::new("a").model(model);
+    Runner::run(&agent, history, RunOptions::default()).await.expect("run");
+    let sent = &request_bodies(&server).await[0]["input"];
+    let kinds: Vec<_> = sent.as_array().unwrap().iter().map(|i| i["type"].as_str().or(i["role"].as_str()).unwrap()).collect();
+    assert_eq!(kinds, ["user", "function_call", "function_call_output", "function_call", "function_call_output"]);
+    assert!(sent[1].get("id").is_none() && sent[1].get("provider_data").is_none(), "{}", sent[1]);
+    assert_eq!(sent[3]["id"], "fc_real", "a real id stays");
+}
+
+/// Gemini's OpenAI-compatible endpoint requires the `thought_signature` it sent with a tool call
+/// to come back with that call. It is kept on the item and restored only for Gemini models, for
+/// plain and for streamed replies.
+#[tokio::test]
+async fn gemini_thought_signature_comes_back_with_the_tool_call() {
+    let signed = json!({"id": "c1", "type": "function",
+        "function": {"name": "alpha", "arguments": "{}"},
+        "extra_content": {"google": {"thought_signature": "SIG-1"}}});
+
+    // Plain reply.
+    let server = chat_server(vec![
+        completion(json!({"role": "assistant", "content": null, "tool_calls": [signed.clone()]}), "tool_calls"),
+        completion(json!({"role": "assistant", "content": "done"}), "stop"),
+    ])
+    .await;
+    let agent = Agent::new("a").model(chat_model(&server, "gemini-3-pro")).tools(vec![echo_tool("alpha")]);
+    Runner::run(&agent, "go", RunOptions::default()).await.expect("run");
+    let call = &request_bodies(&server).await[1]["messages"][1]["tool_calls"][0];
+    assert_eq!(call["extra_content"]["google"]["thought_signature"], "SIG-1", "{call}");
+
+    // Streamed reply.
+    let first = [
+        chunk(json!({"tool_calls": [{"index": 0, "id": "c1", "extra_content": signed["extra_content"],
+            "function": {"name": "alpha", "arguments": "{}"}}]}), None),
+        "data: [DONE]\n\n".to_string(),
+    ]
+    .concat();
+    let second = [chunk(json!({"content": "done"}), Some("stop")), "data: [DONE]\n\n".to_string()].concat();
+    let server = MockServer::start().await;
+    struct Sse(Mutex<VecDeque<String>>);
+    impl Respond for Sse {
+        fn respond(&self, _: &Request) -> ResponseTemplate {
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(self.0.lock().unwrap().pop_front().unwrap_or_default())
+        }
+    }
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(Sse(Mutex::new(VecDeque::from([first, second]))))
+        .mount(&server)
+        .await;
+    let agent = Agent::new("a").model(chat_model(&server, "gemini-3-pro")).tools(vec![echo_tool("alpha")]);
+    let mut streamed = Runner::run_streamed(agent, "go", RunOptions::default());
+    streamed.collect_events().await.expect("events");
+    let call = &request_bodies(&server).await[1]["messages"][1]["tool_calls"][0];
+    assert_eq!(call["extra_content"]["google"]["thought_signature"], "SIG-1", "{call}");
+
+    // Another model never gets it.
+    let server = chat_server(vec![
+        completion(json!({"role": "assistant", "content": null, "tool_calls": [signed]}), "tool_calls"),
+        completion(json!({"role": "assistant", "content": "done"}), "stop"),
+    ])
+    .await;
+    let agent = Agent::new("a").model(chat_model(&server, "llama-3")).tools(vec![echo_tool("alpha")]);
+    Runner::run(&agent, "go", RunOptions::default()).await.expect("run");
+    assert!(request_bodies(&server).await[1]["messages"][1]["tool_calls"][0].get("extra_content").is_none());
+}
+
+/// Claude with extended thinking needs its thinking blocks back in the assistant message that
+/// made the tool calls. Off by default, as in Python's OpenAI adapter; one switch turns it on.
+#[tokio::test]
+async fn claude_thinking_blocks_are_replayed_when_asked() {
+    let blocks = json!([{"type": "thinking", "thinking": "hmm", "signature": "SIG"}, {"type": "redacted_thinking", "data": "x"}]);
+    for (preserve, expected) in [(false, false), (true, true)] {
+        let server = chat_server(vec![
+            completion(
+                json!({"role": "assistant", "content": null, "thinking_blocks": blocks,
+                       "tool_calls": [tool_call(json!("c1"), "alpha")]}),
+                "tool_calls",
+            ),
+            completion(json!({"role": "assistant", "content": "done"}), "stop"),
+        ])
+        .await;
+        let model = OpenAIChatCompletionsModel::new("claude-sonnet", "sk", Some(&format!("{}/v1", server.uri())))
+            .preserve_thinking_blocks(preserve);
+        let agent = Agent::new("a").model(Arc::new(model)).tools(vec![echo_tool("alpha")]);
+        Runner::run(&agent, "go", RunOptions::default()).await.expect("run");
+        let assistant = &request_bodies(&server).await[1]["messages"][1];
+        assert_eq!(assistant.get("thinking_blocks") == Some(&blocks), expected, "preserve={preserve}: {assistant}");
+    }
+}

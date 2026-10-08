@@ -27,10 +27,25 @@ pub const OMITTED_TOOL_OUTPUT_PLACEHOLDER: &str = "[tool output omitted]";
 /// model name (Python: `should_replay_reasoning_content`).
 pub type ReplayReasoningFn = Arc<dyn Fn(&str, &Value) -> bool + Send + Sync>;
 
-/// Default replay rule: only DeepSeek models take `reasoning_content` back
-/// (Python: `default_should_replay_reasoning_content`).
-pub fn default_should_replay_reasoning(model: &str, _reasoning: &Value) -> bool {
-    model.to_lowercase().contains("deepseek")
+/// Key under which an item remembers that the server sent its chain of thought as the
+/// `reasoning` field (Python: `_CHAT_COMPLETIONS_REASONING_FIELD_KEY`).
+pub const REASONING_FIELD_KEY: &str = "_chat_completions_reasoning_field";
+
+/// Default replay rule: only DeepSeek models take `reasoning_content` back, and only reasoning
+/// that came from DeepSeek or predates provider tracking (Python:
+/// `default_should_replay_reasoning_content`). That keeps another model family's reasoning out
+/// of a DeepSeek assistant message.
+pub fn default_should_replay_reasoning(model: &str, reasoning: &Value) -> bool {
+    if !model.to_lowercase().contains("deepseek") {
+        return false;
+    }
+    let provider_data = reasoning.get("provider_data").and_then(Value::as_object);
+    let origin_is_deepseek = provider_data
+        .and_then(|d| d.get("model"))
+        .and_then(Value::as_str)
+        .is_some_and(|m| m.to_lowercase().contains("deepseek"));
+    let tracked = provider_data.is_some_and(|d| d.keys().any(|k| k != "thinking_blocks"));
+    origin_is_deepseek || !tracked
 }
 
 /// Settings of [`items_to_chat_messages`].
@@ -40,6 +55,10 @@ pub struct ChatConvertOptions {
     pub model: String,
     /// Replaces [`default_should_replay_reasoning`] when set.
     pub replay_reasoning: Option<ReplayReasoningFn>,
+    /// Send Claude thinking blocks back with the assistant message that follows them
+    /// (Python: `preserve_thinking_blocks`, which only its LiteLLM adapter turns on). Needed by
+    /// Claude models with extended thinking behind a gateway that returns `thinking_blocks`.
+    pub preserve_thinking_blocks: bool,
 }
 
 fn unsupported(message: impl Into<String>) -> ModelError {
@@ -158,7 +177,13 @@ fn has_tool_calls(message: &Map<String, Value>) -> bool {
 struct MessageBuilder {
     result: Vec<Value>,
     current: Option<Map<String, Value>>,
+    /// Chain of thought to send as `reasoning_content` (DeepSeek).
     pending_reasoning: Option<String>,
+    /// Chain of thought to send as the `reasoning` field (servers that returned it that way).
+    pending_reasoning_field: Option<String>,
+    /// Claude thinking blocks, and whether they are the provider's own complete list (`true`)
+    /// or were rebuilt from the normalized reasoning item.
+    pending_thinking: Option<(Vec<Value>, bool)>,
 }
 
 impl MessageBuilder {
@@ -169,18 +194,49 @@ impl MessageBuilder {
                 message.remove("tool_calls");
                 // Stale reasoning must not leak into a later assistant message.
                 self.pending_reasoning = None;
+                self.pending_reasoning_field = None;
             }
             self.result.push(Value::Object(message));
         }
         if clear_pending_reasoning {
-            self.pending_reasoning = None;
+            self.clear_pending();
         }
     }
 
+    fn clear_pending(&mut self) {
+        self.pending_reasoning = None;
+        self.pending_reasoning_field = None;
+        self.pending_thinking = None;
+    }
+
     fn apply_pending_reasoning(&mut self, message: &mut Map<String, Value>) {
+        self.apply_pending_thinking(message);
         if let Some(reasoning) = self.pending_reasoning.take() {
             message.insert("reasoning_content".into(), reasoning.into());
         }
+        if let Some(reasoning) = self.pending_reasoning_field.take() {
+            message.insert("reasoning".into(), reasoning.into());
+        }
+    }
+
+    /// Python: `apply_pending_thinking_blocks`. The provider's own list goes in as
+    /// `thinking_blocks`; a list rebuilt from a stored item leads the message `content`.
+    fn apply_pending_thinking(&mut self, message: &mut Map<String, Value>) {
+        let Some((blocks, native)) = self.pending_thinking.take().filter(|(b, _)| !b.is_empty()) else {
+            return;
+        };
+        if native {
+            message.insert("thinking_blocks".into(), Value::Array(blocks));
+            return;
+        }
+        let mut parts = match message.remove("content") {
+            Some(Value::String(text)) => vec![text_part(&text)],
+            Some(Value::Array(parts)) => parts,
+            _ => Vec::new(),
+        };
+        let mut content = blocks;
+        content.append(&mut parts);
+        message.insert("content".into(), Value::Array(content));
     }
 
     /// The open assistant message, started when there is none.
@@ -231,11 +287,18 @@ pub fn items_to_chat_messages(
                 .ok_or_else(|| unsupported(format!("function_call without call_id: {item}")))?;
             let arguments = str_field(item, "arguments").filter(|a| !a.is_empty()).unwrap_or("{}");
             let name = str_field(item, "name").unwrap_or_default();
-            let call = json!({
+            let mut call = json!({
                 "id": call_id,
                 "type": "function",
                 "function": {"name": name, "arguments": arguments},
             });
+            // Gemini wants its thought signature back in Google's `extra_content` format.
+            let signature = item
+                .pointer("/provider_data/thought_signature")
+                .filter(|s| s.as_str().is_some_and(|s| !s.is_empty()));
+            if let (Some(signature), true) = (signature, options.model.to_lowercase().contains("gemini")) {
+                call["extra_content"] = json!({"google": {"thought_signature": signature}});
+            }
             if let Some(calls) = builder.assistant().get_mut("tool_calls").and_then(Value::as_array_mut) {
                 calls.push(call);
             }
@@ -252,7 +315,8 @@ pub fn items_to_chat_messages(
                 .result
                 .push(json!({"role": "tool", "tool_call_id": call_id, "content": content}));
         } else if kind == Some("reasoning") {
-            builder.pending_reasoning = None;
+            builder.clear_pending();
+            restore_reasoning(&mut builder, item, options);
             let replay = match &options.replay_reasoning {
                 Some(replay) => replay(&options.model, item),
                 None => default_should_replay_reasoning(&options.model, item),
@@ -283,6 +347,73 @@ pub fn items_to_chat_messages(
     }
     builder.flush(true);
     Ok(builder.result)
+}
+
+/// What an earlier reasoning item contributes to the next assistant message besides
+/// `reasoning_content`: the `reasoning` field of the server that sent it that way, and Claude
+/// thinking blocks (Python: the `maybe_reasoning_message` branch of `items_to_messages`).
+fn restore_reasoning(builder: &mut MessageBuilder, item: &Value, options: &ChatConvertOptions) {
+    let model = options.model.as_str();
+    let provider_data = item.get("provider_data").and_then(Value::as_object);
+    let item_model = provider_data
+        .and_then(|d| d.get("model"))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let reasoning_field = provider_data
+        .and_then(|d| d.get(REASONING_FIELD_KEY))
+        .and_then(Value::as_str);
+    let content: Vec<&Value> = item
+        .get("content")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .collect();
+
+    if reasoning_field == Some("reasoning") && !model.is_empty() && model == item_model {
+        let texts: Vec<&str> = content
+            .iter()
+            .filter(|c| str_field(c, "type") == Some("reasoning_text"))
+            .filter_map(|c| str_field(c, "text"))
+            .filter(|t| !t.is_empty())
+            .collect();
+        if !texts.is_empty() {
+            builder.pending_reasoning_field = Some(texts.join("\n"));
+        }
+    }
+
+    let lowered = model.to_lowercase();
+    let is_claude = lowered.contains("claude") || lowered.contains("anthropic");
+    // Only blocks Claude itself produced (or that predate provider tracking) may go back.
+    let origin_unknown = !provider_data.is_some_and(|d| d.keys().any(|k| k != "thinking_blocks"));
+    if !(is_claude && options.preserve_thinking_blocks && (model == item_model || origin_unknown)) {
+        return;
+    }
+    let complete = provider_data
+        .and_then(|d| d.get("thinking_blocks"))
+        .and_then(Value::as_array)
+        .filter(|blocks| !blocks.is_empty() && blocks.iter().all(Value::is_object));
+    if let Some(blocks) = complete {
+        builder.pending_reasoning_field = None;
+        builder.pending_thinking = Some((blocks.clone(), true));
+    } else if !content.is_empty() && reasoning_field != Some("reasoning") {
+        let mut signatures: std::collections::VecDeque<&str> = str_field(item, "encrypted_content")
+            .filter(|s| !s.is_empty())
+            .map(|s| s.split('\n').collect())
+            .unwrap_or_default();
+        let blocks: Vec<Value> = content
+            .iter()
+            .filter(|c| str_field(c, "type") == Some("reasoning_text"))
+            .map(|c| {
+                let mut block =
+                    json!({"type": "thinking", "thinking": str_field(c, "text").unwrap_or_default()});
+                if let Some(signature) = signatures.pop_front() {
+                    block["signature"] = signature.into();
+                }
+                block
+            })
+            .collect();
+        builder.pending_thinking = Some((blocks, false));
+    }
 }
 
 /// An assistant `message` item. It joins the open assistant message when that one already holds
@@ -430,11 +561,33 @@ fn tool_call_arguments(call: &Value) -> String {
 /// a list of parts, tool call `arguments` may be a JSON object, and a tool call without an `id`
 /// gets a generated one (the runner pairs outputs by call id).
 pub fn chat_message_to_output_items(message: &Value) -> Vec<Value> {
+    chat_message_to_output_items_with(message, None)
+}
+
+/// [`chat_message_to_output_items`] that also records where the items came from
+/// (Python: the `provider_data` argument, `{"model": ..., "response_id": ...}` for a model call).
+///
+/// The origin is what later lets a reply's chain of thought be sent back only to the model that
+/// wrote it. Besides that, a Claude `thinking_blocks` list is kept on the reasoning item, and a
+/// Gemini `thought_signature` (`tool_calls[].extra_content.google`) on its function call.
+pub fn chat_message_to_output_items_with(message: &Value, provider_data: Option<&Value>) -> Vec<Value> {
     let mut items = Vec::new();
+    let origin = provider_data.and_then(Value::as_object).filter(|d| !d.is_empty());
 
     let reasoning_content = str_field(message, "reasoning_content").filter(|t| !t.is_empty());
-    let reasoning_field = str_field(message, "reasoning").filter(|t| !t.is_empty());
-    if reasoning_content.is_some() || reasoning_field.is_some() {
+    let thinking_blocks: Vec<Value> = message
+        .get("thinking_blocks")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|b| b.is_object())
+        .cloned()
+        .collect();
+    // The structured fields win when a server sends more than one.
+    let reasoning_field = str_field(message, "reasoning")
+        .filter(|t| !t.is_empty())
+        .filter(|_| reasoning_content.is_none() && thinking_blocks.is_empty());
+    if reasoning_content.is_some() || reasoning_field.is_some() || !thinking_blocks.is_empty() {
         let mut reasoning = json!({
             "id": FAKE_RESPONSES_ID,
             "summary": reasoning_content
@@ -442,9 +595,34 @@ pub fn chat_message_to_output_items(message: &Value) -> Vec<Value> {
                 .unwrap_or_default(),
             "type": "reasoning",
         });
-        // `reasoning_content` wins when a server sends both fields.
-        if let (None, Some(text)) = (reasoning_content, reasoning_field) {
+        if let Some(text) = reasoning_field {
             reasoning["content"] = json!([{"text": text, "type": "reasoning_text"}]);
+        }
+        let mut data = origin.cloned().unwrap_or_default();
+        if reasoning_field.is_some() {
+            data.insert(REASONING_FIELD_KEY.into(), "reasoning".into());
+        }
+        if !thinking_blocks.is_empty() {
+            // The normalized fields cannot hold empty or redacted blocks, so the provider's own
+            // list is the source of truth for replay and the fields below are derived from it.
+            let mut texts = Vec::new();
+            let mut signatures = Vec::new();
+            for block in &thinking_blocks {
+                if let Some(text) = str_field(block, "thinking").filter(|t| !t.is_empty()) {
+                    texts.push(json!({"text": text, "type": "reasoning_text"}));
+                }
+                if let Some(signature) = str_field(block, "signature").filter(|s| !s.is_empty()) {
+                    signatures.push(signature);
+                }
+            }
+            reasoning["content"] = Value::Array(texts);
+            if !signatures.is_empty() {
+                reasoning["encrypted_content"] = signatures.join("\n").into();
+            }
+            data.insert("thinking_blocks".into(), Value::Array(thinking_blocks));
+        }
+        if !data.is_empty() {
+            reasoning["provider_data"] = Value::Object(data);
         }
         items.push(reasoning);
     }
@@ -463,13 +641,17 @@ pub fn chat_message_to_output_items(message: &Value) -> Vec<Value> {
         content.push(json!({"refusal": refusal, "type": "refusal"}));
     }
     if !content.is_empty() {
-        items.push(json!({
+        let mut message_item = json!({
             "id": FAKE_RESPONSES_ID,
             "content": content,
             "role": "assistant",
             "type": "message",
             "status": "completed",
-        }));
+        });
+        if let Some(origin) = origin {
+            message_item["provider_data"] = Value::Object(origin.clone());
+        }
+        items.push(message_item);
     }
 
     for call in message.get("tool_calls").and_then(Value::as_array).into_iter().flatten() {
@@ -481,13 +663,24 @@ pub fn chat_message_to_output_items(message: &Value) -> Vec<Value> {
             .filter(|id| !id.is_empty())
             .map(str::to_string)
             .unwrap_or_else(|| format!("call_{}", uuid::Uuid::new_v4().simple()));
-        items.push(json!({
+        let mut item = json!({
             "id": FAKE_RESPONSES_ID,
             "call_id": id,
             "arguments": tool_call_arguments(call),
             "name": call.pointer("/function/name").and_then(Value::as_str).unwrap_or_default(),
             "type": "function_call",
-        }));
+        });
+        let mut data = origin.cloned().unwrap_or_default();
+        if let Some(signature) = call
+            .pointer("/extra_content/google/thought_signature")
+            .filter(|s| s.as_str().is_some_and(|s| !s.is_empty()))
+        {
+            data.insert("thought_signature".into(), signature.clone());
+        }
+        if !data.is_empty() {
+            item["provider_data"] = Value::Object(data);
+        }
+        items.push(item);
     }
     items
 }

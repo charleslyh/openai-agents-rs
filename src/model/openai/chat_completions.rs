@@ -12,7 +12,7 @@ use crate::model::{Model, ModelRequest};
 use crate::usage::Usage;
 
 use super::chat_convert::{
-    chat_message_to_output_items, items_to_chat_messages, ChatConvertOptions, ReplayReasoningFn,
+    chat_message_to_output_items_with, items_to_chat_messages, ChatConvertOptions, ReplayReasoningFn,
 };
 use super::{
     apply_model_settings_chat, decorate_request, is_json_response, map_reqwest, status_error,
@@ -24,6 +24,7 @@ pub struct OpenAIChatCompletionsModel {
     endpoint: OpenAiEndpoint,
     model: String,
     replay_reasoning: Option<ReplayReasoningFn>,
+    preserve_thinking_blocks: bool,
 }
 
 impl OpenAIChatCompletionsModel {
@@ -33,6 +34,7 @@ impl OpenAIChatCompletionsModel {
             endpoint: OpenAiEndpoint::new(api_key, base_url),
             model: model.into(),
             replay_reasoning: None,
+            preserve_thinking_blocks: false,
         }
     }
 
@@ -42,6 +44,7 @@ impl OpenAIChatCompletionsModel {
             endpoint,
             model: model.into(),
             replay_reasoning: None,
+            preserve_thinking_blocks: false,
         }
     }
 
@@ -56,10 +59,19 @@ impl OpenAIChatCompletionsModel {
         self
     }
 
+    /// Send Claude thinking blocks back with later requests (Python: `preserve_thinking_blocks`).
+    /// Claude with extended thinking behind a Chat Completions gateway that returns
+    /// `thinking_blocks` needs them in the assistant message that made the tool calls.
+    pub fn preserve_thinking_blocks(mut self, preserve: bool) -> Self {
+        self.preserve_thinking_blocks = preserve;
+        self
+    }
+
     fn convert_options(&self) -> ChatConvertOptions {
         ChatConvertOptions {
             model: self.model.clone(),
             replay_reasoning: self.replay_reasoning.clone(),
+            preserve_thinking_blocks: self.preserve_thinking_blocks,
         }
     }
 
@@ -111,6 +123,7 @@ impl Model for OpenAIChatCompletionsModel {
         chat_payload_to_model_response(
             payload,
             request.model_settings.preserve_raw_usage == Some(true),
+            &self.model,
         )
     }
 
@@ -159,6 +172,7 @@ impl Model for OpenAIChatCompletionsModel {
             let response = chat_payload_to_model_response(
                 payload,
                 request.model_settings.preserve_raw_usage == Some(true),
+                &self.model,
             )?;
             let wire = response_object(
                 response.response_id.as_deref().unwrap_or(FAKE_RESPONSES_ID),
@@ -299,6 +313,23 @@ impl Model for OpenAIChatCompletionsModel {
                                     .await;
                             }
                         }
+                        // Gemini's OpenAI-compatible endpoint sends the signature as
+                        // `extra_content.google.thought_signature`; LiteLLM as
+                        // `provider_specific_fields.thought_signature` (Gemini models only).
+                        let signature = tc
+                            .pointer("/extra_content/google/thought_signature")
+                            .or_else(|| {
+                                self.model
+                                    .to_lowercase()
+                                    .contains("gemini")
+                                    .then(|| tc.pointer("/provider_specific_fields/thought_signature"))
+                                    .flatten()
+                            })
+                            .and_then(Value::as_str)
+                            .filter(|s| !s.is_empty());
+                        if let Some(signature) = signature {
+                            layout.call(idx).thought_signature = Some(signature.to_string());
+                        }
                         // A tool call can arrive without an arguments delta.
                         let _ = layout.register_call(&mut emitter, idx).await;
                     }
@@ -337,6 +368,12 @@ impl Model for OpenAIChatCompletionsModel {
 
         // Finalize: `done` events, then the terminal `response.completed`.
         let mut tagged: Vec<(usize, Value)> = Vec::new();
+        // Python: every streamed item records the model and response that produced it.
+        let mut origin = serde_json::Map::new();
+        origin.insert("model".into(), self.model.clone().into());
+        if let Some(id) = response_id.as_deref().filter(|id| !id.is_empty()) {
+            origin.insert("response_id".into(), id.into());
+        }
 
         if layout.reasoning_open {
             let mut summary: Vec<Value> = Vec::new();
@@ -356,12 +393,13 @@ impl Model for OpenAIChatCompletionsModel {
                     .await;
                 content.push(json!({"type": "reasoning_text", "text": layout.reasoning_content}));
             }
-            let item = json!({
+            let mut item = json!({
                 "id": FAKE_RESPONSES_ID,
                 "type": "reasoning",
                 "summary": summary,
                 "content": content,
             });
+            item["provider_data"] = Value::Object(origin.clone());
             emitter.output_item_done(0, item.clone()).await;
             tagged.push((0, item));
         }
@@ -407,13 +445,14 @@ impl Model for OpenAIChatCompletionsModel {
                 parts.push((layout.refusal_content_index, part));
             }
             parts.sort_by_key(|(content_index, _)| *content_index);
-            let item = json!({
+            let mut item = json!({
                 "id": FAKE_RESPONSES_ID,
                 "type": "message",
                 "role": "assistant",
                 "status": "completed",
                 "content": parts.into_iter().map(|(_, part)| part).collect::<Vec<_>>(),
             });
+            item["provider_data"] = Value::Object(origin.clone());
             emitter.output_item_done(index, item.clone()).await;
             tagged.push((index, item));
         }
@@ -426,13 +465,18 @@ impl Model for OpenAIChatCompletionsModel {
             } else {
                 call.id.clone()
             };
-            let item = json!({
+            let mut item = json!({
                 "id": FAKE_RESPONSES_ID,
                 "type": "function_call",
                 "name": call.name,
                 "arguments": call.arguments,
                 "call_id": call_id,
             });
+            let mut data = origin.clone();
+            if let Some(signature) = &call.thought_signature {
+                data.insert("thought_signature".into(), signature.clone().into());
+            }
+            item["provider_data"] = Value::Object(data);
             emitter
                 .output_item_done(call.output_index, item.clone())
                 .await;
@@ -477,6 +521,8 @@ struct ChatCall {
     output_index: usize,
     /// `output_item.added` already emitted.
     announced: bool,
+    /// Gemini's thought signature for this call, which it wants back with the call.
+    thought_signature: Option<String>,
 }
 
 /// Output-index bookkeeping and lazy event emission for the synthesized stream
@@ -726,6 +772,7 @@ fn input_to_chat_messages(
 fn chat_payload_to_model_response(
     payload: Value,
     preserve_raw_usage: bool,
+    model: &str,
 ) -> Result<ModelResponse, ModelError> {
     let choice = payload
         .pointer("/choices/0")
@@ -760,7 +807,12 @@ fn chat_payload_to_model_response(
         }
         _ => {}
     }
-    let output: Vec<ResponseOutputItem> = chat_message_to_output_items(&message);
+    // Python: every output item records the model (and response) that produced it.
+    let mut provider_data = json!({"model": model});
+    if let Some(id) = payload.get("id").and_then(Value::as_str).filter(|id| !id.is_empty()) {
+        provider_data["response_id"] = id.into();
+    }
+    let output: Vec<ResponseOutputItem> = chat_message_to_output_items_with(&message, Some(&provider_data));
 
     let usage = chat_usage_or_completed_request(payload.get("usage"));
     let raw_usage = payload

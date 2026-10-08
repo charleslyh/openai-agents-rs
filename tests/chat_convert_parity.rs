@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use openai_agents::model::openai::chat_convert::{
-    chat_message_to_output_items, items_to_chat_messages, ChatConvertOptions,
+    chat_message_to_output_items_with, items_to_chat_messages, ChatConvertOptions,
 };
 use serde_json::Value;
 
@@ -52,6 +52,7 @@ fn items_to_messages_match_python() {
         let name = case["name"].as_str().unwrap();
         let items = case["items"].as_array().unwrap();
         let options = ChatConvertOptions {
+            preserve_thinking_blocks: case["preserve_thinking_blocks"].as_bool().unwrap_or(false),
             model: case["model"].as_str().unwrap_or("").to_string(),
             replay_reasoning: None,
         };
@@ -84,7 +85,10 @@ fn reply_messages_match_python() {
     for case in cases()["message_to_output_items"].as_array().unwrap() {
         let name = case["name"].as_str().unwrap();
         let expected = &python["message_to_output_items"][name];
-        let actual = Value::Array(chat_message_to_output_items(&case["message"]));
+        let actual = Value::Array(chat_message_to_output_items_with(
+            &case["message"],
+            case.get("provider_data"),
+        ));
         if actual != *expected {
             failures.push(format!("{name}:\n  python {expected}\n  rust   {actual}"));
         }
