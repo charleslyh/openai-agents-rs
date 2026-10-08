@@ -24,6 +24,7 @@ pub mod stream_events;
 pub mod strict_schema;
 pub mod testing;
 pub mod tool;
+pub mod tool_guardrails;
 pub mod tracing;
 pub mod usage;
 
@@ -36,7 +37,8 @@ pub use agent_output::{
 };
 pub use error::{
     AgentsError, InputGuardrailTripwireTriggered, MaxTurnsExceeded, ModelError,
-    OutputGuardrailTripwireTriggered, ToolTimeoutError, UserError,
+    OutputGuardrailTripwireTriggered, ToolInputGuardrailTripwireTriggered,
+    ToolOutputGuardrailTripwireTriggered, ToolTimeoutError, UserError,
 };
 pub use guardrail::{
     input_guardrail, output_guardrail, GuardrailFunctionOutput, InputGuardrail,
@@ -81,6 +83,11 @@ pub use stream_events::{RunItemStreamName, StreamEvent};
 pub use tool::{
     FunctionTool, IsEnabledFn, NeedsApproval, ToolContext, ToolEnabled, ToolFailureHandling, ToolResult, ToolTimeoutBehavior,
     DEFAULT_APPROVAL_REJECTION_MESSAGE, DEFAULT_TOOL_ERROR_MESSAGE,
+};
+pub use tool_guardrails::{
+    ToolGuardrailBehavior, ToolGuardrailFunctionOutput, ToolInputGuardrail, ToolInputGuardrailData,
+    ToolInputGuardrailResult, ToolOutputGuardrail, ToolOutputGuardrailData,
+    ToolOutputGuardrailResult,
 };
 pub use usage::{InputTokensDetails, OutputTokensDetails, RequestUsage, Usage};
 
