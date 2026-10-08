@@ -507,3 +507,47 @@ fn usage_add_tracks_details_and_entries() {
         "requests": 1, "input_tokens": 1, "output_tokens": 1, "total_tokens": 2})).unwrap();
     assert_eq!(legacy.input_tokens_details.cached_tokens, 0);
 }
+
+/// D-009: `tool_error_formatter` rewrites the default rejection and tool-not-found messages,
+/// but never an explicit rejection message.
+#[tokio::test]
+async fn tool_error_formatter_rewrites_default_messages() {
+    use openai_agents::{RunConfig, ToolErrorKind, ToolNotFoundBehavior};
+    let formatter_config = || {
+        let mut config = RunConfig::default().with_tool_error_formatter(|args| async move {
+            match args.kind {
+                ToolErrorKind::ApprovalRejected => Some(format!("denied {}", args.tool_name)),
+                ToolErrorKind::ToolNotFound => None,
+            }
+        });
+        config.tool_not_found_behavior = ToolNotFoundBehavior::ReturnErrorToModel;
+        config
+    };
+    let dangerous = || FunctionTool::constant("danger", "d", "ran").with_needs_approval(true);
+    let run_rejected = |message: Option<&'static str>| async move {
+        let model = Arc::new(ScriptedModel::new([
+            ModelStep::from(ItemHelpers::function_tool_call("danger", "{}", "c1")),
+            ModelStep::from(ItemHelpers::text_message("done")),
+        ]));
+        let agent = Agent::new("a").model(model).tools(vec![dangerous()]);
+        let mut options = RunOptions::default();
+        options.run_config = formatter_config();
+        let first = Runner::run(&agent, "go", options.clone()).await.expect("run");
+        let mut state = first.to_state().expect("state");
+        state.reject(&first.interruptions[0], false, message);
+        let result = Runner::run_state(&agent, state, options).await.expect("resume");
+        tool_output_texts(&result.new_items)
+    };
+    assert_eq!(run_rejected(None).await, vec!["denied danger"]);
+    assert_eq!(run_rejected(Some("not today")).await, vec!["not today"]);
+
+    let model = Arc::new(ScriptedModel::new([
+        ModelStep::from(ItemHelpers::function_tool_call("nope", "{}", "c1")),
+        ModelStep::from(ItemHelpers::text_message("fine")),
+    ]));
+    let agent = Agent::new("a").model(model);
+    let mut options = RunOptions::default();
+    options.run_config = formatter_config();
+    let result = Runner::run(&agent, "go", options).await.expect("run");
+    assert_eq!(tool_output_texts(&result.new_items), vec!["Tool 'nope' not found."]);
+}
