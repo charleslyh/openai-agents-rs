@@ -1,0 +1,75 @@
+{
+  "name": "handoff_with_sibling_tool",
+  "input": "route me",
+  "agent": {
+    "name": "A",
+    "tools": [
+      {
+        "name": "side",
+        "return_value": "side-ok"
+      }
+    ],
+    "handoffs": [
+      {
+        "name": "B",
+        "steps": [
+          {
+            "output": [
+              {
+                "id": "1",
+                "type": "message",
+                "role": "assistant",
+                "status": "completed",
+                "content": [
+                  {
+                    "type": "output_text",
+                    "text": "b done",
+                    "annotations": [],
+                    "logprobs": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "C",
+        "steps": []
+      }
+    ]
+  },
+  "steps": [
+    {
+      "output": [
+        {
+          "id": "1",
+          "type": "function_call",
+          "name": "transfer_to_b",
+          "arguments": "{}",
+          "call_id": "h1"
+        },
+        {
+          "id": "1",
+          "type": "function_call",
+          "name": "side",
+          "arguments": "{}",
+          "call_id": "t1"
+        },
+        {
+          "id": "1",
+          "type": "function_call",
+          "name": "transfer_to_c",
+          "arguments": "{}",
+          "call_id": "h2"
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "final_output": "b done",
+    "raw_response_count": 2,
+    "tool_output_count": 2,
+    "last_agent": "B"
+  }
+}

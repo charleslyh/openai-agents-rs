@@ -32,12 +32,17 @@ cargo test --no-default-features
 cargo test
 ```
 
-Optional Python oracle:
+Python oracle (parity scenarios; needs Python >= 3.10 and [uv](https://docs.astral.sh/uv/)):
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install 'openai-agents==0.23.1'
+bash scripts/setup_venv.sh                       # .venv with the vendored SDK, Python 3.12
 .venv/bin/python scripts/run_parity.py --write-golden
+cargo test --test parity_scenarios
 ```
+
+A scenario is a JSON file in `tests/parity/scenarios/`. It may script handoff targets
+(`agent.handoffs`), failing tools (`tools[].error`) and expect a Python exception class
+(`expect.error`). Every behavior fix should add a scenario that both sides run.
 
 See [COMPAT.md](./COMPAT.md) for the support matrix and [DEVIATIONS.md](./DEVIATIONS.md) for the
 recorded differences from Python.
