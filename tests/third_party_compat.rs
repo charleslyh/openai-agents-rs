@@ -383,3 +383,90 @@ async fn streamed_tool_call_without_id_and_odd_sse_framing() {
     assert!(id.starts_with("call_"), "{id}");
     assert_eq!(second[2]["tool_call_id"], id);
 }
+
+fn settings(f: impl FnOnce(&mut ModelSettings)) -> RunOptions {
+    let mut model_settings = ModelSettings::default();
+    f(&mut model_settings);
+    let mut options = RunOptions::default();
+    options.run_config.model_settings = Some(model_settings);
+    options
+}
+
+/// `extra_query` reaches the URL of both APIs: scalars as text, arrays as repeated keys, `null`
+/// skipped (Python: `ModelSettings.extra_query`).
+#[tokio::test]
+async fn extra_query_is_sent_with_the_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "c", "choices": [{"index": 0, "finish_reason": "stop",
+                "message": {"role": "assistant", "content": "ok"}}]
+        })))
+        .mount(&server)
+        .await;
+    let options = settings(|s| {
+        s.extra_query = Some(
+            json!({"api-version": "2024-06-01", "n": 3, "tag": ["a", "b"], "skip": null})
+                .as_object()
+                .unwrap()
+                .clone(),
+        );
+    });
+    let agent = Agent::new("a").model(chat_model(&server, "m"));
+    Runner::run(&agent, "go", options).await.expect("run");
+    let url = server.received_requests().await.unwrap()[0].url.clone();
+    let pairs: Vec<(String, String)> =
+        url.query_pairs().map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
+    assert_eq!(
+        pairs,
+        [("api-version", "2024-06-01"), ("n", "3"), ("tag", "a"), ("tag", "b")]
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+    );
+}
+
+/// `preserve_raw_usage` keeps the provider's usage object, including fields `Usage` does not
+/// model, for plain and streamed Chat Completions; without it nothing is kept.
+#[tokio::test]
+async fn preserve_raw_usage_keeps_the_provider_usage_object() {
+    let usage = json!({"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5, "cost": 0.0012});
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "c", "choices": [{"index": 0, "finish_reason": "stop",
+                "message": {"role": "assistant", "content": "ok"}}],
+            "usage": usage
+        })))
+        .mount(&server)
+        .await;
+    let agent = Agent::new("a").model(chat_model(&server, "m"));
+
+    let result = Runner::run(&agent, "go", settings(|s| s.preserve_raw_usage = Some(true)))
+        .await
+        .expect("run");
+    assert_eq!(result.raw_responses[0].raw_usage, Some(usage.clone()));
+    assert_eq!(result.usage.total_tokens, 5);
+
+    let result = Runner::run(&agent, "go", RunOptions::default()).await.expect("run");
+    assert_eq!(result.raw_responses[0].raw_usage, None, "off by default");
+
+    let sse = format!(
+        "data: {}\n\ndata: {}\n\ndata: [DONE]\n\n",
+        json!({"id": "c", "choices": [{"index": 0, "delta": {"content": "hi"}}]}),
+        json!({"id": "c", "choices": [], "usage": usage}),
+    );
+    let server = sse_server(&sse).await;
+    let agent = Agent::new("a").model(chat_model(&server, "m"));
+    let mut streamed = Runner::run_streamed(
+        agent,
+        "go",
+        settings(|s| {
+            s.preserve_raw_usage = Some(true);
+            s.include_usage = Some(true);
+        }),
+    );
+    streamed.collect_events().await.expect("events");
+    let snapshot = streamed.snapshot.lock().unwrap();
+    assert_eq!(snapshot.raw_responses[0].raw_usage, Some(usage));
+}

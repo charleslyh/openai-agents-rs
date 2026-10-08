@@ -139,6 +139,14 @@ pub struct ModelSettings {
     pub extra_body: Option<Value>,
     /// Extra HTTP headers for the provider request.
     pub extra_headers: Option<Map<String, Value>>,
+    /// Extra URL query parameters for the provider request (Python: `extra_query`), for gateways
+    /// that select an API version or a deployment through the query string. String, number and
+    /// boolean values are sent as text; arrays repeat the key; `null` values are skipped.
+    pub extra_query: Option<Map<String, Value>>,
+    /// Keep the provider's raw `usage` object on `ModelResponse.raw_usage`
+    /// (Python: `preserve_raw_usage`). It does not ask the provider for usage; see
+    /// [`Self::include_usage`] for streaming.
+    pub preserve_raw_usage: Option<bool>,
     /// Arbitrary keyword arguments forwarded to the provider.
     ///
     /// Python merges these into the API call kwargs and raises `TypeError` when a key is already
@@ -190,6 +198,8 @@ impl ModelSettings {
             metadata,
             extra_body,
             extra_headers,
+            extra_query,
+            preserve_raw_usage,
             timeout,
         );
         // Python merges `retry` field by field (`_merge_retry_settings`).

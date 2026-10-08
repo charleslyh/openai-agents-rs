@@ -69,7 +69,10 @@ impl Model for OpenAIResponsesModel {
         }
         let payload: Value = resp.json().await.map_err(map_reqwest)?;
 
-        responses_payload_to_model_response(payload)
+        responses_payload_to_model_response(
+            payload,
+            request.model_settings.preserve_raw_usage == Some(true),
+        )
     }
 
     /// Streams the Responses API as SSE (D-011).
@@ -103,7 +106,10 @@ impl Model for OpenAIResponsesModel {
         // Wiremock / non-SSE providers may still return a full JSON body.
         if is_json_response(&resp) {
             let payload: Value = resp.json().await.map_err(map_reqwest)?;
-            let response = responses_payload_to_model_response(payload)?;
+            let response = responses_payload_to_model_response(
+                payload,
+                request.model_settings.preserve_raw_usage == Some(true),
+            )?;
             let wire = response_object(
                 response.response_id.as_deref().unwrap_or(FAKE_RESPONSES_ID),
                 &self.model,
@@ -175,7 +181,10 @@ impl Model for OpenAIResponsesModel {
 
         let response = match completed {
             Some(payload) => {
-                let mut response = responses_payload_to_model_response(payload)?;
+                let mut response = responses_payload_to_model_response(
+                    payload,
+                    request.model_settings.preserve_raw_usage == Some(true),
+                )?;
                 if response.response_id.is_none() {
                     response.response_id = response_id;
                 }
@@ -203,6 +212,7 @@ impl Model for OpenAIResponsesModel {
                     usage: Usage::default(),
                     response_id,
                     request_id: None,
+                    raw_usage: None,
                 }
             }
         };
@@ -262,7 +272,10 @@ fn failure_detail(event: &Value) -> String {
         .to_string()
 }
 
-fn responses_payload_to_model_response(payload: Value) -> Result<ModelResponse, ModelError> {
+fn responses_payload_to_model_response(
+    payload: Value,
+    preserve_raw_usage: bool,
+) -> Result<ModelResponse, ModelError> {
     let output = payload
         .get("output")
         .and_then(|o| o.as_array())
@@ -275,6 +288,10 @@ fn responses_payload_to_model_response(payload: Value) -> Result<ModelResponse, 
         .map(Usage::from_responses_usage)
         .unwrap_or_default();
 
+    let raw_usage = payload
+        .get("usage")
+        .filter(|u| preserve_raw_usage && u.is_object())
+        .cloned();
     Ok(ModelResponse {
         output,
         usage,
@@ -283,5 +300,6 @@ fn responses_payload_to_model_response(payload: Value) -> Result<ModelResponse, 
             .and_then(|i| i.as_str())
             .map(str::to_string),
         request_id: None,
+        raw_usage,
     })
 }
