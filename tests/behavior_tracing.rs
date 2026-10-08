@@ -456,3 +456,81 @@ async fn compaction_summary_is_a_span_of_the_run_that_triggered_it() {
     assert!(summary.parent_id.is_some(), "it hangs under the run, not at the trace root");
     assert_eq!(session.summarizer_usage().requests, 1);
 }
+
+/// D-037: a run started by an agent used as a tool is a child of that tool call's function span,
+/// with its own task, agent and turn spans (same tree as Python).
+#[tokio::test]
+async fn agent_as_tool_run_nests_under_the_function_span() {
+    let _guard = tracing_test_lock().lock().unwrap();
+    tracing::set_tracing_disabled(false);
+    let inner = Agent::new("Inner")
+        .model(Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::text_message("inner done"))])));
+    let outer = Agent::new("Outer")
+        .model(Arc::new(ScriptedModel::new([
+            ModelStep::from(ItemHelpers::function_tool_call("ask_inner", r#"{"input":"hi"}"#, "c1")),
+            ModelStep::from(ItemHelpers::text_message("outer done")),
+        ])))
+        .tools(vec![inner.as_tool(openai_agents::AsToolConfig {
+            name: Some("ask_inner".into()),
+            description: Some("d".into()),
+            ..Default::default()
+        })]);
+
+    let proc = InMemoryProcessor::install();
+    Runner::run(&outer, "go", RunOptions::default()).await.expect("run");
+    assert_eq!(
+        span_tree(&proc),
+        [
+            "task<--",
+            "agent(Outer)<-0",
+            "turn(1,Outer)<-1",
+            "function(ask_inner)<-2",
+            "task<-3",
+            "agent(Inner)<-4",
+            "turn(1,Inner)<-5",
+            "turn(2,Outer)<-1",
+        ]
+    );
+}
+
+/// Tools of one turn run at the same time; each nested run must hang under its own function span.
+#[tokio::test]
+async fn parallel_agent_tools_keep_their_own_parents() {
+    let _guard = tracing_test_lock().lock().unwrap();
+    tracing::set_tracing_disabled(false);
+    let helper = |name: &str| {
+        Agent::new(name).model(Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::text_message("ok"))])))
+    };
+    let tool = |agent: Agent, name: &str| {
+        agent.as_tool(openai_agents::AsToolConfig {
+            name: Some(name.into()),
+            description: Some("d".into()),
+            ..Default::default()
+        })
+    };
+    let outer = Agent::new("Outer")
+        .model(Arc::new(ScriptedModel::new([
+            ModelStep::output([
+                ItemHelpers::function_tool_call("ask_a", r#"{"input":"1"}"#, "c1"),
+                ItemHelpers::function_tool_call("ask_b", r#"{"input":"2"}"#, "c2"),
+            ]),
+            ModelStep::from(ItemHelpers::text_message("done")),
+        ])))
+        .tools(vec![tool(helper("A"), "ask_a"), tool(helper("B"), "ask_b")]);
+
+    let proc = InMemoryProcessor::install();
+    Runner::run(&outer, "go", RunOptions::default()).await.expect("run");
+    let spans = proc.started_spans.lock().unwrap().clone();
+    // agent span -> its task span -> the function span the task hangs under.
+    let nested_parent = |agent: &str| {
+        spans
+            .iter()
+            .position(|s| matches!(&s.data, SpanData::Agent { name } if name == agent))
+            .and_then(|i| spans[i].parent_id.clone())
+            .and_then(|id| spans.iter().find(|s| s.span_id == id))
+            .and_then(|task| spans.iter().find(|s| Some(&s.span_id) == task.parent_id.as_ref()))
+            .map(|p| p.data.clone())
+    };
+    assert!(matches!(nested_parent("A"), Some(SpanData::Function { name }) if name == "ask_a"));
+    assert!(matches!(nested_parent("B"), Some(SpanData::Function { name }) if name == "ask_b"));
+}
