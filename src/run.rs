@@ -1147,6 +1147,9 @@ async fn run_loop_inner(
     let mut agent_span_due = true;
 
     let starting_agent_name = starting_agent.name.clone();
+    // Every agent reachable so far by name, for handoffs bound late (`handoff_to_name`).
+    let mut known_agents: HashMap<String, Agent> = HashMap::new();
+    collect_agents(&starting_agent, &mut known_agents);
     let mut current_agent = starting_agent;
     // Agents that have emitted tool calls, used to reset `tool_choice` (Python:
     // `AgentToolUseTracker` + `maybe_reset_tool_choice`).
@@ -1982,7 +1985,18 @@ async fn run_loop_inner(
             current_input_items.push(ItemHelpers::function_call_output(&call_id, transfer));
 
             let source_agent = current_agent.clone();
-            current_agent = (*h.agent).clone();
+            current_agent = if h.late_bound {
+                known_agents.get(&h.agent.name).cloned().ok_or_else(|| {
+                    UserError::new(format!(
+                        "Handoff `{}` targets agent `{}`, which is not reachable from the \
+                         starting agent. Add it with `handoff(agent)` somewhere in the graph.",
+                        h.tool_name, h.agent.name
+                    ))
+                })?
+            } else {
+                (*h.agent).clone()
+            };
+            collect_agents(&current_agent, &mut known_agents);
 
             // Python: `hooks.on_handoff(context, from_agent, to_agent)` and the agent-level
             // `on_handoff(context, agent=new_agent, source=old_agent)`.
@@ -2725,13 +2739,25 @@ fn interrupted_result(
     }
 }
 
+/// Record `root` and every agent it owns through `handoff(..)`, by name. Late-bound handoffs
+/// are stand-ins and are skipped; the first agent seen under a name is kept.
+fn collect_agents(root: &Agent, into: &mut HashMap<String, Agent>) {
+    if into.contains_key(&root.name) {
+        return;
+    }
+    into.insert(root.name.clone(), root.clone());
+    for h in root.handoffs.iter().filter(|h| !h.late_bound) {
+        collect_agents(&h.agent, into);
+    }
+}
+
 fn resolve_agent_by_name(root: &Agent, name: &str) -> Result<Agent, AgentsError> {
     if root.name == name {
         return Ok(root.clone());
     }
     let mut stack = vec![root.clone()];
     while let Some(agent) = stack.pop() {
-        for h in &agent.handoffs {
+        for h in agent.handoffs.iter().filter(|h| !h.late_bound) {
             if h.agent.name == name {
                 return Ok((*h.agent).clone());
             }

@@ -82,6 +82,10 @@ pub struct Handoff {
     /// Per-handoff override of `RunConfig.nest_handoff_history`
     /// (Python: `Handoff.nest_handoff_history`).
     pub nest_handoff_history: Option<bool>,
+    /// The target is looked up by name when the handoff runs instead of being owned by this
+    /// handoff, so agents can hand off to each other in both directions (see
+    /// [`handoff_to_name`]). `agent` is then only a stand-in carrying the name.
+    pub late_bound: bool,
 }
 
 impl std::fmt::Debug for Handoff {
@@ -90,6 +94,7 @@ impl std::fmt::Debug for Handoff {
             .field("tool_name", &self.tool_name)
             .field("tool_description", &self.tool_description)
             .field("agent_name", &self.agent.name)
+            .field("late_bound", &self.late_bound)
             .field("has_input_filter", &self.input_filter.is_some())
             .field("has_on_handoff", &self.on_handoff.is_some())
             .field("input_json_schema", &self.input_json_schema)
@@ -142,6 +147,18 @@ impl Handoff {
         Ok(self)
     }
 
+    /// Override the tool name shown to the model.
+    pub fn with_tool_name(mut self, name: impl Into<String>) -> Self {
+        self.tool_name = name.into();
+        self
+    }
+
+    /// Override the tool description shown to the model.
+    pub fn with_tool_description(mut self, description: impl Into<String>) -> Self {
+        self.tool_description = description.into();
+        self
+    }
+
     /// Default tool name (Python: `Handoff.default_tool_name`).
     pub fn default_tool_name(agent_name: &str) -> String {
         transform_string_function_style(&format!("transfer_to_{agent_name}"))
@@ -168,7 +185,32 @@ pub fn handoff(agent: Agent) -> Handoff {
         input_json_schema: None,
         is_enabled: ToolEnabled::Fixed(true),
         nest_handoff_history: None,
+        late_bound: false,
     }
+}
+
+/// A handoff to the agent called `agent_name`, resolved when the handoff runs.
+///
+/// `handoff(agent)` owns its target, so a graph that loops back (triage hands to billing and
+/// billing hands back to triage) cannot be built with it. Python allows such cycles because
+/// agents are shared references. Here, build the forward edges with `handoff(..)` and close the
+/// loop with `handoff_to_name`: the runner finds the agent among those reachable from the
+/// starting agent (and every agent it has already switched to), and fails with a `UserError` when
+/// none has that name.
+///
+/// The stand-in has no `handoff_description`, so pass one with
+/// [`Handoff::with_tool_description`] when the model needs more than the default text.
+///
+/// ```
+/// use openai_agents::{handoff, handoff_to_name, Agent};
+///
+/// let billing = Agent::new("Billing").handoffs(vec![handoff_to_name("Triage")]);
+/// let triage = Agent::new("Triage").handoffs(vec![handoff(billing)]);
+/// ```
+pub fn handoff_to_name(agent_name: &str) -> Handoff {
+    let mut handoff = handoff(Agent::new(agent_name));
+    handoff.late_bound = true;
+    handoff
 }
 
 /// Create a handoff with overrides.
@@ -194,6 +236,7 @@ pub fn handoff_with(
         input_json_schema: None,
         is_enabled: ToolEnabled::Fixed(true),
         nest_handoff_history: None,
+        late_bound: false,
     }
 }
 
