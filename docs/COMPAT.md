@@ -15,6 +15,7 @@ Legend: **S** = supported · **P** = partial · **N** = not supported · **D** =
 | `Agent.clone` | N | Use `Clone` on the struct (Rust idiom) |
 | `Runner::run` / `run_blocking` / `run_state` | S | D-001 naming for the sync entry |
 | `RunResultStreaming.cancel(mode)` | S | `CancelMode::Immediate` / `AfterTurn` (D-031) |
+| `error_handlers={"max_turns": ...}` | S | `RunOptions.error_handlers` (D-033); other kinds N |
 | `Runner::run_streamed` / `RunResultStreaming` | S | Item + agent events plus raw Responses wire events on both OpenAI APIs (D-011) |
 | `FunctionTool` | S | Manual schema or `#[function_tool]` |
 | `@function_tool` / proc-macro | S | Full `schemars` schema; `Vec<T>`, nested structs, enums and `Option<T>` supported |

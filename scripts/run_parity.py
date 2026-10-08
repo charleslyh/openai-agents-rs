@@ -99,8 +99,14 @@ async def run_scenario(path: Path) -> dict:
         targets.append(_build_agent(target, target_model))
     agent = _build_agent(agent_spec, model, handoffs=targets)
     expect = scenario.get("expect", {})
+    run_kwargs = {}
+    if "max_turns" in scenario:
+        run_kwargs["max_turns"] = scenario["max_turns"]
+    if "max_turns_handler_output" in scenario:
+        handler_output = scenario["max_turns_handler_output"]
+        run_kwargs["error_handlers"] = {"max_turns": lambda _data: handler_output}
     try:
-        result = await Runner.run(agent, scenario["input"])
+        result = await Runner.run(agent, scenario["input"], **run_kwargs)
     except Exception as exc:  # noqa: BLE001 - the error class is the observable contract
         golden = {"name": scenario["name"], "error": type(exc).__name__}
         if expect.get("error") != golden["error"]:

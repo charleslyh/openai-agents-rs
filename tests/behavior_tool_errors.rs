@@ -578,3 +578,64 @@ async fn tool_name_collision_policy() {
     assert!(matches!(err, AgentsError::User(_)), "{err}");
     assert!(model.calls().is_empty(), "the model must not be called");
 }
+
+/// D-033: a `max_turns` error handler turns the error into a recorded final output.
+#[tokio::test]
+async fn max_turns_error_handler_produces_final_output() {
+    use openai_agents::{RunErrorHandlerResult, RunErrorHandlers};
+    let looping = || {
+        let model = Arc::new(ScriptedModel::new([
+            ModelStep::from(ItemHelpers::function_tool_call("echo", "{}", "c1")),
+            ModelStep::from(ItemHelpers::function_tool_call("echo", "{}", "c2")),
+        ]));
+        Agent::new("a")
+            .model(model)
+            .tools(vec![FunctionTool::constant("echo", "e", "x")])
+    };
+    let mut options = RunOptions::default();
+    options.max_turns = Some(2);
+    options.error_handlers = RunErrorHandlers::default().on_max_turns(|input| async move {
+        assert_eq!(input.error.max_turns, 2);
+        assert_eq!(input.run_data.output.len(), 4, "two calls and two outputs");
+        Ok(Some(RunErrorHandlerResult::new("gave up")))
+    });
+    let result = Runner::run(&looping(), "go", options.clone()).await.expect("handled");
+    assert_eq!(result.final_output_as_str(), Some("gave up"));
+    let last = result.new_items.last().expect("items");
+    assert!(matches!(last, RunItem::Message(_)), "synthesized message is recorded");
+
+    options.error_handlers = RunErrorHandlers::default().on_max_turns(|_| async { Ok(None) });
+    let err = Runner::run(&looping(), "go", options).await.unwrap_err();
+    assert!(matches!(err, AgentsError::MaxTurns(_)), "{err}");
+}
+
+/// D-033: a handler output that does not fit the structured schema is a user error.
+#[tokio::test]
+async fn max_turns_handler_output_is_validated_against_the_schema() {
+    use openai_agents::{AgentOutputSchema, RunErrorHandlerResult, RunErrorHandlers};
+    #[derive(serde::Deserialize, openai_agents::schemars::JsonSchema)]
+    #[allow(dead_code)]
+    struct Count {
+        n: i64,
+    }
+    let build = || {
+        Agent::new("a")
+            .model(Arc::new(ScriptedModel::new([ModelStep::from(
+                ItemHelpers::function_tool_call("echo", "{}", "c1"),
+            )])))
+            .tools(vec![FunctionTool::constant("echo", "e", "x")])
+            .output_type(Arc::new(AgentOutputSchema::of::<Count>().expect("schema")))
+    };
+    let run_with = |value: Value| async move {
+        let mut options = RunOptions::default();
+        options.max_turns = Some(1);
+        options.error_handlers = RunErrorHandlers::default().on_max_turns(move |_| {
+            let value = value.clone();
+            async move { Ok(Some(RunErrorHandlerResult::new(value))) }
+        });
+        Runner::run(&build(), "go", options).await
+    };
+    assert_eq!(run_with(json!({"n": 3})).await.expect("valid").final_output, json!({"n": 3}));
+    let err = run_with(json!({"n": "x"})).await.unwrap_err();
+    assert!(matches!(err, AgentsError::User(_)), "{err}");
+}

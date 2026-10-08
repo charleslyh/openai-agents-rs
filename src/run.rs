@@ -31,6 +31,7 @@ use crate::run_state::{ApprovalDecision, ApprovalStore, RunState};
 use crate::stream_events::{RunItemStreamName, StreamEvent};
 use crate::tool::{FunctionTool, ToolContext, ToolResult, DEFAULT_APPROVAL_REJECTION_MESSAGE};
 use crate::tracing::{agent_span, function_span, generation_span, handoff_span};
+use crate::model::wire_events::FAKE_RESPONSES_ID;
 use crate::usage::Usage;
 
 tokio::task_local! {
@@ -124,6 +125,84 @@ const TOOL_NOT_FOUND_PLACEHOLDER: &str = "__tool_not_found__";
 
 /// Output sent for every handoff after the first in one turn (Python: same literal).
 const MULTIPLE_HANDOFFS_MESSAGE: &str = "Multiple handoffs detected, ignoring this one.";
+
+/// Snapshot of the run handed to a run error handler (Python: `RunErrorData`).
+#[derive(Debug, Clone)]
+pub struct RunErrorData {
+    /// The run input.
+    pub input: InputLike,
+    /// Run items generated so far.
+    pub new_items: Vec<RunItem>,
+    /// The input followed by every model-visible generated item.
+    pub history: Vec<Value>,
+    /// The model-visible generated items.
+    pub output: Vec<Value>,
+    /// Raw model responses so far.
+    pub raw_responses: Vec<ModelResponse>,
+    /// The agent that was running.
+    pub last_agent: Arc<Agent>,
+}
+
+/// Input of a run error handler (Python: `RunErrorHandlerInput`).
+#[derive(Clone)]
+pub struct RunErrorHandlerInput {
+    /// The error that stopped the run.
+    pub error: MaxTurnsExceeded,
+    /// The run context.
+    pub context: RunContextWrapper,
+    /// The run so far.
+    pub run_data: RunErrorData,
+}
+
+/// What a run error handler produces (Python: `RunErrorHandlerResult`).
+#[derive(Debug, Clone)]
+pub struct RunErrorHandlerResult {
+    /// The final output to finish the run with.
+    pub final_output: Value,
+    /// Whether the synthesized assistant message joins the run's items (default true).
+    pub include_in_history: bool,
+}
+
+impl RunErrorHandlerResult {
+    /// Finish the run with `final_output`, recorded in the history.
+    pub fn new(final_output: impl Into<Value>) -> Self {
+        Self {
+            final_output: final_output.into(),
+            include_in_history: true,
+        }
+    }
+}
+
+/// Turns an error into a final output; `None` re-raises the error (Python: `RunErrorHandler`).
+pub type RunErrorHandler = Arc<
+    dyn Fn(
+            RunErrorHandlerInput,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<Option<RunErrorHandlerResult>, AgentsError>> + Send>,
+        > + Send
+        + Sync,
+>;
+
+/// Error handlers keyed by error kind (Python: `RunErrorHandlers`; only `max_turns` is ported).
+#[derive(Clone, Default)]
+pub struct RunErrorHandlers {
+    /// Called when `max_turns` is exceeded.
+    pub max_turns: Option<RunErrorHandler>,
+}
+
+impl RunErrorHandlers {
+    /// Handle `MaxTurnsExceeded` with an async closure.
+    pub fn on_max_turns<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(RunErrorHandlerInput) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<Option<RunErrorHandlerResult>, AgentsError>>
+            + Send
+            + 'static,
+    {
+        self.max_turns = Some(Arc::new(move |input| Box::pin(f(input))));
+        self
+    }
+}
 
 /// What to do when a function tool and a handoff (or two tools) share a name
 /// (Python: `RunConfig.tool_name_collision_policy`).
@@ -310,6 +389,8 @@ pub struct RunOptions {
     /// for approval, and not on error) its input and new items are appended. After an approval
     /// pause, pass the same session to [`Runner::run_state`] so the resumed run is saved.
     pub session: Option<Arc<dyn Session>>,
+    /// Handlers that turn run errors into a final output (Python: `error_handlers=`).
+    pub error_handlers: RunErrorHandlers,
 }
 
 impl Default for RunOptions {
@@ -325,6 +406,7 @@ impl Default for RunOptions {
             context: None,
             hooks: None,
             session: None,
+            error_handlers: RunErrorHandlers::default(),
         }
     }
 }
@@ -774,7 +856,46 @@ async fn run_loop_inner(
             }
         }
         if turn > max_turns {
-            return Err(MaxTurnsExceeded { max_turns }.into());
+            let error = MaxTurnsExceeded { max_turns };
+            let Some(handler) = options.error_handlers.max_turns.clone() else {
+                return Err(error.into());
+            };
+            // Python (`finalize_max_turns_handler_output`): validate the handler's output,
+            // record it as an assistant message, then run the end hooks and output guardrails.
+            let run_data = build_run_error_data(&input, &generated_items, &raw_responses, &current_agent);
+            let handled = handler(RunErrorHandlerInput {
+                error: error.clone(),
+                context: context.clone(),
+                run_data,
+            })
+            .await?;
+            let Some(handled) = handled else {
+                return Err(error.into());
+            };
+            let (final_output, text) =
+                validate_handler_final_output(&current_agent, handled.final_output)?;
+            if handled.include_in_history {
+                let mut message = ItemHelpers::text_message(text);
+                message["id"] = Value::String(FAKE_RESPONSES_ID.to_string());
+                generated_items.push(RunItem::Message(MessageOutputItem {
+                    agent_name: current_agent.name.clone(),
+                    raw_item: message,
+                }));
+            }
+            return finalize_run(
+                input,
+                generated_items,
+                raw_responses,
+                final_output,
+                &current_agent,
+                max_turns,
+                usage,
+                &context,
+                options.hooks.as_ref(),
+                &options.run_config.output_guardrails,
+                input_guardrail_results,
+            )
+            .await;
         }
 
         // Python recomputes model settings at the start of every turn
@@ -1558,6 +1679,51 @@ struct ToolPlan {
     to_invoke: Vec<(FunctionTool, String, String)>,
     /// Already-done call ids (skip invoke, output already in generated_items).
     already_done: Vec<(FunctionTool, Value, String)>,
+}
+
+fn build_run_error_data(
+    input: &InputLike,
+    items: &[RunItem],
+    raw_responses: &[ModelResponse],
+    agent: &Agent,
+) -> RunErrorData {
+    let output: Vec<Value> = items
+        .iter()
+        .filter(|i| i.is_model_input())
+        .map(|i| i.raw_item().clone())
+        .collect();
+    let mut history = ItemHelpers::input_to_new_input_list(input);
+    history.extend(output.iter().cloned());
+    RunErrorData {
+        input: input.clone(),
+        new_items: items.to_vec(),
+        history,
+        output,
+        raw_responses: raw_responses.to_vec(),
+        last_agent: Arc::new(agent.clone()),
+    }
+}
+
+/// Python (`validate_handler_final_output` + `format_final_output_text`): a structured agent's
+/// handler output must validate against its schema. Returns the output and its message text.
+fn validate_handler_final_output(
+    agent: &Agent,
+    output: Value,
+) -> Result<(Value, String), AgentsError> {
+    let invalid = || UserError::new("Invalid run error handler final_output for structured output.");
+    let Some(schema) = agent.output_type.as_deref().filter(|s| !s.is_plain_text()) else {
+        let text = value_to_tool_string(&output);
+        return Ok((output, text));
+    };
+    // Python wraps non-object outputs under `response`; try the value as given, then wrapped.
+    let wrapped = json!({ crate::agent_output::WRAPPER_DICT_KEY: output.clone() });
+    for payload in [&output, &wrapped] {
+        let text = serde_json::to_string(payload).map_err(|_| invalid())?;
+        if let Ok(validated) = schema.validate_json(&text) {
+            return Ok((validated, text));
+        }
+    }
+    Err(invalid().into())
 }
 
 /// Run `RunConfig.tool_error_formatter`; `None` keeps `default_message`.
