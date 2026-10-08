@@ -255,6 +255,12 @@ pub struct RunState {
     pub(crate) approvals: ApprovalStore,
     /// Nested `Agent.as_tool` run states keyed by outer tool call_id.
     pub(crate) nested_agent_runs: HashMap<String, RunState>,
+    /// How many of `generated_items` a session already holds. A run with a session saves its
+    /// items at the end of every turn, so a run paused for approval has saved the turns before
+    /// the paused one, and resuming with the same session must not save them again.
+    pub session_saved_items: usize,
+    /// Whether the run's input was already saved to the session.
+    pub session_input_saved: bool,
 }
 
 impl RunState {
@@ -379,6 +385,8 @@ impl RunState {
             "pending_response": serialize_model_response(&self.pending_response),
             "approvals": self.approvals.to_json(),
             "nested_agent_runs": self.nested_agent_runs.iter().map(|(k, v)| (k.clone(), v.to_json())).collect::<serde_json::Map<_,_>>(),
+            "session_saved_items": self.session_saved_items,
+            "session_input_saved": self.session_input_saved,
         })
     }
 
@@ -496,6 +504,15 @@ impl RunState {
                 value.get("approvals").unwrap_or(&json!({})),
             )?,
             nested_agent_runs,
+            // Absent in states written before turn-by-turn session saving: nothing was saved.
+            session_saved_items: value
+                .get("session_saved_items")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0) as usize,
+            session_input_saved: value
+                .get("session_input_saved")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
         })
     }
 

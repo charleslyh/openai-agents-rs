@@ -383,3 +383,52 @@ async fn agent_as_tool_nested_approval_bubbles_to_outer() {
     nested_model.assert_complete();
     outer_model.assert_complete();
 }
+
+/// D-027: a run paused for approval has saved the turns before the paused one; resuming with the
+/// same session saves the rest exactly once. The final history equals Python's (checked there:
+/// user, call, output, call, output, message); Python also stores the pending call while paused,
+/// which this SDK does not.
+#[tokio::test]
+async fn paused_run_saves_each_item_once_across_resume() {
+    use openai_agents::{InMemorySession, Session};
+    let kinds = |items: Vec<serde_json::Value>| -> Vec<String> {
+        items
+            .iter()
+            .map(|i| i["type"].as_str().or(i["role"].as_str()).unwrap().to_string())
+            .collect()
+    };
+    let model = Arc::new(ScriptedModel::new([
+        ModelStep::from(ItemHelpers::function_tool_call("echo", "{}", "c1")),
+        ModelStep::from(ItemHelpers::function_tool_call("del", "{}", "c2")),
+        ModelStep::from(ItemHelpers::text_message("ok")),
+    ]));
+    let agent = Agent::new("a").model(model).tools(vec![
+        FunctionTool::constant("echo", "e", "x"),
+        FunctionTool::constant("del", "d", "deleted").with_needs_approval(true),
+    ]);
+    let session = InMemorySession::shared("conv");
+    let options = || {
+        let mut options = RunOptions::default();
+        options.session = Some(session.clone());
+        options
+    };
+
+    let paused = Runner::run(&agent, "go", options()).await.expect("run");
+    assert!(paused.is_interrupted());
+    assert_eq!(
+        kinds(session.get_items(None).await.unwrap()),
+        ["user", "function_call", "function_call_output"],
+        "the finished turn is saved, the paused one is not"
+    );
+
+    // The state survives a JSON round trip, including how much was already saved.
+    let json = paused.to_state().expect("state").to_json();
+    let mut state = openai_agents::RunState::from_json("a", json).expect("from_json");
+    state.approve(&paused.interruptions[0], false);
+    let resumed = Runner::run_state(&agent, state, options()).await.expect("resume");
+    assert_eq!(resumed.final_output_as_str(), Some("ok"));
+    assert_eq!(
+        kinds(session.get_items(None).await.unwrap()),
+        ["user", "function_call", "function_call_output", "function_call", "function_call_output", "message"]
+    );
+}

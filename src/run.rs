@@ -1034,8 +1034,9 @@ async fn run_loop(
 ) -> Result<RunResult, AgentsError> {
     let run_tracing_disabled = options.run_config.tracing_disabled;
     let session = options.session.clone();
+    let reasoning_policy = options.run_config.reasoning_item_id_policy;
     // Python (`prepare_input_with_session`): stored history comes before the new input.
-    let mut session_input_to_save: Option<Vec<Value>> = None;
+    let mut writer = session.clone().map(|s| SessionWriter::new(s, reasoning_policy));
     let start = match (start, &session) {
         (LoopStart::Fresh { input, .. }, Some(session)) => {
             let (prepared, to_save) = prepare_input_with_session(
@@ -1045,16 +1046,26 @@ async fn run_loop(
                 ItemHelpers::input_to_new_input_list(&input),
             )
             .await?;
-            session_input_to_save = Some(to_save);
+            if let Some(writer) = writer.as_mut() {
+                writer.pending_input = Some(to_save);
+            }
             LoopStart::Fresh {
                 input,
                 prepared: Some(prepared),
             }
         }
+        (LoopStart::Resume { state }, Some(_)) => {
+            if let Some(writer) = writer.as_mut() {
+                // A state from before turn-by-turn saving has saved nothing: save it all now.
+                writer.saved_items = state.session_saved_items;
+                writer.pending_input = (!state.session_input_saved)
+                    .then(|| ItemHelpers::input_to_new_input_list(&state.input));
+            }
+            LoopStart::Resume { state }
+        }
         (start, _) => start,
     };
     let tool_guardrail_log = SharedToolGuardrailLog::default();
-    let reasoning_policy = options.run_config.reasoning_item_id_policy;
     let mut result = crate::tracing::with_run_tracing_disabled(
         run_tracing_disabled,
         run_loop_inner(
@@ -1064,6 +1075,7 @@ async fn run_loop(
             events,
             snapshot,
             Arc::clone(&tool_guardrail_log),
+            writer.as_mut(),
         ),
     )
     .await?;
@@ -1073,23 +1085,58 @@ async fn run_loop(
         result.tool_output_guardrail_results = std::mem::take(&mut log.output);
     }
     result.reasoning_item_id_policy = reasoning_policy;
-    // Python saves the turn's input and generated items to the session; a run paused for
-    // approval is saved when it is resumed with the same session.
-    if let Some(session) = session {
+    if let Some(writer) = writer.as_mut() {
         if result.interruptions.is_empty() {
-            let mut items = session_input_to_save
-                .unwrap_or_else(|| ItemHelpers::input_to_new_input_list(&result.input));
-            items.extend(
-                result
-                    .new_items
-                    .iter()
-                    .filter(|i| i.is_model_input())
-                    .map(|i| apply_reasoning_item_id_policy(i.raw_item(), reasoning_policy)),
-            );
-            session.add_items(items).await?;
+            writer.flush(&result.new_items).await?;
+        } else if let Some(snapshot) = result.interrupt_state.as_mut() {
+            // A run paused for approval keeps the turn in flight out of the session until it is
+            // resumed; remember how far it got so the resume saves only the rest.
+            snapshot.session_saved_items = writer.saved_items;
+            snapshot.session_input_saved = writer.pending_input.is_none();
         }
     }
     Ok(result)
+}
+
+/// Writes a run's input and generated items to its session as the run progresses.
+///
+/// Python saves the input before the first model call and each turn's items when the turn ends,
+/// so a run that fails or is cut off keeps the turns it completed. `saved_items` counts the
+/// leading `generated_items` already stored.
+struct SessionWriter {
+    session: Arc<dyn Session>,
+    policy: Option<crate::items::ReasoningItemIdPolicy>,
+    /// The run's input, until it has been saved.
+    pending_input: Option<Vec<Value>>,
+    saved_items: usize,
+}
+
+impl SessionWriter {
+    fn new(session: Arc<dyn Session>, policy: Option<crate::items::ReasoningItemIdPolicy>) -> Self {
+        Self {
+            session,
+            policy,
+            pending_input: None,
+            saved_items: 0,
+        }
+    }
+
+    /// Save the input (once) and every model-visible item not saved yet.
+    async fn flush(&mut self, items: &[RunItem]) -> Result<(), AgentsError> {
+        let mut out = self.pending_input.take().unwrap_or_default();
+        let start = self.saved_items.min(items.len());
+        out.extend(
+            items[start..]
+                .iter()
+                .filter(|i| i.is_model_input())
+                .map(|i| apply_reasoning_item_id_policy(i.raw_item(), self.policy)),
+        );
+        self.saved_items = items.len();
+        if !out.is_empty() {
+            self.session.add_items(out).await?;
+        }
+        Ok(())
+    }
 }
 
 async fn run_loop_inner(
@@ -1099,6 +1146,7 @@ async fn run_loop_inner(
     events: Option<EventTx>,
     snapshot: Option<Arc<Mutex<StreamingSnapshot>>>,
     tool_guardrail_log: SharedToolGuardrailLog,
+    mut session_writer: Option<&mut SessionWriter>,
 ) -> Result<RunResult, AgentsError> {
     let max_turns = options.max_turns.unwrap_or(DEFAULT_MAX_TURNS);
     // Python raises `ValueError` when the config is built; Rust has no constructor to hook, so
@@ -1251,6 +1299,13 @@ async fn run_loop_inner(
 
     loop {
         turn += 1;
+        // Save what the previous turn produced (and, before the first model call, the input).
+        // The first turn of a resumed run is the one that was paused: it is saved when it ends.
+        if resume_pending.is_none() {
+            if let Some(writer) = session_writer.as_deref_mut() {
+                writer.flush(&generated_items).await?;
+            }
+        }
         if let Some(snap) = &snapshot {
             let mut s = snap.lock().expect("snapshot");
             s.current_turn = turn;
@@ -1827,6 +1882,8 @@ async fn run_loop_inner(
                             pending_response: response,
                             approvals: live_approvals,
                             nested_agent_runs,
+                            session_saved_items: 0,
+                            session_input_saved: false,
                         },
                     ));
                 }
@@ -1851,6 +1908,8 @@ async fn run_loop_inner(
                     pending_response: response,
                     approvals: live_approvals,
                     nested_agent_runs,
+                    session_saved_items: 0,
+                    session_input_saved: false,
                 },
             ));
         }
@@ -1890,6 +1949,8 @@ async fn run_loop_inner(
                     pending_response: response,
                     approvals: live_approvals,
                     nested_agent_runs,
+                    session_saved_items: 0,
+                    session_input_saved: false,
                 },
             ));
         }
