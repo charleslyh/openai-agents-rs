@@ -66,7 +66,8 @@ pub use model::{
 pub use model_settings::{ModelSettings, ToolChoice, Truncation, Verbosity};
 pub use result::{CancelMode, RunResult, RunResultStreaming, StreamingSnapshot};
 pub use run::{
-    CallModelData, CallModelInputFilter, ModelInputData, ToolErrorFormatter, ToolErrorFormatterArgs,
+    CallModelData, CallModelInputFilter, ModelInputData, OutputGuardrailBlockedMessage,
+    OutputGuardrailBlockedMessageArgs, OUTPUT_GUARDRAIL_BLOCKED_TOOL_OUTPUT, ToolErrorFormatter, ToolErrorFormatterArgs,
     ToolErrorKind, ToolExecutionConfig, ToolNameCollisionPolicy, RunErrorData, RunErrorHandler, RunErrorHandlerInput,
     RunErrorHandlerResult, RunErrorHandlers,
     default_trace_include_sensitive_data, set_default_openai_api, DefaultOpenAiApi, RunConfig,
