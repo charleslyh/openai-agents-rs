@@ -3,5 +3,6 @@
   "final_output": "done",
   "raw_response_count": 2,
   "last_agent": "assistant",
-  "new_item_count": 3
+  "new_item_count": 3,
+  "tool_output_count": 1
 }
