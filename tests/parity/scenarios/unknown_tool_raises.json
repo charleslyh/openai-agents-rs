@@ -1,0 +1,23 @@
+{
+  "name": "unknown_tool_raises",
+  "input": "go",
+  "agent": {
+    "name": "assistant"
+  },
+  "steps": [
+    {
+      "output": [
+        {
+          "id": "1",
+          "type": "function_call",
+          "name": "nope",
+          "arguments": "{}",
+          "call_id": "c1"
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "error": "ModelBehaviorError"
+  }
+}

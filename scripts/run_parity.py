@@ -70,21 +70,47 @@ def _canonical_json(text):
         return text
 
 
+def _build_agent(spec: dict, model, handoffs=None):
+    from agents import Agent
+
+    return Agent(
+        name=spec["name"],
+        instructions=spec.get("instructions"),
+        model=model,
+        tools=_build_tools(spec.get("tools", [])),
+        tool_use_behavior=spec.get("tool_use_behavior", "run_llm_again"),
+        handoffs=handoffs or [],
+    )
+
+
 async def run_scenario(path: Path) -> dict:
-    from agents import Agent, Runner
+    from agents import Runner
     from agents.testing import ScriptedModel
 
     scenario = json.loads(path.read_text(encoding="utf-8"))
     model = ScriptedModel(steps=_build_steps(scenario["steps"]))
     agent_spec = scenario["agent"]
-    agent = Agent(
-        name=agent_spec["name"],
-        instructions=agent_spec.get("instructions"),
-        model=model,
-        tools=_build_tools(agent_spec.get("tools", [])),
-        tool_use_behavior=agent_spec.get("tool_use_behavior", "run_llm_again"),
-    )
-    result = await Runner.run(agent, scenario["input"])
+    # Handoff targets carry their own scripted steps; they are named like the Rust side.
+    target_models = []
+    targets = []
+    for target in agent_spec.get("handoffs", []):
+        target_model = ScriptedModel(steps=_build_steps(target.get("steps", [])))
+        target_models.append(target_model)
+        targets.append(_build_agent(target, target_model))
+    agent = _build_agent(agent_spec, model, handoffs=targets)
+    expect = scenario.get("expect", {})
+    try:
+        result = await Runner.run(agent, scenario["input"])
+    except Exception as exc:  # noqa: BLE001 - the error class is the observable contract
+        golden = {"name": scenario["name"], "error": type(exc).__name__}
+        if expect.get("error") != golden["error"]:
+            raise AssertionError(
+                f"{scenario['name']}: expected error {expect.get('error')!r}, "
+                f"python raised {golden['error']!r}"
+            ) from exc
+        return golden
+    if "error" in expect:
+        raise AssertionError(f"{scenario['name']}: expected error {expect['error']!r}, got a result")
     final = result.final_output
     if not isinstance(final, str):
         # Structured outputs are compared as canonical JSON, like the Rust test does.
@@ -102,7 +128,6 @@ async def run_scenario(path: Path) -> dict:
             1 for item in result.new_items if item.type == "tool_call_output_item"
         ),
     }
-    expect = scenario.get("expect", {})
     for key, value in expect.items():
         actual = golden.get(key)
         if key == "final_output":
@@ -137,7 +162,8 @@ async def main() -> int:
     for path in paths:
         try:
             golden = await run_scenario(path)
-            print(f"OK  {path.name}: final_output={golden['final_output']!r}")
+            outcome = golden.get("final_output", golden.get("error"))
+            print(f"OK  {path.name}: {outcome!r}")
             if args.write_golden:
                 out = path.with_suffix(".golden.json")
                 out.write_text(json.dumps(golden, indent=2) + "\n", encoding="utf-8")

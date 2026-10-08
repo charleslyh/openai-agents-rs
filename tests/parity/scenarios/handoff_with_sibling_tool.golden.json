@@ -1,0 +1,8 @@
+{
+  "name": "handoff_with_sibling_tool",
+  "final_output": "b done",
+  "raw_response_count": 2,
+  "last_agent": "B",
+  "new_item_count": 7,
+  "tool_output_count": 2
+}
