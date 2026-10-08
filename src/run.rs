@@ -1066,6 +1066,12 @@ async fn run_loop(
         (start, _) => start,
     };
     let tool_guardrail_log = SharedToolGuardrailLog::default();
+    if let LoopStart::Resume { state } = &start {
+        // Results from before the pause belong to the resumed run's result too.
+        let mut log = tool_guardrail_log.lock().expect("tool guardrail log");
+        log.input = state.tool_input_guardrail_results.clone();
+        log.output = state.tool_output_guardrail_results.clone();
+    }
     let mut result = crate::tracing::with_run_tracing_disabled(
         run_tracing_disabled,
         run_loop_inner(
@@ -1203,6 +1209,9 @@ async fn run_loop_inner(
     // `AgentToolUseTracker` + `maybe_reset_tool_choice`).
     let mut agents_used_tools: HashSet<String> = HashSet::new();
 
+    // Python runs input guardrails once, on the first turn of a fresh run; a resumed run already
+    // has their results.
+    let resuming = matches!(start, LoopStart::Resume { .. });
     let mut generated_items: Vec<RunItem> = Vec::new();
     let mut raw_responses: Vec<ModelResponse> = Vec::new();
     let mut usage = Usage::default();
@@ -1236,6 +1245,7 @@ async fn run_loop_inner(
             // Drop prior ToolApproval placeholders; resume will re-create if still pending.
             generated_items.retain(|i| !matches!(i, RunItem::ToolApproval(_)));
             raw_responses = state.raw_responses;
+            input_guardrail_results = state.input_guardrail_results;
             usage = state.usage;
             current_input_items = state.current_input_items;
             previous_response_id = state.previous_response_id.or(previous_response_id);
@@ -1263,6 +1273,7 @@ async fn run_loop_inner(
             .input_guardrails
             .iter()
             .chain(current_agent.input_guardrails.iter())
+            .filter(|_| !resuming)
             .cloned()
             .partition(|g| g.run_in_parallel);
     let guardrail_agent = Arc::new(current_agent.clone());
@@ -1884,6 +1895,7 @@ async fn run_loop_inner(
                             nested_agent_runs,
                             session_saved_items: 0,
                             session_input_saved: false,
+                input_guardrail_results: input_guardrail_results.clone(),
                         },
                     ));
                 }
@@ -1910,6 +1922,7 @@ async fn run_loop_inner(
                     nested_agent_runs,
                     session_saved_items: 0,
                     session_input_saved: false,
+                input_guardrail_results: input_guardrail_results.clone(),
                 },
             ));
         }
@@ -1951,6 +1964,7 @@ async fn run_loop_inner(
                     nested_agent_runs,
                     session_saved_items: 0,
                     session_input_saved: false,
+                input_guardrail_results: input_guardrail_results.clone(),
                 },
             ));
         }
@@ -2791,7 +2805,7 @@ fn interrupted_result(
         max_turns: Some(max_turns),
         usage,
         interruptions,
-        input_guardrail_results: Vec::new(),
+        input_guardrail_results: interrupt_state.input_guardrail_results.clone(),
         output_guardrail_results: Vec::new(),
         tool_input_guardrail_results: Vec::new(),
         tool_output_guardrail_results: Vec::new(),

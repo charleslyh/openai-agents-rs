@@ -8,12 +8,17 @@ use std::collections::HashMap;
 use serde_json::{json, Value};
 
 use crate::error::{AgentsError, UserError};
+use crate::guardrail::{GuardrailFunctionOutput, InputGuardrailResult};
 use crate::items::{
     HandoffCallItem, HandoffOutputItem, InputLike, MessageOutputItem, ModelResponse,
     ReasoningItem, ResponseInputItem, RunItem, ToolApprovalItem, ToolCallItem, ToolCallOutputItem,
 };
 use crate::model_settings::ModelSettings;
 use crate::tool::DEFAULT_APPROVAL_REJECTION_MESSAGE;
+use crate::tool_guardrails::{
+    ToolGuardrailBehavior, ToolGuardrailFunctionOutput, ToolInputGuardrailResult,
+    ToolOutputGuardrailResult,
+};
 use crate::usage::Usage;
 
 /// Schema version embedded in [`RunState::to_json`].
@@ -261,6 +266,12 @@ pub struct RunState {
     pub session_saved_items: usize,
     /// Whether the run's input was already saved to the session.
     pub session_input_saved: bool,
+    /// Input guardrail results of the run so far.
+    pub input_guardrail_results: Vec<InputGuardrailResult>,
+    /// Tool input guardrail results of the run so far.
+    pub tool_input_guardrail_results: Vec<ToolInputGuardrailResult>,
+    /// Tool output guardrail results of the run so far.
+    pub tool_output_guardrail_results: Vec<ToolOutputGuardrailResult>,
 }
 
 impl RunState {
@@ -387,6 +398,9 @@ impl RunState {
             "nested_agent_runs": self.nested_agent_runs.iter().map(|(k, v)| (k.clone(), v.to_json())).collect::<serde_json::Map<_,_>>(),
             "session_saved_items": self.session_saved_items,
             "session_input_saved": self.session_input_saved,
+            "input_guardrail_results": self.input_guardrail_results.iter().map(|r| json!({"guardrail_name": r.guardrail_name, "output": {"output_info": r.output.output_info, "tripwire_triggered": r.output.tripwire_triggered}})).collect::<Vec<_>>(),
+            "tool_input_guardrail_results": self.tool_input_guardrail_results.iter().map(|r| json!({"guardrail_name": r.guardrail_name, "output": serialize_tool_guardrail_output(&r.output)})).collect::<Vec<_>>(),
+            "tool_output_guardrail_results": self.tool_output_guardrail_results.iter().map(|r| json!({"guardrail_name": r.guardrail_name, "output": serialize_tool_guardrail_output(&r.output)})).collect::<Vec<_>>(),
         })
     }
 
@@ -513,6 +527,30 @@ impl RunState {
                 .get("session_input_saved")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false),
+            input_guardrail_results: guardrail_results(&value, "input_guardrail_results")
+                .map(|(name, output)| InputGuardrailResult {
+                    guardrail_name: name,
+                    output: GuardrailFunctionOutput {
+                        output_info: output.get("output_info").cloned().unwrap_or(Value::Null),
+                        tripwire_triggered: output
+                            .get("tripwire_triggered")
+                            .and_then(Value::as_bool)
+                            .unwrap_or(false),
+                    },
+                })
+                .collect(),
+            tool_input_guardrail_results: guardrail_results(&value, "tool_input_guardrail_results")
+                .map(|(guardrail_name, output)| ToolInputGuardrailResult {
+                    guardrail_name,
+                    output: deserialize_tool_guardrail_output(&output),
+                })
+                .collect(),
+            tool_output_guardrail_results: guardrail_results(&value, "tool_output_guardrail_results")
+                .map(|(guardrail_name, output)| ToolOutputGuardrailResult {
+                    guardrail_name,
+                    output: deserialize_tool_guardrail_output(&output),
+                })
+                .collect(),
         })
     }
 
@@ -580,6 +618,53 @@ fn deserialize_model_response(value: &Value) -> Result<ModelResponse, AgentsErro
             .map(str::to_string),
         raw_usage: value.get("raw_usage").filter(|v| !v.is_null()).cloned(),
     })
+}
+
+/// `(guardrail_name, output)` of each entry of a stored guardrail result list.
+fn guardrail_results<'a>(
+    value: &'a Value,
+    key: &str,
+) -> impl Iterator<Item = (String, Value)> + 'a {
+    value
+        .get(key)
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| {
+            Some((
+                entry.get("guardrail_name")?.as_str()?.to_string(),
+                entry.get("output").cloned().unwrap_or(Value::Null),
+            ))
+        })
+}
+
+fn serialize_tool_guardrail_output(output: &ToolGuardrailFunctionOutput) -> Value {
+    let behavior = match &output.behavior {
+        ToolGuardrailBehavior::Allow => json!({"type": "allow"}),
+        ToolGuardrailBehavior::RejectContent { message } => {
+            json!({"type": "reject_content", "message": message})
+        }
+        ToolGuardrailBehavior::RaiseException => json!({"type": "raise_exception"}),
+    };
+    json!({"output_info": output.output_info, "behavior": behavior})
+}
+
+fn deserialize_tool_guardrail_output(value: &Value) -> ToolGuardrailFunctionOutput {
+    let behavior = value.get("behavior").unwrap_or(&Value::Null);
+    ToolGuardrailFunctionOutput {
+        output_info: value.get("output_info").cloned().unwrap_or(Value::Null),
+        behavior: match behavior.get("type").and_then(Value::as_str) {
+            Some("reject_content") => ToolGuardrailBehavior::RejectContent {
+                message: behavior
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+            },
+            Some("raise_exception") => ToolGuardrailBehavior::RaiseException,
+            _ => ToolGuardrailBehavior::Allow,
+        },
+    }
 }
 
 fn serialize_approval_item(item: &ToolApprovalItem) -> Value {

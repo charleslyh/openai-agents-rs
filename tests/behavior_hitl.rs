@@ -432,3 +432,47 @@ async fn paused_run_saves_each_item_once_across_resume() {
         ["user", "function_call", "function_call_output", "function_call", "function_call_output", "message"]
     );
 }
+
+/// D-029: guardrail results gathered before a pause are part of the resumed run's result, also
+/// after the state went through JSON.
+#[tokio::test]
+async fn guardrail_results_survive_a_pause_and_resume() {
+    use openai_agents::{
+        GuardrailFunctionOutput, InputGuardrail, ToolGuardrailFunctionOutput, ToolOutputGuardrail,
+    };
+    let seen = ToolOutputGuardrail::new("seen", |_data| async {
+        ToolGuardrailFunctionOutput::allow(serde_json::json!({"ok": true}))
+    });
+    let model = Arc::new(ScriptedModel::new([
+        ModelStep::from(ItemHelpers::function_tool_call("echo", "{}", "c1")),
+        ModelStep::from(ItemHelpers::function_tool_call("del", "{}", "c2")),
+        ModelStep::from(ItemHelpers::text_message("ok")),
+    ]));
+    let agent = Agent::new("a")
+        .model(model)
+        .input_guardrails(vec![InputGuardrail::new("in", |_c, _a, _i| async {
+            GuardrailFunctionOutput::pass(serde_json::json!("clean"))
+        })])
+        .tools(vec![
+            FunctionTool::constant("echo", "e", "x").with_tool_output_guardrails(vec![seen]),
+            FunctionTool::constant("del", "d", "deleted").with_needs_approval(true),
+        ]);
+
+    let paused = Runner::run(&agent, "go", RunOptions::default()).await.expect("run");
+    assert!(paused.is_interrupted());
+    assert_eq!(paused.input_guardrail_results.len(), 1, "available on the paused result too");
+    assert_eq!(paused.tool_output_guardrail_results.len(), 1);
+
+    let json = paused.to_state().expect("state").to_json();
+    let mut state = openai_agents::RunState::from_json("a", json).expect("from_json");
+    state.approve(&paused.interruptions[0], false);
+    let resumed = Runner::run_state(&agent, state, RunOptions::default()).await.expect("resume");
+    assert_eq!(resumed.input_guardrail_results.len(), 1);
+    assert_eq!(resumed.input_guardrail_results[0].output.output_info, serde_json::json!("clean"));
+    assert_eq!(resumed.tool_output_guardrail_results.len(), 1);
+    assert_eq!(resumed.tool_output_guardrail_results[0].guardrail_name, "seen");
+    assert_eq!(
+        resumed.tool_output_guardrail_results[0].output.output_info,
+        serde_json::json!({"ok": true})
+    );
+}
