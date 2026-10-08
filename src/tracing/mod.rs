@@ -227,9 +227,6 @@ impl InMemoryProcessor {
 /// Per-run tracing settings (Python: `RunConfig.tracing` / `TracingConfig`).
 #[derive(Debug, Clone, Default)]
 pub struct TracingConfig {
-    /// Key used to export this run's traces (Python: `api_key`). Cloud export is not supported
-    /// (D-004), so the value is carried but never used.
-    pub api_key: Option<String>,
     /// Whether the runner wraps the run in a task span and each turn in a turn span
     /// (Python: `include_task_and_turn_spans`; `None` means true).
     pub include_task_and_turn_spans: Option<bool>,
