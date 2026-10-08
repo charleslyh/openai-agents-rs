@@ -29,7 +29,7 @@ use crate::result::{InterruptSnapshot, RunResult, RunResultStreaming, StreamingS
 use crate::run_context::{ContextValue, RunContextWrapper};
 use crate::run_state::{ApprovalDecision, ApprovalStore, RunState};
 use crate::stream_events::{RunItemStreamName, StreamEvent};
-use crate::tool::{FunctionTool, ToolContext, ToolResult};
+use crate::tool::{FunctionTool, ToolContext, ToolResult, DEFAULT_APPROVAL_REJECTION_MESSAGE};
 use crate::tracing::{agent_span, function_span, generation_span, handoff_span};
 use crate::usage::Usage;
 
@@ -125,6 +125,43 @@ const TOOL_NOT_FOUND_PLACEHOLDER: &str = "__tool_not_found__";
 /// Output sent for every handoff after the first in one turn (Python: same literal).
 const MULTIPLE_HANDOFFS_MESSAGE: &str = "Multiple handoffs detected, ignoring this one.";
 
+/// Which tool error a [`ToolErrorFormatter`] is formatting (Python: `ToolErrorFormatterArgs.kind`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolErrorKind {
+    /// A human rejected the tool call without giving a message.
+    ApprovalRejected,
+    /// The model called a tool the agent does not have
+    /// (only with [`ToolNotFoundBehavior::ReturnErrorToModel`]).
+    ToolNotFound,
+}
+
+/// Data passed to [`RunConfig::tool_error_formatter`] (Python: `ToolErrorFormatterArgs`).
+///
+/// Python also passes `tool_type`; every Rust tool is a function tool, so it is omitted.
+#[derive(Debug, Clone)]
+pub struct ToolErrorFormatterArgs {
+    /// The category of tool error being formatted.
+    pub kind: ToolErrorKind,
+    /// Name of the tool the model called.
+    pub tool_name: String,
+    /// The tool call id.
+    pub call_id: String,
+    /// The SDK default message for this error kind.
+    pub default_message: String,
+    /// The active run context.
+    pub run_context: RunContextWrapper,
+}
+
+/// Rewrites the model-visible text of a tool error; `None` keeps the default
+/// (Python: `ToolErrorFormatter`).
+pub type ToolErrorFormatter = Arc<
+    dyn Fn(
+            ToolErrorFormatterArgs,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<String>> + Send>>
+        + Send
+        + Sync,
+>;
+
 /// What to do when the model calls a tool the agent does not have
 /// (Python: `RunConfig.tool_not_found_behavior`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -168,6 +205,9 @@ pub struct RunConfig {
     pub output_guardrails: Vec<OutputGuardrail>,
     /// Behavior when the model calls an unknown tool (Python: `RunConfig.tool_not_found_behavior`).
     pub tool_not_found_behavior: ToolNotFoundBehavior,
+    /// Customize approval-rejection and tool-not-found messages
+    /// (Python: `RunConfig.tool_error_formatter`).
+    pub tool_error_formatter: Option<ToolErrorFormatter>,
     /// Default filter for every handoff without its own (Python: `RunConfig.handoff_input_filter`).
     pub handoff_input_filter: Option<HandoffInputFilter>,
     /// Edit the model input just before each call (Python: `RunConfig.call_model_input_filter`).
@@ -175,6 +215,16 @@ pub struct RunConfig {
 }
 
 impl RunConfig {
+    /// Install a [`ToolErrorFormatter`] from an async closure.
+    pub fn with_tool_error_formatter<F, Fut>(mut self, f: F) -> Self
+    where
+        F: Fn(ToolErrorFormatterArgs) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Option<String>> + Send + 'static,
+    {
+        self.tool_error_formatter = Some(Arc::new(move |args| Box::pin(f(args))));
+        self
+    }
+
     /// Install a [`CallModelInputFilter`] from an async closure.
     pub fn with_call_model_input_filter<F, Fut>(mut self, f: F) -> Self
     where
@@ -203,6 +253,7 @@ impl Default for RunConfig {
             tool_not_found_behavior: ToolNotFoundBehavior::default(),
             call_model_input_filter: None,
             handoff_input_filter: None,
+            tool_error_formatter: None,
         }
     }
 }
@@ -934,7 +985,8 @@ async fn run_loop_inner(
             &tool_calls,
             &approvals_map,
             &generated_items,
-            options.run_config.tool_not_found_behavior,
+            &options.run_config,
+            &context,
         )
         .await?;
 
@@ -1410,13 +1462,37 @@ struct ToolPlan {
     already_done: Vec<(FunctionTool, Value, String)>,
 }
 
+/// Run `RunConfig.tool_error_formatter`; `None` keeps `default_message`.
+async fn format_tool_error(
+    run_config: &RunConfig,
+    context: &RunContextWrapper,
+    kind: ToolErrorKind,
+    tool_name: &str,
+    call_id: &str,
+    default_message: String,
+) -> String {
+    let Some(formatter) = &run_config.tool_error_formatter else {
+        return default_message;
+    };
+    formatter(ToolErrorFormatterArgs {
+        kind,
+        tool_name: tool_name.to_string(),
+        call_id: call_id.to_string(),
+        default_message: default_message.clone(),
+        run_context: context.clone(),
+    })
+    .await
+    .unwrap_or(default_message)
+}
+
 async fn plan_tool_calls(
     agent: &Agent,
     tools: &[FunctionTool],
     function_calls: &[ResponseOutputItem],
     approvals: &ApprovalStore,
     generated_items: &[RunItem],
-    not_found: ToolNotFoundBehavior,
+    run_config: &RunConfig,
+    context: &RunContextWrapper,
 ) -> Result<ToolPlan, AgentsError> {
     let mut plan = ToolPlan {
         interruptions: Vec::new(),
@@ -1430,7 +1506,7 @@ async fn plan_tool_calls(
         let Some(tool) = tools.iter().find(|t| t.name == name).cloned() else {
             // Python: `ModelBehaviorError("Tool X not found in agent Y")`, unless the run asks
             // for the error to be returned to the model.
-            if not_found != ToolNotFoundBehavior::ReturnErrorToModel {
+            if run_config.tool_not_found_behavior != ToolNotFoundBehavior::ReturnErrorToModel {
                 return Err(ModelError::Behavior(format!(
                     "Tool {name} not found in agent {}",
                     agent.name
@@ -1439,11 +1515,17 @@ async fn plan_tool_calls(
             }
             // The placeholder keeps the tool name out of `StopAtTools` matching.
             let placeholder = FunctionTool::constant(TOOL_NOT_FOUND_PLACEHOLDER, "", "");
-            plan.ready_outputs.push((
-                placeholder,
-                Value::String(format!("Tool '{name}' not found.")),
-                call_id,
-            ));
+            let message = format_tool_error(
+                run_config,
+                context,
+                ToolErrorKind::ToolNotFound,
+                &name,
+                &call_id,
+                format!("Tool '{name}' not found."),
+            )
+            .await;
+            plan.ready_outputs
+                .push((placeholder, Value::String(message), call_id));
             continue;
         };
 
@@ -1457,6 +1539,22 @@ async fn plan_tool_calls(
                 plan.to_invoke.push((tool, arguments, call_id));
             }
             Some(ApprovalDecision::Rejected { message }) => {
+                // Python: an explicit rejection message wins; the formatter only replaces the
+                // default one. The default is stored at reject time, so an explicit message
+                // equal to it is treated as the default.
+                let message = if message == DEFAULT_APPROVAL_REJECTION_MESSAGE {
+                    format_tool_error(
+                        run_config,
+                        context,
+                        ToolErrorKind::ApprovalRejected,
+                        &name,
+                        &call_id,
+                        message,
+                    )
+                    .await
+                } else {
+                    message
+                };
                 plan.ready_outputs
                     .push((tool, Value::String(message), call_id));
             }
