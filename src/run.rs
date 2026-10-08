@@ -405,10 +405,12 @@ fn handoff_as_tool(h: &Handoff) -> FunctionTool {
     FunctionTool::new(
         h.tool_name.clone(),
         h.tool_description.clone(),
-        json!({
-            "type": "object",
-            "properties": {},
-            "additionalProperties": false
+        h.input_json_schema.clone().unwrap_or_else(|| {
+            json!({
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+            })
         }),
         |_ctx, _args| async { Ok(Value::Null) },
     )
@@ -1046,8 +1048,25 @@ async fn run_loop_inner(
                 ));
             }
 
-            let (h, _call, call_id) = handoff_calls[0].clone();
+            let (h, call, call_id) = handoff_calls[0].clone();
             let _handoff_span = handoff_span(&current_agent.name, &h.agent.name);
+
+            // Python (`on_invoke_handoff`): validate the arguments, then run `on_handoff`
+            // before the handoff output is recorded.
+            if let Some(on_handoff) = &h.on_handoff {
+                let input = if h.input_json_schema.is_some() {
+                    let (_, args, _) = required_function_call_parts(&call)?;
+                    Some(serde_json::from_str::<Value>(&args).map_err(|e| {
+                        ModelError::Behavior(format!(
+                            "Invalid JSON input for handoff `{}`: {e}",
+                            h.tool_name
+                        ))
+                    })?)
+                } else {
+                    None
+                };
+                on_handoff(context.clone(), input).await?;
+            }
 
             let transfer = json!({"assistant": h.agent.name}).to_string();
             let source_agent_name = current_agent.name.clone();

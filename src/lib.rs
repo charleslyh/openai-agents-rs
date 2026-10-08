@@ -41,7 +41,7 @@ pub use guardrail::{
     InputGuardrailResult, OutputGuardrail, OutputGuardrailResult,
 };
 pub use handoffs::{
-    handoff, handoff_input_filter, handoff_with, Handoff, HandoffInputData, HandoffInputFilter,
+    handoff, handoff_input_filter, handoff_with, Handoff, HandoffInputData, HandoffInputFilter, OnHandoff,
 };
 pub use items::{
     HandoffCallItem, HandoffOutputItem, InputLike, ItemHelpers, MessageOutputItem, ModelResponse,
