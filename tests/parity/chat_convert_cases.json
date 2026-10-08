@@ -1,0 +1,72 @@
+{
+  "items_to_messages": [
+    {"name": "easy_user", "items": [{"role": "user", "content": "hi"}]},
+    {"name": "typed_user_input_text", "items": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hi"}, {"type": "input_text", "text": "there"}]}]},
+    {"name": "user_image_detail", "items": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "see"}, {"type": "input_image", "image_url": "http://x/y.png", "detail": "high"}]}]},
+    {"name": "user_image_default_detail", "items": [{"role": "user", "content": [{"type": "input_image", "image_url": "http://x"}]}]},
+    {"name": "user_image_file_id_is_error", "items": [{"role": "user", "content": [{"type": "input_image", "file_id": "f"}]}]},
+    {"name": "raw_chat_parts", "items": [{"role": "user", "content": [{"type": "text", "text": "t"}, {"type": "image_url", "image_url": {"url": "http://u"}}]}]},
+    {"name": "user_file", "items": [{"role": "user", "content": [{"type": "input_file", "file_data": "abc", "filename": "a.pdf"}]}]},
+    {"name": "system_and_developer", "items": [{"role": "system", "content": "s"}, {"type": "message", "role": "developer", "content": [{"type": "input_text", "text": "d"}]}]},
+    {"name": "assistant_output_message", "items": [{"id": "m", "type": "message", "role": "assistant", "status": "completed", "content": [{"type": "output_text", "text": "hello", "annotations": [], "logprobs": []}]}]},
+    {"name": "assistant_refusal", "items": [{"id": "m", "type": "message", "role": "assistant", "status": "completed", "content": [{"type": "refusal", "refusal": "no"}]}]},
+    {"name": "assistant_easy", "items": [{"role": "assistant", "content": "plain"}]},
+    {"name": "two_assistant_messages", "items": [
+      {"id": "m", "type": "message", "role": "assistant", "status": "completed", "content": [{"type": "output_text", "text": "a", "annotations": []}]},
+      {"id": "n", "type": "message", "role": "assistant", "status": "completed", "content": [{"type": "output_text", "text": "b", "annotations": []}]}]},
+    {"name": "call_and_output", "items": [{"type": "function_call", "name": "f", "arguments": "{}", "call_id": "c1"}, {"type": "function_call_output", "call_id": "c1", "output": "res"}]},
+    {"name": "empty_arguments_become_object", "items": [{"type": "function_call", "name": "f", "arguments": "", "call_id": "c1"}]},
+    {"name": "parallel_calls_share_one_message", "items": [
+      {"type": "function_call", "name": "f", "arguments": "{}", "call_id": "c1"},
+      {"type": "function_call", "name": "g", "arguments": "{\"a\":1}", "call_id": "c2"},
+      {"type": "function_call_output", "call_id": "c1", "output": "r1"},
+      {"type": "function_call_output", "call_id": "c2", "output": "r2"}]},
+    {"name": "text_then_call_merge", "items": [
+      {"id": "m", "type": "message", "role": "assistant", "status": "completed", "content": [{"type": "output_text", "text": "let me check", "annotations": []}]},
+      {"type": "function_call", "name": "f", "arguments": "{}", "call_id": "c1"},
+      {"type": "function_call_output", "call_id": "c1", "output": "r"}]},
+    {"name": "call_then_text_merge", "items": [
+      {"type": "function_call", "name": "f", "arguments": "{}", "call_id": "c1"},
+      {"id": "m", "type": "message", "role": "assistant", "status": "completed", "content": [{"type": "output_text", "text": "after", "annotations": []}]},
+      {"type": "function_call_output", "call_id": "c1", "output": "r"}]},
+    {"name": "tool_output_parts_keep_text", "items": [{"type": "function_call", "name": "f", "arguments": "{}", "call_id": "c1"}, {"type": "function_call_output", "call_id": "c1", "output": [{"type": "input_text", "text": "part"}]}]},
+    {"name": "tool_output_empty_list_placeholder", "items": [{"type": "function_call", "name": "f", "arguments": "{}", "call_id": "c1"}, {"type": "function_call_output", "call_id": "c1", "output": []}]},
+    {"name": "reasoning_dropped_for_other_models", "model": "llama", "items": [
+      {"type": "reasoning", "id": "r", "summary": [{"type": "summary_text", "text": "think"}]},
+      {"type": "function_call", "name": "f", "arguments": "{}", "call_id": "c1"},
+      {"type": "function_call_output", "call_id": "c1", "output": "r"}]},
+    {"name": "deepseek_replays_summary_on_tool_call", "model": "deepseek-reasoner", "items": [
+      {"type": "reasoning", "id": "r", "summary": [{"type": "summary_text", "text": "think A"}, {"type": "summary_text", "text": "think B"}]},
+      {"type": "function_call", "name": "f", "arguments": "{}", "call_id": "c1"},
+      {"type": "function_call_output", "call_id": "c1", "output": "r"}]},
+    {"name": "deepseek_replays_summary_on_message", "model": "deepseek-reasoner", "items": [
+      {"type": "reasoning", "id": "r", "summary": [{"type": "summary_text", "text": "think"}]},
+      {"id": "m", "type": "message", "role": "assistant", "status": "completed", "content": [{"type": "output_text", "text": "answer", "annotations": []}]}]},
+    {"name": "deepseek_does_not_replay_raw_content", "model": "deepseek-reasoner", "items": [
+      {"type": "reasoning", "id": "r", "summary": [], "content": [{"type": "reasoning_text", "text": "raw"}]},
+      {"type": "function_call", "name": "f", "arguments": "{}", "call_id": "c1"}]},
+    {"name": "stale_reasoning_does_not_leak_to_next_turn", "model": "deepseek-reasoner", "items": [
+      {"type": "reasoning", "id": "r", "summary": [{"type": "summary_text", "text": "old"}]},
+      {"role": "user", "content": "next"},
+      {"type": "function_call", "name": "f", "arguments": "{}", "call_id": "c1"}]},
+    {"name": "unknown_item_is_error", "items": [{"type": "mystery", "x": 1}, {"role": "user", "content": "after"}]},
+    {"name": "compaction_is_error", "items": [{"type": "compaction", "encrypted_content": "x"}]},
+    {"name": "item_reference_is_error", "items": [{"type": "item_reference", "id": "x"}]},
+    {"name": "output_without_call_id_is_error", "items": [{"type": "function_call_output", "output": "x"}]}
+  ],
+  "message_to_output_items": [
+    {"name": "content", "message": {"role": "assistant", "content": "hello"}},
+    {"name": "empty_content", "message": {"role": "assistant", "content": ""}},
+    {"name": "null_content_no_calls", "message": {"role": "assistant", "content": null}},
+    {"name": "content_and_call", "message": {"role": "assistant", "content": "checking", "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "f", "arguments": "{}"}}]}},
+    {"name": "two_calls", "message": {"role": "assistant", "content": null, "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "f", "arguments": "{}"}}, {"id": "c2", "type": "function", "function": {"name": "g", "arguments": "{\"a\":1}"}}]}},
+    {"name": "refusal_only", "message": {"role": "assistant", "content": null, "refusal": "no can do"}},
+    {"name": "content_and_refusal", "message": {"role": "assistant", "content": "partial", "refusal": "but no"}},
+    {"name": "reasoning_content", "message": {"role": "assistant", "content": "answer", "reasoning_content": "because"}},
+    {"name": "reasoning_field", "message": {"role": "assistant", "content": "answer", "reasoning": "because2"}},
+    {"name": "reasoning_content_wins_over_reasoning", "message": {"role": "assistant", "content": "answer", "reasoning_content": "A", "reasoning": "B"}},
+    {"name": "reasoning_then_call_without_text", "message": {"role": "assistant", "content": null, "reasoning_content": "plan", "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "f", "arguments": "{}"}}]}},
+    {"name": "custom_tool_call_is_skipped", "message": {"role": "assistant", "content": null, "tool_calls": [{"id": "x", "type": "custom", "custom": {"name": "n", "input": "i"}}]}},
+    {"name": "url_citation", "message": {"role": "assistant", "content": "see", "annotations": [{"type": "url_citation", "url_citation": {"start_index": 0, "end_index": 3, "url": "http://u", "title": "T"}}]}}
+  ]
+}
