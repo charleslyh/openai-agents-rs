@@ -134,7 +134,8 @@ dictionaries are merged (`model_settings.py:273`).
 | Capability | Status | Notes |
 |------------|--------|-------|
 | `Session` trait, `InMemorySession` | S | `RunOptions.session` (D-027) |
-| `session_input_callback`, `SessionSettings`, SQLite / OpenAI-conversations sessions, compaction | N | D-027 |
+| `RunConfig.session_input_callback`, `SessionSettings.limit` | S | Checked against Python (D-027) |
+| SQLite / OpenAI-conversations sessions, compaction | N | D-027 |
 
 ## Context, guardrails, hooks
 

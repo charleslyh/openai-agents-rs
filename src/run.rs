@@ -24,7 +24,9 @@ use crate::items::{
     ReasoningItem, ResponseOutputItem, RunItem, ToolApprovalItem, ToolCallItem, ToolCallOutputItem,
 };
 use crate::lifecycle::RunHooks;
-use crate::memory::Session;
+use crate::memory::{
+    prepare_input_with_session, Session, SessionInputCallback, SessionSettings,
+};
 use crate::model::{
     default_model_provider, Model, ModelInput, ModelProvider, ModelRef, ModelRequest, ModelTracing,
 };
@@ -312,6 +314,11 @@ pub struct RunConfig {
     pub tool_not_found_behavior: ToolNotFoundBehavior,
     /// Execution settings for local function tools (Python: `RunConfig.tool_execution`).
     pub tool_execution: Option<ToolExecutionConfig>,
+    /// Merge session history with the new input (Python: `RunConfig.session_input_callback`).
+    pub session_input_callback: Option<SessionInputCallback>,
+    /// Session read settings for this run, overlaid on the session's own
+    /// (Python: `RunConfig.session_settings`).
+    pub session_settings: Option<SessionSettings>,
     /// Collision handling for tool and handoff names (Python: `tool_name_collision_policy`).
     pub tool_name_collision_policy: ToolNameCollisionPolicy,
     /// Customize approval-rejection and tool-not-found messages
@@ -373,6 +380,8 @@ impl Default for RunConfig {
             tool_error_formatter: None,
             tool_name_collision_policy: ToolNameCollisionPolicy::default(),
             tool_execution: None,
+            session_input_callback: None,
+            session_settings: None,
         }
     }
 }
@@ -467,6 +476,7 @@ impl Runner {
             starting_agent.clone(),
             LoopStart::Fresh {
                 input: input.into(),
+                prepared: None,
             },
             options,
             None,
@@ -515,7 +525,7 @@ impl Runner {
         let task = tokio::spawn(async move {
             let result = run_loop(
                 starting_agent,
-                LoopStart::Fresh { input },
+                LoopStart::Fresh { input, prepared: None },
                 options,
                 Some(tx.clone()),
                 Some(Arc::clone(&snap)),
@@ -570,7 +580,11 @@ impl Runner {
 }
 
 enum LoopStart {
-    Fresh { input: InputLike },
+    /// `prepared` is the model input built from the session, when there is one.
+    Fresh {
+        input: InputLike,
+        prepared: Option<Vec<Value>>,
+    },
     Resume { state: RunState },
 }
 
@@ -710,6 +724,25 @@ async fn run_loop(
 ) -> Result<RunResult, AgentsError> {
     let run_tracing_disabled = options.run_config.tracing_disabled;
     let session = options.session.clone();
+    // Python (`prepare_input_with_session`): stored history comes before the new input.
+    let mut session_input_to_save: Option<Vec<Value>> = None;
+    let start = match (start, &session) {
+        (LoopStart::Fresh { input, .. }, Some(session)) => {
+            let (prepared, to_save) = prepare_input_with_session(
+                session.as_ref(),
+                options.run_config.session_settings,
+                options.run_config.session_input_callback.as_ref(),
+                ItemHelpers::input_to_new_input_list(&input),
+            )
+            .await?;
+            session_input_to_save = Some(to_save);
+            LoopStart::Fresh {
+                input,
+                prepared: Some(prepared),
+            }
+        }
+        (start, _) => start,
+    };
     let result = crate::tracing::with_run_tracing_disabled(
         run_tracing_disabled,
         run_loop_inner(starting_agent, start, options, events, snapshot),
@@ -719,7 +752,8 @@ async fn run_loop(
     // approval is saved when it is resumed with the same session.
     if let Some(session) = session {
         if result.interruptions.is_empty() {
-            let mut items = ItemHelpers::input_to_new_input_list(&result.input);
+            let mut items = session_input_to_save
+                .unwrap_or_else(|| ItemHelpers::input_to_new_input_list(&result.input));
             items.extend(
                 result
                     .new_items
@@ -791,15 +825,14 @@ async fn run_loop_inner(
     let mut input_guardrail_results: Vec<InputGuardrailResult> = Vec::new();
 
     match start {
-        LoopStart::Fresh { input: fresh } => {
+        LoopStart::Fresh {
+            input: fresh,
+            prepared,
+        } => {
             input = fresh;
-            current_input_items = ItemHelpers::input_to_new_input_list(&input);
-            // Python (`prepare_input_with_session`): stored history comes before the new input.
-            if let Some(session) = &options.session {
-                let mut prepared = session.get_items(None).await?;
-                prepared.extend(current_input_items);
-                current_input_items = prepared;
-            }
+            // With a session, `run_loop` already merged history and the new input.
+            current_input_items =
+                prepared.unwrap_or_else(|| ItemHelpers::input_to_new_input_list(&input));
             original_input_len = current_input_items.len();
         }
         LoopStart::Resume { state } => {

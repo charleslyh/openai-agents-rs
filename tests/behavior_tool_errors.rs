@@ -844,3 +844,75 @@ async fn tool_timeout_behaviors() {
         assert!(matches!(err, AgentsError::User(_)), "{bad}: {err}");
     }
 }
+
+/// D-027: `session_settings.limit` loads only the latest stored items, and
+/// `session_input_callback` decides the model input while only new items are saved.
+#[tokio::test]
+async fn session_settings_limit_and_input_callback() {
+    use openai_agents::{InMemorySession, RunConfig, Session, SessionSettings};
+    let seeded = || async {
+        let session = InMemorySession::shared("s");
+        session
+            .add_items(vec![
+                json!({"role": "user", "content": "old-1"}),
+                json!({"role": "assistant", "content": "old-2"}),
+                json!({"role": "user", "content": "old-3"}),
+            ])
+            .await
+            .unwrap();
+        session
+    };
+
+    // limit: only the newest 2 stored items reach the model.
+    let session = seeded().await;
+    let model = Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::text_message("ok"))]));
+    let mut options = RunOptions::default();
+    options.session = Some(session.clone());
+    options.run_config = RunConfig {
+        session_settings: Some(SessionSettings { limit: Some(2) }),
+        ..RunConfig::default()
+    };
+    Runner::run(&Agent::new("a").model(model.clone()), "new", options).await.expect("run");
+    let input = model.calls()[0].input.clone();
+    assert_eq!(
+        input.as_array().unwrap().iter().map(|i| i["content"].clone()).take(3).collect::<Vec<_>>(),
+        vec![json!("old-2"), json!("old-3"), json!("new")]
+    );
+    assert_eq!(session.get_items(None).await.unwrap().len(), 3 + 2, "saves the new input and output");
+
+    // callback: keep only the last history item and add a note; the note is saved, history is not
+    // duplicated.
+    let session = seeded().await;
+    let model = Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::text_message("ok"))]));
+    let mut options = RunOptions::default();
+    options.session = Some(session.clone());
+    options.run_config = RunConfig {
+        session_input_callback: Some(Arc::new(|history, new_items| {
+            Box::pin(async move {
+                let mut out = vec![history.last().cloned().unwrap()];
+                out.push(json!({"role": "user", "content": "note"}));
+                out.extend(new_items);
+                Ok(out)
+            })
+        })),
+        ..RunConfig::default()
+    };
+    Runner::run(&Agent::new("a").model(model.clone()), "new", options).await.expect("run");
+    let contents: Vec<Value> = model.calls()[0]
+        .input
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["content"].clone())
+        .collect();
+    assert_eq!(contents, vec![json!("old-3"), json!("note"), json!("new")]);
+    let saved: Vec<Value> = session
+        .get_items(None)
+        .await
+        .unwrap()
+        .iter()
+        .skip(3)
+        .map(|i| i["content"].clone())
+        .collect();
+    assert_eq!(saved[..2], [json!("note"), json!("new")], "{saved:?}");
+}
