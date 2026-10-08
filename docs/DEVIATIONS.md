@@ -6,6 +6,26 @@ Silent behavioral forks are bugs.
 Status values: **Aligned** (resolved, kept for history) · **Accepted** (intentional, often a
 Rust language difference) · **Gap** (known missing capability, tracked by COMPAT.md).
 
+## Scope
+
+This SDK is **provider-neutral**: it targets any endpoint that implements the OpenAI Responses or
+Chat Completions protocol, including third-party models and gateways. It is not a client for the
+official OpenAI service. Rule of thumb: a Python feature is in scope when it needs only a
+compatible *protocol* (or runs locally in the SDK); it is out of scope when it needs a capability
+that OpenAI hosts. Out-of-scope features are **not planned** and are not tracked as gaps.
+
+| Out of scope (not planned) | Why |
+|----------------------------|-----|
+| Hosted tools: `WebSearchTool`, `FileSearchTool`, `CodeInterpreterTool`, `ImageGenerationTool`, `HostedMCPTool`, computer / shell / `apply_patch` tool types, tool search, `custom` tools | Run on OpenAI's servers or need Responses-only tool types; reimplement them as function tools or local MCP |
+| `Agent.prompt` / `Prompt` | References a prompt stored on the OpenAI platform |
+| `OpenAIConversationsSession`, `OpenAIResponsesCompactionSession` (`responses.compact`) | Use OpenAI's Conversations / compaction endpoints. Provider-neutral history trimming would be a new feature, not a port |
+| Cloud trace export, `TracingConfig.api_key` | OpenAI traces backend (D-004); bring your own `TracingProcessor` |
+| Realtime / voice | OpenAI-specific APIs |
+
+Server-side state (`conversation_id`, `previous_response_id`) stays because it is part of the
+Responses protocol, but it works only if the provider implements it; Chat Completions rejects it
+(D-K).
+
 ## Resolved in Phase-2
 
 | ID | Standard location | Rust behavior | Status |
@@ -47,7 +67,7 @@ Rust language difference) · **Gap** (known missing capability, tracked by COMPA
 | D-003 | `Agent.handoffs` / `handoff()` | Supported: `input_filter` (per handoff, or `RunConfig.handoff_input_filter`; the handoff's own wins), `on_handoff` (`with_on_handoff`, or `with_on_handoff_input(schema, f)` which replaces `input_type`: the schema is made strict and advertised, the arguments only have to parse as JSON and are not validated against it), and `nest_handoff_history` (`RunConfig.nest_handoff_history`, off by default like Python, per-handoff override `with_nest_handoff_history`, `RunConfig.handoff_history_mapper`, `nest_handoff_history()` / `default_handoff_history_mapper()` / `*_conversation_history_wrappers()` helpers). Verified against Python by the `handoff_nested_history` / `handoff_raw_history` parity scenarios, which compare the exact input the target agent's model receives. Differences: `HandoffInputData` is flattened to Responses input items (`input_history` / `pre_handoff_items` / `new_items`) and has no `input_items` / `NestedHistoryOwnedItem` provenance, so a filter changes only the next agent's input and `RunResult.new_items` stays unfiltered; `nest_handoff_history()` returns empty `pre_handoff_items` and `new_items` (the nested `input_history` is the whole input); the history mapper is synchronous (as in Python) and the filter is async; summary JSON follows pydantic field order only for the common Responses item types (`message`, `output_text`, `function_call`, `function_call_output`, `reasoning`, summary / reasoning text), other item types keep the provider's key order; a filter with `conversation_id` / `previous_response_id` raises `UserError`, and nesting there is disabled with a warning, as in Python | Aligned (provenance not ported) |
 | D-004 | OpenAI `BackendSpanExporter` / `set_tracing_export_api_key` (cloud trace export) | Not implemented and not planned: spans go to local / in-memory processors, and users who want a backend implement `TracingProcessor` (OTLP, Langfuse, ...). Decision recorded 2026-10 | The Traces dashboard is the only loss; no model behavior depends on it | Accepted (won't do) |
 | D-005 | `Runner.run_streamed` | `Runner::run_streamed` + `RunResultStreaming` | Naming only; the raw event vocabulary matches Python (D-011) | Aligned |
-| D-006 | MCP / hosted tools / sandbox | Not exported. **Hosted tools** (`WebSearchTool`, `FileSearchTool`, `CodeInterpreterTool`, `ImageGenerationTool`, `HostedMCPTool`) are executed by OpenAI's servers on the Responses API; supporting them needs a tool enum, new serialized tool types and new output items, and is **not planned** (decision 2026-10). Local MCP servers and the sandbox remain later phases. Sessions are covered by D-027 | Function tools cover local execution; hosted capabilities must be reimplemented as function tools | Accepted (hosted tools won't do) |
+| D-006 | MCP / hosted tools / sandbox | Not exported. **Hosted tools** (`WebSearchTool`, `FileSearchTool`, `CodeInterpreterTool`, `ImageGenerationTool`, `HostedMCPTool`) are executed by OpenAI's servers on the Responses API; supporting them needs a tool enum, new serialized tool types and new output items, and is **not planned** (decision 2026-10). Local MCP servers and the sandbox remain later phases. Sessions are covered by D-027 | Function tools cover local execution; hosted capabilities must be reimplemented as function tools | Accepted (hosted tools out of scope, see Scope) |
 | D-007 | Package layout | Single crate `openai-agents` with modules + Cargo features | Mirrors the Python single package; no empty facade | N/A (aligned intent) |
 | D-008 | Default max turns `10` | Same default (`DEFAULT_MAX_TURNS = 10`) | — | Aligned |
 | D-009 | `function_tool` `failure_error_function`, `RunConfig.tool_error_formatter` | Per-tool `failure_error_function` is ported (B7), synchronous only. `RunConfig.tool_error_formatter` is ported for `approval_rejected` and `tool_not_found` (async closure returning `Option<String>`; `None` keeps the default). `ToolErrorFormatterArgs` has no `tool_type` (all Rust tools are function tools). The default rejection message is stored when `RunState::reject` is called, so an explicit message equal to the default text is formatted too | Accepted |
