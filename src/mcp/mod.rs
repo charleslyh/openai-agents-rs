@@ -322,6 +322,7 @@ impl std::fmt::Debug for McpClient {
 }
 
 impl McpClient {
+    #[cfg_attr(not(feature = "mcp"), allow(dead_code))]
     fn with_connector(name: String, connector: Arc<dyn Connector>) -> Self {
         Self {
             name,

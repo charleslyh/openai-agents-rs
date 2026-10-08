@@ -99,12 +99,32 @@ bash scripts/sync_vendor.sh --check
 | 1. ScriptedModel behavior | `cargo test --no-default-features` |
 | 2. OpenAI HTTP contracts (wiremock) | `cargo test` (default features; needs `openai`) |
 | SQLite sessions | `cargo test --features sqlite` |
+| MCP interoperability (real Python MCP server) | `cargo test --test mcp_interop` (needs the venv, skips without it) |
 | 3. Python oracle parity | `.venv/bin/python scripts/run_parity.py --write-golden` then `cargo test --test parity_scenarios` |
 
 Shared scenarios live in [`tests/parity/scenarios/`](./tests/parity/scenarios/). A scenario only
 needs `expect` to run; the `.golden.json` produced by the Python oracle is optional and compared
 when present. Regenerate it with `.venv/bin/python scripts/run_parity.py --write-golden` on a
 machine that has `openai-agents==0.23.1` installed.
+
+## MCP tools
+
+Any [MCP](https://modelcontextprotocol.io) server's tools become tools of your agent, whichever
+model you use:
+
+```rust
+let server = McpClient::stdio(
+    StdioParams::new("npx").args(["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]),
+)
+.tool_filter(ToolFilter::block(["write_file"]))
+.shared();
+let agent = Agent::new("files").mcp_servers(vec![server.clone()]);
+// ... run the agent ...
+server.cleanup().await?;
+```
+
+`McpClient::streamable_http(StreamableHttpParams::new(url).header("Authorization", "Bearer ..."))`
+reaches a remote server. See D-041 in [`docs/DEVIATIONS.md`](./docs/DEVIATIONS.md).
 
 ## Other providers
 
@@ -156,8 +176,7 @@ Python 1.18 wire-compatible (D-012) — use one language per durable state store
 
 ## Still out of scope
 
-OpenAI-hosted capabilities (see [Positioning](#positioning)), the sandbox runtime, and OpenAI trace
-cloud export. Not yet built but in scope: local MCP servers.
+OpenAI-hosted capabilities (see [Positioning](#positioning)) and the sandbox runtime.
 
 ## License
 

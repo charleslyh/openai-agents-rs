@@ -194,6 +194,7 @@ impl<'a> WireEventEmitter<'a> {
     }
 
     /// `response.refusal.delta`.
+    #[cfg_attr(not(feature = "openai"), allow(dead_code))]
     pub(crate) async fn refusal_delta(
         &mut self,
         item_id: &str,
@@ -214,6 +215,7 @@ impl<'a> WireEventEmitter<'a> {
     }
 
     /// `response.refusal.done`.
+    #[cfg_attr(not(feature = "openai"), allow(dead_code))]
     pub(crate) async fn refusal_done(
         &mut self,
         item_id: &str,

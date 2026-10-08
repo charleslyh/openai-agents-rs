@@ -112,7 +112,7 @@ dictionaries are merged (`model_settings.py:273`).
 | `HandoffCallItem`, `HandoffOutputItem` | S |
 | `ReasoningItem` | S |
 | `CompactionItem` | N |
-| MCP / tool-search items | N |
+| Hosted-MCP / tool-search items | X |
 
 ## Handoffs
 
@@ -135,6 +135,18 @@ dictionaries are merged (`model_settings.py:273`).
 | `to_json` / `from_json` | S | Schema `openai-agents-rs/2` (D-012); older `openai-agents-rust/1` and `openai-agents-rust/2` payloads still load |
 | `Agent.as_tool` nested approvals | S | Bubbles to the outer `RunState` |
 | Custom output extractor / `on_stream` | N | |
+
+## MCP
+
+| Capability | Status | Notes |
+|------------|--------|-------|
+| `MCPServerStdio` | S | `McpClient::stdio`; restricted environment, child killed on drop (D-041) |
+| `MCPServerStreamableHttp` | S | `McpClient::streamable_http`; SSE and JSON replies, session id (D-041) |
+| `MCPServerSse` (legacy SSE transport) | N | Superseded by streamable HTTP |
+| `Agent.mcp_servers`, `Agent.mcp_config.convert_schemas_to_strict` | S | Tools listed every turn |
+| `tool_filter` (static, dynamic), `cache_tools_list`, `require_approval`, `use_structured_content` | S | |
+| `include_server_in_tool_names`, `tool_meta_resolver`, retries, prompts, resources, `mcp_tools_span` | N | D-041 |
+| `HostedMCPTool` | X | OpenAI-hosted |
 
 ## Sessions
 
