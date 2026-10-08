@@ -74,6 +74,7 @@ pub use run::{
     RunOptions, Runner, ToolNotFoundBehavior, DEFAULT_MAX_TURNS,
 };
 pub use run_context::{ContextValue, RunContextWrapper};
+pub use tracing::TracingConfig;
 pub use run_state::{
     ApprovalDecision, ApprovalStore, RunState, StickyDecision, RUN_STATE_SCHEMA_VERSION,
     SUPPORTED_RUN_STATE_SCHEMAS,
