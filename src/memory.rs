@@ -14,6 +14,11 @@ use serde_json::Value;
 
 use crate::error::AgentsError;
 
+#[cfg(feature = "sqlite")]
+mod sqlite;
+#[cfg(feature = "sqlite")]
+pub use sqlite::SqliteSession;
+
 /// Settings for session reads (Python: `SessionSettings`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SessionSettings {
