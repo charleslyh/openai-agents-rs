@@ -1,0 +1,64 @@
+{
+  "name": "handoff_raw_history",
+  "final_output": "b done",
+  "raw_response_count": 3,
+  "last_agent": "B",
+  "new_item_count": 7,
+  "tool_output_count": 1,
+  "handoff_inputs": {
+    "B": [
+      {
+        "content": "hello",
+        "role": "user"
+      },
+      {
+        "arguments": "{}",
+        "call_id": "c1",
+        "name": "echo",
+        "type": "function_call",
+        "id": "1"
+      },
+      {
+        "call_id": "c1",
+        "output": "x",
+        "type": "function_call_output"
+      },
+      {
+        "id": "r1",
+        "summary": [
+          {
+            "text": "s",
+            "type": "summary_text"
+          }
+        ],
+        "type": "reasoning"
+      },
+      {
+        "id": "1",
+        "content": [
+          {
+            "annotations": [],
+            "text": "thinking",
+            "type": "output_text",
+            "logprobs": []
+          }
+        ],
+        "role": "assistant",
+        "status": "completed",
+        "type": "message"
+      },
+      {
+        "arguments": "{}",
+        "call_id": "h1",
+        "name": "transfer_to_b",
+        "type": "function_call",
+        "id": "1"
+      },
+      {
+        "call_id": "h1",
+        "output": "{\"assistant\": \"B\"}",
+        "type": "function_call_output"
+      }
+    ]
+  }
+}

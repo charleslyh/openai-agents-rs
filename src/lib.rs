@@ -15,6 +15,7 @@ pub mod lifecycle;
 pub mod memory;
 pub mod model;
 pub mod model_settings;
+pub(crate) mod pyjson;
 pub mod result;
 pub mod run;
 pub mod run_context;
@@ -42,7 +43,10 @@ pub use guardrail::{
     InputGuardrailResult, OutputGuardrail, OutputGuardrailResult,
 };
 pub use handoffs::{
-    handoff, handoff_input_filter, handoff_with, Handoff, HandoffInputData, HandoffInputFilter, OnHandoff,
+    default_handoff_history_mapper, get_conversation_history_wrappers, handoff,
+    handoff_input_filter, handoff_with, nest_handoff_history, reset_conversation_history_wrappers,
+    set_conversation_history_wrappers, Handoff, HandoffHistoryMapper, HandoffInputData,
+    HandoffInputFilter, OnHandoff,
 };
 pub use items::{
     HandoffCallItem, HandoffOutputItem, InputLike, ItemHelpers, MessageOutputItem, ModelResponse,

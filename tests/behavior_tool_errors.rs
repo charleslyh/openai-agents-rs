@@ -639,3 +639,101 @@ async fn max_turns_handler_output_is_validated_against_the_schema() {
     let err = run_with(json!({"n": "x"})).await.unwrap_err();
     assert!(matches!(err, AgentsError::User(_)), "{err}");
 }
+
+fn nesting_agents(a_steps: Vec<ModelStep>) -> (Agent, Arc<ScriptedModel>) {
+    let b_model = Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::text_message("ok"))]));
+    let b = Agent::new("B").model(b_model.clone());
+    let a = Agent::new("A")
+        .model(Arc::new(ScriptedModel::new(a_steps)))
+        .tools(vec![FunctionTool::constant("echo", "e", "x")])
+        .handoffs(vec![handoff(b)]);
+    (a, b_model)
+}
+
+/// D-003: `nest_handoff_history` folds the earlier transcript into one summary message whose
+/// text matches what the Python SDK produces (see the `handoff_nested_history` parity scenario).
+#[tokio::test]
+async fn nest_handoff_history_summarizes_the_transcript() {
+    use openai_agents::RunConfig;
+    let (a, b_model) = nesting_agents(vec![
+        ModelStep::from(ItemHelpers::function_tool_call("echo", "{}", "c1")),
+        ModelStep::from(ItemHelpers::function_tool_call("transfer_to_b", "{}", "h1")),
+    ]);
+    let mut options = RunOptions::default();
+    options.run_config = RunConfig { nest_handoff_history: true, ..RunConfig::default() };
+    Runner::run(&a, "hello", options).await.expect("run");
+    let input = b_model.calls()[0].input.clone();
+    let items = input.as_array().expect("items");
+    assert_eq!(items.len(), 1, "{input}");
+    assert_eq!(items[0]["role"], "assistant");
+    assert_eq!(
+        items[0]["content"].as_str().unwrap(),
+        "For context, here is the conversation so far between the user and the previous agent:\n\
+         <CONVERSATION HISTORY>\n\
+         1. user: hello\n\
+         2. {\"arguments\": \"{}\", \"call_id\": \"c1\", \"name\": \"echo\", \"type\": \"function_call\", \"id\": \"1\"}\n\
+         3. {\"call_id\": \"c1\", \"output\": \"x\", \"type\": \"function_call_output\"}\n\
+         4. {\"arguments\": \"{}\", \"call_id\": \"h1\", \"name\": \"transfer_to_b\", \"type\": \"function_call\", \"id\": \"1\"}\n\
+         5. {\"call_id\": \"h1\", \"output\": \"{\\\"assistant\\\": \\\"B\\\"}\", \"type\": \"function_call_output\"}\n\
+         </CONVERSATION HISTORY>"
+    );
+}
+
+/// Nesting is off by default, a per-handoff flag overrides it, and an explicit filter replaces it.
+#[tokio::test]
+async fn nest_handoff_history_defaults_and_overrides() {
+    use openai_agents::RunConfig;
+    let steps = || vec![ModelStep::from(ItemHelpers::function_tool_call("transfer_to_b", "{}", "h1"))];
+
+    let (a, b_model) = nesting_agents(steps());
+    Runner::run(&a, "hi", RunOptions::default()).await.expect("run");
+    assert_eq!(b_model.calls()[0].input.as_array().map(Vec::len), Some(3), "raw history by default");
+
+    let (mut a, b_model) = nesting_agents(steps());
+    a.handoffs = a.handoffs.into_iter().map(|h| h.with_nest_handoff_history(true)).collect();
+    Runner::run(&a, "hi", RunOptions::default()).await.expect("run");
+    assert_eq!(b_model.calls()[0].input.as_array().map(Vec::len), Some(1), "per-handoff opt-in");
+
+    let (mut a, b_model) = nesting_agents(steps());
+    a.handoffs = a
+        .handoffs
+        .into_iter()
+        .map(|h| h.with_input_filter(openai_agents::handoff_input_filter(|d| async move { Ok(d) })))
+        .collect();
+    let mut options = RunOptions::default();
+    options.run_config = RunConfig { nest_handoff_history: true, ..RunConfig::default() };
+    Runner::run(&a, "hi", options).await.expect("run");
+    assert_eq!(b_model.calls()[0].input.as_array().map(Vec::len), Some(3), "filter replaces nesting");
+}
+
+/// A mapper receives the flattened transcript and returns the exact history; a second handoff
+/// flattens the first summary instead of nesting summaries inside summaries.
+#[tokio::test]
+async fn nest_handoff_history_mapper_and_flattening() {
+    use openai_agents::{nest_handoff_history, HandoffInputData, RunConfig, RunContextWrapper};
+    let (a, b_model) = nesting_agents(vec![ModelStep::from(
+        ItemHelpers::function_tool_call("transfer_to_b", "{}", "h1"),
+    )]);
+    let mut options = RunOptions::default();
+    options.run_config = RunConfig {
+        nest_handoff_history: true,
+        handoff_history_mapper: Some(Arc::new(|transcript| {
+            vec![json!({"role": "user", "content": format!("{} items", transcript.len())})]
+        })),
+        ..RunConfig::default()
+    };
+    Runner::run(&a, "hi", options).await.expect("run");
+    assert_eq!(b_model.calls()[0].input, json!([{"role": "user", "content": "3 items"}]));
+
+    let data = |history: Vec<Value>| HandoffInputData {
+        input_history: history,
+        pre_handoff_items: vec![],
+        new_items: vec![],
+        run_context: RunContextWrapper::default(),
+    };
+    let first = nest_handoff_history(data(vec![json!({"role": "user", "content": "hi"})]), None);
+    let second = nest_handoff_history(data(first.input_history), None);
+    let text = second.input_history[0]["content"].as_str().unwrap().to_string();
+    assert_eq!(text.matches("<CONVERSATION HISTORY>").count(), 1, "{text}");
+    assert!(text.contains("1. user: hi"), "{text}");
+}

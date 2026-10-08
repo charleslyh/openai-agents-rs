@@ -4,5 +4,49 @@
   "raw_response_count": 2,
   "last_agent": "B",
   "new_item_count": 7,
-  "tool_output_count": 2
+  "tool_output_count": 2,
+  "handoff_inputs": {
+    "B": [
+      {
+        "content": "route me",
+        "role": "user"
+      },
+      {
+        "arguments": "{}",
+        "call_id": "h1",
+        "name": "transfer_to_b",
+        "type": "function_call",
+        "id": "1"
+      },
+      {
+        "arguments": "{}",
+        "call_id": "t1",
+        "name": "side",
+        "type": "function_call",
+        "id": "1"
+      },
+      {
+        "arguments": "{}",
+        "call_id": "h2",
+        "name": "transfer_to_c",
+        "type": "function_call",
+        "id": "1"
+      },
+      {
+        "call_id": "t1",
+        "output": "side-ok",
+        "type": "function_call_output"
+      },
+      {
+        "call_id": "h2",
+        "output": "Multiple handoffs detected, ignoring this one.",
+        "type": "function_call_output"
+      },
+      {
+        "call_id": "h1",
+        "output": "{\"assistant\": \"B\"}",
+        "type": "function_call_output"
+      }
+    ]
+  }
 }

@@ -114,7 +114,7 @@ dictionaries are merged (`model_settings.py:273`).
 | `HandoffCallItem` / `HandoffOutputItem` | S | |
 | `handoff_span` | S | |
 | `input_filter` / `RunConfig.handoff_input_filter` | S | D-003 |
-| `nest_handoff_history` | N | D-003 |
+| `nest_handoff_history`, `handoff_history_mapper` | S | Opt-in, parity-tested against Python (D-003) |
 | `on_handoff` callback / `input_type` | P | Schema supplied explicitly, arguments parsed but not schema-validated (D-003) |
 
 ## HITL

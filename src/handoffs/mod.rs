@@ -1,8 +1,7 @@
 //! Agent handoffs (Python: `agents.handoffs` subset).
 
-use std::sync::Arc;
-
 use std::future::Future;
+use std::sync::Arc;
 use std::pin::Pin;
 
 use serde_json::Value;
@@ -11,6 +10,13 @@ use crate::agent::Agent;
 use crate::error::AgentsError;
 use crate::run_context::RunContextWrapper;
 use crate::tool::ToolEnabled;
+
+pub mod history;
+
+pub use history::{
+    default_handoff_history_mapper, get_conversation_history_wrappers, nest_handoff_history,
+    reset_conversation_history_wrappers, set_conversation_history_wrappers, HandoffHistoryMapper,
+};
 
 /// Conversation handed to the next agent, as seen by an input filter
 /// (Python: `HandoffInputData`, flattened to Responses input items).
@@ -73,6 +79,9 @@ pub struct Handoff {
     pub input_json_schema: Option<Value>,
     /// Whether the handoff is offered to the model (Python: `Handoff.is_enabled`).
     pub is_enabled: ToolEnabled,
+    /// Per-handoff override of `RunConfig.nest_handoff_history`
+    /// (Python: `Handoff.nest_handoff_history`).
+    pub nest_handoff_history: Option<bool>,
 }
 
 impl std::fmt::Debug for Handoff {
@@ -92,6 +101,12 @@ impl Handoff {
     /// Attach an input filter (Python: `handoff(agent, input_filter=...)`).
     pub fn with_input_filter(mut self, filter: HandoffInputFilter) -> Self {
         self.input_filter = Some(filter);
+        self
+    }
+
+    /// Override `RunConfig.nest_handoff_history` for this handoff only.
+    pub fn with_nest_handoff_history(mut self, nest: bool) -> Self {
+        self.nest_handoff_history = Some(nest);
         self
     }
 
@@ -152,6 +167,7 @@ pub fn handoff(agent: Agent) -> Handoff {
         on_handoff: None,
         input_json_schema: None,
         is_enabled: ToolEnabled::Fixed(true),
+        nest_handoff_history: None,
     }
 }
 
@@ -177,6 +193,7 @@ pub fn handoff_with(
         on_handoff: None,
         input_json_schema: None,
         is_enabled: ToolEnabled::Fixed(true),
+        nest_handoff_history: None,
     }
 }
 

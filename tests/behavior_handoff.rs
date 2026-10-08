@@ -115,10 +115,11 @@ async fn handoff_produces_handoff_run_items() {
     assert_eq!(outputs.len(), 1);
     assert_eq!(outputs[0].source_agent_name, "Triage");
     assert_eq!(outputs[0].target_agent_name, "Specialist");
-    // Python: `Handoff.get_transfer_message` -> {"assistant": <target>}
+    // Python: `Handoff.get_transfer_message` -> `json.dumps({"assistant": <target>})`, which
+    // puts a space after the colon; the model reads this text.
     assert_eq!(
         outputs[0].raw_item["output"],
-        serde_json::json!(r#"{"assistant":"Specialist"}"#)
+        serde_json::json!(r#"{"assistant": "Specialist"}"#)
     );
     // No plain tool items for the handoff itself.
     assert!(!result

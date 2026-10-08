@@ -13,7 +13,9 @@ use crate::error::{
     OutputGuardrailTripwireTriggered, UserError,
 };
 use crate::guardrail::{InputGuardrail, InputGuardrailResult, OutputGuardrail};
-use crate::handoffs::{Handoff, HandoffInputData, HandoffInputFilter};
+use crate::handoffs::{
+    nest_handoff_history, Handoff, HandoffHistoryMapper, HandoffInputData, HandoffInputFilter,
+};
 use crate::items::{
     extract_message_text, is_function_call, is_reasoning, required_function_call_parts,
     HandoffCallItem, HandoffOutputItem, InputLike, ItemHelpers, MessageOutputItem, ModelResponse,
@@ -300,6 +302,12 @@ pub struct RunConfig {
     /// Customize approval-rejection and tool-not-found messages
     /// (Python: `RunConfig.tool_error_formatter`).
     pub tool_error_formatter: Option<ToolErrorFormatter>,
+    /// Compact earlier history into summary messages when handing off
+    /// (Python: `RunConfig.nest_handoff_history`, opt-in, default false).
+    pub nest_handoff_history: bool,
+    /// Custom mapper for the nested history (Python: `RunConfig.handoff_history_mapper`);
+    /// only used when nesting is on.
+    pub handoff_history_mapper: Option<HandoffHistoryMapper>,
     /// Default filter for every handoff without its own (Python: `RunConfig.handoff_input_filter`).
     pub handoff_input_filter: Option<HandoffInputFilter>,
     /// Edit the model input just before each call (Python: `RunConfig.call_model_input_filter`).
@@ -345,6 +353,8 @@ impl Default for RunConfig {
             tool_not_found_behavior: ToolNotFoundBehavior::default(),
             call_model_input_filter: None,
             handoff_input_filter: None,
+            nest_handoff_history: false,
+            handoff_history_mapper: None,
             tool_error_formatter: None,
             tool_name_collision_policy: ToolNameCollisionPolicy::default(),
         }
@@ -1396,7 +1406,7 @@ async fn run_loop_inner(
                 on_handoff(context.clone(), input).await?;
             }
 
-            let transfer = json!({"assistant": h.agent.name}).to_string();
+            let transfer = crate::pyjson::dumps(&json!({"assistant": h.agent.name}));
             let source_agent_name = current_agent.name.clone();
             let target_agent_name = h.agent.name.clone();
             let out_item = RunItem::HandoffOutput(HandoffOutputItem {
@@ -1436,28 +1446,49 @@ async fn run_loop_inner(
                 .input_filter
                 .clone()
                 .or_else(|| options.run_config.handoff_input_filter.clone());
-            if let Some(filter) = input_filter {
-                if options.previous_response_id.is_some() || options.conversation_id.is_some() {
-                    return Err(UserError::new(
-                        "Server-managed conversations do not support handoff input filters. \
-                         Remove Handoff.input_filter or RunConfig.handoff_input_filter, \
-                         or disable conversation_id and previous_response_id.",
-                    )
-                    .into());
-                }
+            let server_managed =
+                options.previous_response_id.is_some() || options.conversation_id.is_some();
+            let mut should_nest = h
+                .nest_handoff_history
+                .unwrap_or(options.run_config.nest_handoff_history);
+            if input_filter.is_some() && server_managed {
+                return Err(UserError::new(
+                    "Server-managed conversations do not support handoff input filters. \
+                     Remove Handoff.input_filter or RunConfig.handoff_input_filter, \
+                     or disable conversation_id and previous_response_id.",
+                )
+                .into());
+            }
+            if should_nest && server_managed {
+                ::tracing::warn!(
+                    "Server-managed conversations do not support nest_handoff_history for handoff \
+                     {} -> {}. Disabling nested handoff history.",
+                    source_agent.name,
+                    current_agent.name
+                );
+                should_nest = false;
+            }
+            if input_filter.is_some() || should_nest {
                 let original_len = original_input_len.min(turn_start_len);
-                let filtered = filter(HandoffInputData {
+                let data = HandoffInputData {
                     input_history: current_input_items[..original_len].to_vec(),
                     pre_handoff_items: current_input_items[original_len..turn_start_len].to_vec(),
                     new_items: current_input_items[turn_start_len..].to_vec(),
                     run_context: context.clone(),
-                })
-                .await?;
-                current_input_items = filtered
+                };
+                // Python: an explicit filter replaces automatic nesting.
+                let next = match input_filter {
+                    Some(filter) => filter(data).await?,
+                    None => nest_handoff_history(
+                        data,
+                        options.run_config.handoff_history_mapper.as_ref(),
+                    ),
+                };
+                current_input_items = next
                     .input_history
                     .into_iter()
-                    .chain(filtered.pre_handoff_items)
-                    .chain(filtered.new_items)
+                    .chain(next.pre_handoff_items)
+                    .chain(next.new_items)
                     .collect();
             }
 
