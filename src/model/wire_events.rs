@@ -10,8 +10,8 @@
 //! `sequence_number` starting at 0, and the terminal event is `response.completed` holding the
 //! full `response` object.
 //!
-//! Not ported (documented in D-011): `response.refusal.*`, `response.output_text.annotation.added`
-//! and logprob payloads are emitted empty.
+//! Not ported (documented in D-011): `response.output_text.annotation.added` and logprob payloads
+//! are emitted empty.
 
 use serde_json::{json, Value};
 use tokio::sync::mpsc::Sender;
@@ -188,6 +188,46 @@ impl<'a> WireEventEmitter<'a> {
                 "content_index": content_index,
                 "delta": delta,
                 "logprobs": [],
+            }),
+        )
+        .await;
+    }
+
+    /// `response.refusal.delta`.
+    pub(crate) async fn refusal_delta(
+        &mut self,
+        item_id: &str,
+        output_index: usize,
+        content_index: usize,
+        delta: &str,
+    ) {
+        self.send(
+            "response.refusal.delta",
+            json!({
+                "item_id": item_id,
+                "output_index": output_index,
+                "content_index": content_index,
+                "delta": delta,
+            }),
+        )
+        .await;
+    }
+
+    /// `response.refusal.done`.
+    pub(crate) async fn refusal_done(
+        &mut self,
+        item_id: &str,
+        output_index: usize,
+        content_index: usize,
+        refusal: &str,
+    ) {
+        self.send(
+            "response.refusal.done",
+            json!({
+                "item_id": item_id,
+                "output_index": output_index,
+                "content_index": content_index,
+                "refusal": refusal,
             }),
         )
         .await;

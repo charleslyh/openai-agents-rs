@@ -4,13 +4,16 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 
 use crate::error::ModelError;
-use crate::items::{ItemHelpers, ModelResponse, ResponseOutputItem};
+use crate::items::{ModelResponse, ResponseOutputItem};
 use crate::model::wire_events::{
     emit_response_stream, now_seconds, response_object, WireEventEmitter, FAKE_RESPONSES_ID,
 };
 use crate::model::{Model, ModelRequest};
 use crate::usage::Usage;
 
+use super::chat_convert::{
+    chat_message_to_output_items, items_to_chat_messages, ChatConvertOptions, ReplayReasoningFn,
+};
 use super::{
     apply_model_settings_chat, decorate_request, is_json_response, map_reqwest, status_error,
     tools_as_chat, OpenAiEndpoint, SseReader,
@@ -20,6 +23,7 @@ use super::{
 pub struct OpenAIChatCompletionsModel {
     endpoint: OpenAiEndpoint,
     model: String,
+    replay_reasoning: Option<ReplayReasoningFn>,
 }
 
 impl OpenAIChatCompletionsModel {
@@ -28,6 +32,7 @@ impl OpenAIChatCompletionsModel {
         Self {
             endpoint: OpenAiEndpoint::new(api_key, base_url),
             model: model.into(),
+            replay_reasoning: None,
         }
     }
 
@@ -36,7 +41,34 @@ impl OpenAIChatCompletionsModel {
         Self {
             endpoint,
             model: model.into(),
+            replay_reasoning: None,
         }
+    }
+
+    /// Decide per reasoning item whether it is sent back with later requests
+    /// (Python: `should_replay_reasoning_content`). By default only DeepSeek models get their
+    /// `reasoning_content` replayed.
+    pub fn should_replay_reasoning_content<F>(mut self, replay: F) -> Self
+    where
+        F: Fn(&str, &Value) -> bool + Send + Sync + 'static,
+    {
+        self.replay_reasoning = Some(std::sync::Arc::new(replay));
+        self
+    }
+
+    fn convert_options(&self) -> ChatConvertOptions {
+        ChatConvertOptions {
+            model: self.model.clone(),
+            replay_reasoning: self.replay_reasoning.clone(),
+        }
+    }
+
+    /// Whether the endpoint is OpenAI itself. Third-party servers often reject parameters that
+    /// OpenAI accepts, so some defaults only apply here (Python: `ChatCmplHelpers.is_openai`).
+    fn is_openai_endpoint(&self) -> bool {
+        use async_openai::config::Config;
+        let base = self.endpoint.config.api_base().to_lowercase();
+        base.contains("://api.openai.com")
     }
 }
 
@@ -59,7 +91,7 @@ impl Model for OpenAIChatCompletionsModel {
                     .into(),
             ));
         }
-        let body = build_chat_body(&self.model, &request)?;
+        let body = build_chat_body(&self.model, &self.convert_options(), &request)?;
         // non-stream
         let resp = decorate_request(
             self.endpoint.http.post(self.endpoint.url("/chat/completions")),
@@ -91,13 +123,18 @@ impl Model for OpenAIChatCompletionsModel {
                     .into(),
             ));
         }
-        let mut body = build_chat_body(&self.model, &request)?;
+        let mut body = build_chat_body(&self.model, &self.convert_options(), &request)?;
         body["stream"] = json!(true);
-        // Some providers want stream_options.include_usage
-        // Python: `ModelSettings.include_usage` asks the provider for a usage chunk.
-        body["stream_options"] = json!({
-            "include_usage": request.model_settings.include_usage.unwrap_or(true)
-        });
+        // Python (`get_stream_options_param`): ask for a usage chunk when `include_usage` is set,
+        // and by default only on OpenAI. Other servers often reject the unknown parameter, so
+        // for them the default is to omit it (set `ModelSettings.include_usage` to force it).
+        let include_usage = request
+            .model_settings
+            .include_usage
+            .or(self.is_openai_endpoint().then_some(true));
+        if let Some(include_usage) = include_usage {
+            body["stream_options"] = json!({"include_usage": include_usage});
+        }
 
         let resp = decorate_request(
             self.endpoint.http.post(self.endpoint.url("/chat/completions")),
@@ -137,12 +174,27 @@ impl Model for OpenAIChatCompletionsModel {
         let mut layout = ChatStreamLayout::default();
         let mut response_id: Option<String> = None;
         let mut usage: Option<Usage> = None;
+        let mut finish_reason: Option<String> = None;
 
         while let Some(chunk) = byte_stream.next().await {
             let chunk = chunk.map_err(map_reqwest)?;
             reader.feed(&chunk);
             while let Some(event) = reader.next_event() {
                 let payload = event?;
+
+                // Some servers report a failure as a `data: {"error": ...}` chunk instead of an
+                // HTTP status; without this it would pass for an empty reply.
+                if let Some(error) = payload.get("error").filter(|e| !e.is_null()) {
+                    return Err(ModelError::Behavior(format!(
+                        "the provider reported an error in the stream: {error}"
+                    )));
+                }
+                if let Some(reason) = payload
+                    .pointer("/choices/0/finish_reason")
+                    .and_then(Value::as_str)
+                {
+                    finish_reason = Some(reason.to_string());
+                }
 
                 if response_id.is_none() {
                     response_id = payload
@@ -191,9 +243,25 @@ impl Model for OpenAIChatCompletionsModel {
                         layout.open_message(&mut emitter).await;
                         let index = layout.message_index();
                         emitter
-                            .text_delta(FAKE_RESPONSES_ID, index, 0, content)
+                            .text_delta(FAKE_RESPONSES_ID, index, layout.text_content_index, content)
                             .await;
                         layout.text.push_str(content);
+                    }
+                }
+
+                // The model declines to answer (Python: `response.refusal.delta`).
+                if let Some(refusal) = delta.get("refusal").and_then(|r| r.as_str()) {
+                    if !refusal.is_empty() {
+                        layout.open_refusal(&mut emitter).await;
+                        emitter
+                            .refusal_delta(
+                                FAKE_RESPONSES_ID,
+                                layout.message_index(),
+                                layout.refusal_content_index,
+                                refusal,
+                            )
+                            .await;
+                        layout.refusal.push_str(refusal);
                     }
                 }
 
@@ -225,6 +293,35 @@ impl Model for OpenAIChatCompletionsModel {
                         let _ = layout.register_call(&mut emitter, idx).await;
                     }
                 }
+            }
+        }
+
+        // Python: a stream that ends with nothing to show is explained by its finish reason.
+        // Filtered output becomes a refusal; a completion cut off before any visible token is a
+        // budget problem and an error.
+        if !layout.message_open && layout.calls.is_empty() {
+            match finish_reason.as_deref() {
+                Some("content_filter") => {
+                    let refusal = "Response withheld by the provider's content filter.";
+                    layout.open_refusal(&mut emitter).await;
+                    emitter
+                        .refusal_delta(
+                            FAKE_RESPONSES_ID,
+                            layout.message_index(),
+                            layout.refusal_content_index,
+                            refusal,
+                        )
+                        .await;
+                    layout.refusal.push_str(refusal);
+                }
+                Some("length") => {
+                    return Err(ModelError::Behavior(
+                        "Chat Completions stream terminated with finish_reason='length' but \
+                         produced no assistant text, tool call, or refusal."
+                            .into(),
+                    ));
+                }
+                _ => {}
             }
         }
 
@@ -261,29 +358,61 @@ impl Model for OpenAIChatCompletionsModel {
 
         if layout.message_open {
             let index = layout.message_index();
-            let part = json!({
-                "type": "output_text",
-                "text": layout.text,
-                "annotations": [],
-                "logprobs": [],
-            });
-            emitter
-                .content_part_done(FAKE_RESPONSES_ID, index, 0, part.clone())
-                .await;
+            let mut parts: Vec<(usize, Value)> = Vec::new();
+            if layout.text_open {
+                let part = json!({
+                    "type": "output_text",
+                    "text": layout.text,
+                    "annotations": [],
+                    "logprobs": [],
+                });
+                emitter
+                    .content_part_done(
+                        FAKE_RESPONSES_ID,
+                        index,
+                        layout.text_content_index,
+                        part.clone(),
+                    )
+                    .await;
+                parts.push((layout.text_content_index, part));
+            }
+            if layout.refusal_open {
+                emitter
+                    .refusal_done(
+                        FAKE_RESPONSES_ID,
+                        index,
+                        layout.refusal_content_index,
+                        &layout.refusal,
+                    )
+                    .await;
+                let part = json!({"type": "refusal", "refusal": layout.refusal});
+                emitter
+                    .content_part_done(
+                        FAKE_RESPONSES_ID,
+                        index,
+                        layout.refusal_content_index,
+                        part.clone(),
+                    )
+                    .await;
+                parts.push((layout.refusal_content_index, part));
+            }
+            parts.sort_by_key(|(content_index, _)| *content_index);
             let item = json!({
                 "id": FAKE_RESPONSES_ID,
                 "type": "message",
                 "role": "assistant",
                 "status": "completed",
-                "content": [part],
+                "content": parts.into_iter().map(|(_, part)| part).collect::<Vec<_>>(),
             });
             emitter.output_item_done(index, item.clone()).await;
             tagged.push((index, item));
         }
 
         for (_, call) in layout.calls.iter() {
+            // A server that streams a tool call without an id still needs one: the runner pairs
+            // the tool result with the call by id.
             let call_id = if call.id.is_empty() {
-                "call".to_string()
+                format!("call_{}", uuid::Uuid::new_v4().simple())
             } else {
                 call.id.clone()
             };
@@ -351,7 +480,12 @@ struct ChatStreamLayout {
     reasoning_content: String,
     message_open: bool,
     message_index: Option<usize>,
+    text_open: bool,
+    text_content_index: usize,
     text: String,
+    refusal_open: bool,
+    refusal_content_index: usize,
+    refusal: String,
     calls: std::collections::BTreeMap<usize, ChatCall>,
 }
 
@@ -409,32 +543,61 @@ impl ChatStreamLayout {
         self.reasoning_content_open = true;
     }
 
+    /// Open the assistant message item (once). Text and refusal parts are added to it.
+    async fn open_message_item(&mut self, emitter: &mut WireEventEmitter<'_>) -> usize {
+        if !self.message_open {
+            // Python: reasoning takes index 0, then every tool call known at this point.
+            let index = usize::from(self.reasoning_open) + self.calls.len();
+            self.message_open = true;
+            self.message_index = Some(index);
+            emitter
+                .output_item_added(
+                    index,
+                    json!({
+                        "id": FAKE_RESPONSES_ID,
+                        "type": "message",
+                        "role": "assistant",
+                        "status": "in_progress",
+                        "content": [],
+                    }),
+                )
+                .await;
+        }
+        self.message_index()
+    }
+
+    /// Open the `output_text` part of the message (once).
     async fn open_message(&mut self, emitter: &mut WireEventEmitter<'_>) {
-        if self.message_open {
+        let index = self.open_message_item(emitter).await;
+        if self.text_open {
             return;
         }
-        // Python: reasoning takes index 0, then every tool call known at this point.
-        let index = usize::from(self.reasoning_open) + self.calls.len();
-        self.message_open = true;
-        self.message_index = Some(index);
-        emitter
-            .output_item_added(
-                index,
-                json!({
-                    "id": FAKE_RESPONSES_ID,
-                    "type": "message",
-                    "role": "assistant",
-                    "status": "in_progress",
-                    "content": [],
-                }),
-            )
-            .await;
+        self.text_open = true;
+        self.text_content_index = usize::from(self.refusal_open);
         emitter
             .content_part_added(
                 FAKE_RESPONSES_ID,
                 index,
-                0,
+                self.text_content_index,
                 json!({"type": "output_text", "text": "", "annotations": [], "logprobs": []}),
+            )
+            .await;
+    }
+
+    /// Open the `refusal` part of the message (once).
+    async fn open_refusal(&mut self, emitter: &mut WireEventEmitter<'_>) {
+        let index = self.open_message_item(emitter).await;
+        if self.refusal_open {
+            return;
+        }
+        self.refusal_open = true;
+        self.refusal_content_index = usize::from(self.text_open);
+        emitter
+            .content_part_added(
+                FAKE_RESPONSES_ID,
+                index,
+                self.refusal_content_index,
+                json!({"type": "refusal", "refusal": ""}),
             )
             .await;
     }
@@ -493,8 +656,12 @@ impl ChatStreamLayout {
     }
 }
 
-fn build_chat_body(model: &str, request: &ModelRequest<'_>) -> Result<Value, ModelError> {
-    let messages = input_to_chat_messages(request.system_instructions, &request.input);
+fn build_chat_body(
+    model: &str,
+    options: &ChatConvertOptions,
+    request: &ModelRequest<'_>,
+) -> Result<Value, ModelError> {
+    let messages = input_to_chat_messages(request.system_instructions, &request.input, options)?;
     let mut body = json!({
         "model": model,
         "messages": messages,
@@ -510,7 +677,7 @@ fn build_chat_body(model: &str, request: &ModelRequest<'_>) -> Result<Value, Mod
                 body["response_format"] = json!({
                     "type": "json_schema",
                     "json_schema": {
-                        "name": schema.name(),
+                        "name": "final_output",
                         "schema": schema_value,
                         "strict": schema.is_strict_json_schema(),
                     }
@@ -528,7 +695,8 @@ fn build_chat_body(model: &str, request: &ModelRequest<'_>) -> Result<Value, Mod
 fn input_to_chat_messages(
     system: Option<&str>,
     input: &crate::model::ModelInput<'_>,
-) -> Vec<Value> {
+    options: &ChatConvertOptions,
+) -> Result<Vec<Value>, ModelError> {
     let mut messages = Vec::new();
     if let Some(sys) = system {
         messages.push(json!({"role": "system", "content": sys}));
@@ -538,91 +706,47 @@ fn input_to_chat_messages(
             messages.push(json!({"role": "user", "content": t}));
         }
         crate::model::ModelInput::Items(items) => {
-            for item in *items {
-                messages.extend(responses_item_to_chat_messages(item));
-            }
+            messages.extend(items_to_chat_messages(items, options)?);
         }
     }
-    messages
-}
-
-fn responses_item_to_chat_messages(item: &Value) -> Vec<Value> {
-    let ty = item.get("type").and_then(|t| t.as_str());
-    match ty {
-        Some("function_call") => {
-            let call_id = item
-                .get("call_id")
-                .and_then(|c| c.as_str())
-                .unwrap_or("call");
-            vec![json!({
-                "role": "assistant",
-                "content": null,
-                "tool_calls": [{
-                    "id": call_id,
-                    "type": "function",
-                    "function": {
-                        "name": item.get("name").and_then(|n| n.as_str()).unwrap_or(""),
-                        "arguments": item.get("arguments").and_then(|a| a.as_str()).unwrap_or("")
-                    }
-                }]
-            })]
-        }
-        Some("function_call_output") => {
-            vec![json!({
-                "role": "tool",
-                "tool_call_id": item.get("call_id").and_then(|c| c.as_str()).unwrap_or(""),
-                "content": item.get("output").and_then(|o| o.as_str()).unwrap_or("")
-            })]
-        }
-        Some("message") => {
-            let role = item
-                .get("role")
-                .and_then(|r| r.as_str())
-                .unwrap_or("assistant");
-            let text = crate::items::extract_message_text(item).unwrap_or_default();
-            vec![json!({"role": role, "content": text})]
-        }
-        _ => {
-            if let Some(role) = item.get("role").and_then(|r| r.as_str()) {
-                let content = item
-                    .get("content")
-                    .cloned()
-                    .unwrap_or(Value::String(String::new()));
-                vec![json!({"role": role, "content": content})]
-            } else {
-                vec![]
-            }
-        }
-    }
+    Ok(messages)
 }
 
 fn chat_payload_to_model_response(payload: Value) -> Result<ModelResponse, ModelError> {
     let choice = payload
-        .pointer("/choices/0/message")
+        .pointer("/choices/0")
+        .ok_or_else(|| ModelError::Behavior("missing choices[0]".into()))?;
+    let mut message = choice
+        .get("message")
+        .filter(|m| m.is_object())
+        .cloned()
         .ok_or_else(|| ModelError::Behavior("missing choices[0].message".into()))?;
 
-    let mut output: Vec<ResponseOutputItem> = Vec::new();
-
-    if let Some(tool_calls) = choice.get("tool_calls").and_then(|t| t.as_array()) {
-        for tc in tool_calls {
-            let id = tc.get("id").and_then(|i| i.as_str()).unwrap_or("call");
-            let name = tc
-                .pointer("/function/name")
-                .and_then(|n| n.as_str())
-                .unwrap_or("");
-            let arguments = tc
-                .pointer("/function/arguments")
-                .and_then(|a| a.as_str())
-                .unwrap_or("");
-            output.push(ItemHelpers::function_tool_call(name, arguments, id));
+    let has_output = |m: &Value| {
+        let non_empty = |key: &str| match m.get(key) {
+            Some(Value::String(s)) => !s.is_empty(),
+            Some(Value::Array(a)) => !a.is_empty(),
+            _ => false,
+        };
+        non_empty("content") || non_empty("refusal") || non_empty("tool_calls")
+    };
+    // Python: a completion with nothing in it is explained by its finish reason. Filtered output
+    // becomes a refusal the caller can handle; a completion cut off before any visible token is a
+    // budget problem, not a refusal.
+    match choice.get("finish_reason").and_then(Value::as_str) {
+        Some("content_filter") if !has_output(&message) => {
+            message["refusal"] = json!("Response withheld by the provider's content filter.");
         }
-    }
-
-    if let Some(content) = choice.get("content").and_then(|c| c.as_str()) {
-        if !content.is_empty() {
-            output.push(ItemHelpers::text_message(content));
+        Some("length") if !has_output(&message) => {
+            return Err(ModelError::Behavior(
+                "Chat Completions response terminated with finish_reason='length' but produced \
+                 no assistant text, tool call, or refusal."
+                    .into(),
+            ));
         }
+        _ => {}
     }
+    let output: Vec<ResponseOutputItem> = chat_message_to_output_items(&message);
 
     let usage = chat_usage_or_completed_request(payload.get("usage"));
 

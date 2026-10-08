@@ -106,6 +106,23 @@ needs `expect` to run; the `.golden.json` produced by the Python oracle is optio
 when present. Regenerate it with `.venv/bin/python scripts/run_parity.py --write-golden` on a
 machine that has `openai-agents==0.23.1` installed.
 
+## Other providers
+
+Use any OpenAI-compatible server by passing its base URL and key:
+
+```rust
+let model = Arc::new(OpenAIChatCompletionsModel::new(
+    "deepseek-chat",
+    std::env::var("API_KEY").unwrap(),
+    Some("https://api.deepseek.com/v1"),
+));
+```
+
+The Chat Completions adapter is checked against the Python converter and tolerates common
+deviations (tool calls without ids, list-valued `content`, error chunks in a stream). Things that
+only OpenAI accepts, such as `stream_options`, are sent to other servers only when you ask
+(`ModelSettings.include_usage`). See D-040 in [`docs/DEVIATIONS.md`](./docs/DEVIATIONS.md).
+
 ## Keeping context short
 
 Long chats and tool-heavy runs outgrow the model's context. Two provider-neutral tools:
