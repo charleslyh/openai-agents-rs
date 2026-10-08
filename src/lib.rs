@@ -50,7 +50,7 @@ pub use guardrail::{
 };
 pub use handoffs::{
     default_handoff_history_mapper, get_conversation_history_wrappers, handoff,
-    handoff_input_filter, handoff_with, nest_handoff_history, reset_conversation_history_wrappers,
+    handoff_input_filter, handoff_to_name, handoff_with, nest_handoff_history, reset_conversation_history_wrappers,
     set_conversation_history_wrappers, Handoff, HandoffHistoryMapper, HandoffInputData,
     HandoffInputFilter, OnHandoff,
 };
