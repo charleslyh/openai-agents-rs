@@ -63,7 +63,9 @@ pub(crate) struct InterruptSnapshot {
     /// How many `generated_items` the session already holds (see [`RunState`]).
     pub session_saved_items: usize,
     /// Whether the run's input is already in the session.
-    pub session_input_saved: bool
+    pub session_input_saved: bool,
+    /// Input guardrail results gathered before the pause.
+    pub input_guardrail_results: Vec<crate::guardrail::InputGuardrailResult>
 }
 
 impl RunResult {
@@ -148,6 +150,9 @@ impl RunResult {
             nested_agent_runs: snap.nested_agent_runs.clone(),
             session_saved_items: snap.session_saved_items,
             session_input_saved: snap.session_input_saved,
+            input_guardrail_results: self.input_guardrail_results.clone(),
+            tool_input_guardrail_results: self.tool_input_guardrail_results.clone(),
+            tool_output_guardrail_results: self.tool_output_guardrail_results.clone(),
         })
     }
 }
