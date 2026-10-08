@@ -485,3 +485,25 @@ async fn session_is_untouched_when_the_run_fails() {
     assert!(Runner::run(&agent, "go", options).await.is_err());
     assert!(session.get_items(None).await.unwrap().is_empty());
 }
+
+/// D-016: `Usage::add` follows Python — entries only for single requests with tokens, and
+/// an older RunState without details still deserializes.
+#[test]
+fn usage_add_tracks_details_and_entries() {
+    use openai_agents::Usage;
+    let mut total = Usage::default();
+    let mut one = Usage::from_responses_usage(&json!({
+        "input_tokens": 10, "output_tokens": 2, "total_tokens": 12,
+        "input_tokens_details": {"cached_tokens": 4},
+        "output_tokens_details": {"reasoning_tokens": 1}}));
+    one.request_usage_entries.clear();
+    total.add(&one);
+    total.add(&Usage { requests: 1, ..Usage::default() });
+    assert_eq!(total.requests, 2);
+    assert_eq!(total.input_tokens_details.cached_tokens, 4);
+    assert_eq!(total.request_usage_entries.len(), 1, "empty request adds no entry");
+
+    let legacy: Usage = serde_json::from_value(json!({
+        "requests": 1, "input_tokens": 1, "output_tokens": 1, "total_tokens": 2})).unwrap();
+    assert_eq!(legacy.input_tokens_details.cached_tokens, 0);
+}

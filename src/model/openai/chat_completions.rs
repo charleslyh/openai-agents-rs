@@ -12,7 +12,7 @@ use crate::model::{Model, ModelRequest};
 use crate::usage::Usage;
 
 use super::{
-    apply_model_settings_chat, decorate_request, is_json_response, map_transport, merge_usage,
+    apply_model_settings_chat, decorate_request, is_json_response, map_transport,
     tools_as_chat, OpenAiEndpoint, SseReader,
 };
 
@@ -136,7 +136,7 @@ impl Model for OpenAIChatCompletionsModel {
         let mut emitter = WireEventEmitter::new(&raw_tx);
         let mut layout = ChatStreamLayout::default();
         let mut response_id: Option<String> = None;
-        let mut usage: Option<(u64, u64)> = None;
+        let mut usage: Option<Usage> = None;
 
         while let Some(chunk) = byte_stream.next().await {
             let chunk = chunk.map_err(map_transport)?;
@@ -154,13 +154,8 @@ impl Model for OpenAIChatCompletionsModel {
                     .ensure_created(&mut emitter, &self.model, response_id.as_deref())
                     .await;
 
-                if let Some(u) = payload.get("usage") {
-                    let input = u.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                    let output = u
-                        .get("completion_tokens")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0);
-                    usage = Some((input, output));
+                if let Some(u) = payload.get("usage").filter(|u| !u.is_null()) {
+                    usage = Some(Usage::from_chat_usage(u));
                 }
 
                 let delta = payload
@@ -312,7 +307,10 @@ impl Model for OpenAIChatCompletionsModel {
             .unwrap_or_else(|| FAKE_RESPONSES_ID.to_string());
         let response = ModelResponse {
             output: output.clone(),
-            usage: merge_usage(usage),
+            usage: usage.unwrap_or(Usage {
+                requests: 1,
+                ..Usage::default()
+            }),
             response_id,
             request_id: None,
         };
@@ -626,21 +624,11 @@ fn chat_payload_to_model_response(payload: Value) -> Result<ModelResponse, Model
         }
     }
 
-    let usage = payload.get("usage").map(|u| {
-        let input = u
-            .get("prompt_tokens")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
-        let output_toks = u
-            .get("completion_tokens")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
-        (input, output_toks)
-    });
+    let usage = chat_usage_or_completed_request(payload.get("usage"));
 
     Ok(ModelResponse {
         output,
-        usage: merge_usage(usage),
+        usage,
         response_id: payload
             .get("id")
             .and_then(|i| i.as_str())
@@ -650,6 +638,13 @@ fn chat_payload_to_model_response(payload: Value) -> Result<ModelResponse, Model
 }
 
 #[allow(dead_code)]
-fn _usage_ping() -> Usage {
-    Usage::default()
+/// Python (`openai_chatcompletions.py`): the request counts even when the provider omits usage.
+fn chat_usage_or_completed_request(usage: Option<&Value>) -> Usage {
+    match usage.filter(|u| !u.is_null()) {
+        Some(u) => Usage::from_chat_usage(u),
+        None => Usage {
+            requests: 1,
+            ..Usage::default()
+        },
+    }
 }

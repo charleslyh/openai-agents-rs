@@ -63,7 +63,7 @@ from the provider, **S** = synthesized by the adapter, **N** = not emitted.
 | MCP / hosted-tool events | F | N | N |
 | `sequence_number` | forwarded as-is | synthesized, 0-based | synthesized, 0-based |
 | `logprobs` payloads | forwarded as-is | `[]` | `[]` |
-| `usage` token details | forwarded as-is | totals only (D-016) | totals only (D-016) |
+| `usage` token details | forwarded as-is | cached / reasoning tokens (D-016) | totals only |
 
 No emitter synthesizes `response.in_progress` / `response.queued`; the Responses adapter forwards
 them like any other provider event, and it reads the response id out of them when the terminal

@@ -76,7 +76,7 @@ pub use tool::{
     FunctionTool, IsEnabledFn, NeedsApproval, ToolContext, ToolEnabled, ToolFailureHandling, ToolResult,
     DEFAULT_APPROVAL_REJECTION_MESSAGE, DEFAULT_TOOL_ERROR_MESSAGE,
 };
-pub use usage::Usage;
+pub use usage::{InputTokensDetails, OutputTokensDetails, RequestUsage, Usage};
 
 /// Attribute macro: turn a function into a [`FunctionTool`] constructor (Python: `@function_tool`).
 pub use openai_agents_macros::function_tool;

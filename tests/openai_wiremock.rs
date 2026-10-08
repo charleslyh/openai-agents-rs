@@ -1056,3 +1056,82 @@ async fn chat_advertises_json_schema() {
         "string"
     );
 }
+
+fn text_output(text: &str) -> serde_json::Value {
+    json!([{
+        "id": "m", "type": "message", "role": "assistant", "status": "completed",
+        "content": [{"type": "output_text", "text": text, "annotations": [], "logprobs": []}]
+    }])
+}
+
+/// D-016: Responses usage details aggregate across turns and keep the per-request breakdown.
+#[tokio::test]
+async fn responses_usage_details_aggregate_per_request() {
+    let server = MockServer::start().await;
+    let call = json!([{"id": "1", "type": "function_call", "name": "get_weather",
+        "arguments": "{\"city\":\"Paris\"}", "call_id": "c1"}]);
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(QueuedBodies::new(vec![
+            json!({"id": "r1", "output": call, "usage": {
+                "input_tokens": 10, "output_tokens": 4, "total_tokens": 14,
+                "input_tokens_details": {"cached_tokens": 6},
+                "output_tokens_details": {"reasoning_tokens": 3}}}),
+            json!({"id": "r2", "output": text_output("done"), "usage": {
+                "input_tokens": 20, "output_tokens": 5, "total_tokens": 25,
+                "input_tokens_details": {"cached_tokens": 8},
+                "output_tokens_details": {"reasoning_tokens": 1}}}),
+        ]))
+        .mount(&server)
+        .await;
+    let agent = Agent::new("a")
+        .model(Arc::new(OpenAIResponsesModel::new(
+            "m",
+            "sk-test",
+            Some(&format!("{}/v1", server.uri())),
+        )))
+        .tools(vec![weather_tool()]);
+    let result = Runner::run(&agent, "hi", RunOptions::default()).await.expect("run");
+    let usage = &result.usage;
+    assert_eq!(usage.requests, 2);
+    assert_eq!((usage.input_tokens, usage.output_tokens, usage.total_tokens), (30, 9, 39));
+    assert_eq!(usage.input_tokens_details.cached_tokens, 14);
+    assert_eq!(usage.output_tokens_details.reasoning_tokens, 4);
+    assert_eq!(usage.request_usage_entries.len(), 2);
+    assert_eq!(usage.request_usage_entries[1].input_tokens, 20);
+    assert_eq!(usage.request_usage_entries[1].input_tokens_details.cached_tokens, 8);
+}
+
+/// D-016: Chat Completions maps `prompt_tokens_details` / `completion_tokens_details`, keeps the
+/// provider's `total_tokens`, and counts the request even when `usage` is missing.
+#[tokio::test]
+async fn chat_usage_details_and_missing_usage() {
+    let server = MockServer::start().await;
+    let choice = |text: &str| json!([{"index": 0, "finish_reason": "stop",
+        "message": {"role": "assistant", "content": text}}]);
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(QueuedBodies::new(vec![
+            json!({"id": "c1", "choices": choice("a"), "usage": {
+                "prompt_tokens": 7, "completion_tokens": 2, "total_tokens": 9,
+                "prompt_tokens_details": {"cached_tokens": 5},
+                "completion_tokens_details": {"reasoning_tokens": 1}}}),
+            json!({"id": "c2", "choices": choice("b")}),
+        ]))
+        .mount(&server)
+        .await;
+    let agent = Agent::new("a").model(Arc::new(OpenAIChatCompletionsModel::new(
+        "m",
+        "sk-test",
+        Some(&format!("{}/v1", server.uri())),
+    )));
+    let first = Runner::run(&agent, "hi", RunOptions::default()).await.expect("run");
+    assert_eq!(first.usage.input_tokens_details.cached_tokens, 5);
+    assert_eq!(first.usage.output_tokens_details.reasoning_tokens, 1);
+    assert_eq!(first.usage.total_tokens, 9);
+
+    let second = Runner::run(&agent, "hi", RunOptions::default()).await.expect("run");
+    assert_eq!(second.usage.requests, 1, "a completed request counts without usage");
+    assert_eq!(second.usage.total_tokens, 0);
+    assert!(second.usage.request_usage_entries.is_empty());
+}

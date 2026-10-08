@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
+use crate::usage::Usage;
 use crate::error::ModelError;
 use crate::items::{ModelResponse, ResponseOutputItem};
 use crate::model::wire_events::{
@@ -13,7 +14,7 @@ use crate::model::wire_events::{
 use crate::model::{Model, ModelRequest};
 
 use super::{
-    apply_model_settings_responses, decorate_request, is_json_response, map_transport, merge_usage,
+    apply_model_settings_responses, decorate_request, is_json_response, map_transport,
     tools_as_responses, OpenAiEndpoint, SseReader,
 };
 
@@ -193,13 +194,13 @@ impl Model for OpenAIResponsesModel {
                     "completed",
                     now_seconds(),
                     &output,
-                    &crate::usage::Usage::default(),
+                    &Usage::default(),
                     "auto",
                 );
                 emit_completed(&raw_tx, wire, last_sequence.map_or(0, |s| s + 1)).await;
                 ModelResponse {
                     output,
-                    usage: merge_usage(None),
+                    usage: Usage::default(),
                     response_id,
                     request_id: None,
                 }
@@ -268,21 +269,15 @@ fn responses_payload_to_model_response(payload: Value) -> Result<ModelResponse, 
         .cloned()
         .unwrap_or_default();
 
-    let usage = payload.get("usage").map(|u| {
-        let input = u
-            .get("input_tokens")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
-        let output_toks = u
-            .get("output_tokens")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
-        (input, output_toks)
-    });
+    // Python: a response without `usage` represents zero requests.
+    let usage = payload
+        .get("usage")
+        .map(Usage::from_responses_usage)
+        .unwrap_or_default();
 
     Ok(ModelResponse {
         output,
-        usage: merge_usage(usage),
+        usage,
         response_id: payload
             .get("id")
             .and_then(|i| i.as_str())
