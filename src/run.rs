@@ -1134,6 +1134,35 @@ impl SessionWriter {
         }
     }
 
+    /// Save the turn whose final output an output guardrail withheld.
+    ///
+    /// Python (`blocked_output.py`) keeps the turn's tool calls but replaces every tool output
+    /// with the placeholder, and leaves out the model's own messages. A turn that holds a
+    /// reasoning item is not saved at all, because reasoning cannot be replayed without the
+    /// items it led up to. Earlier turns were saved when they ended.
+    async fn save_blocked_turn(&mut self, items: &[RunItem], placeholder: &str) -> Result<(), AgentsError> {
+        let mut out = self.pending_input.take().unwrap_or_default();
+        let turn = &items[self.saved_items.min(items.len())..];
+        if !turn.iter().any(|i| matches!(i, RunItem::Reasoning(_))) {
+            for item in turn {
+                match item {
+                    RunItem::ToolCall(_) => out.push(item.raw_item().clone()),
+                    RunItem::ToolCallOutput(_) => {
+                        let mut raw = item.raw_item().clone();
+                        raw["output"] = Value::String(placeholder.to_string());
+                        out.push(raw);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        self.saved_items = items.len();
+        if !out.is_empty() {
+            self.session.add_items(out).await?;
+        }
+        Ok(())
+    }
+
     /// Save the input (once) and every model-visible item not saved yet.
     async fn flush(&mut self, items: &[RunItem]) -> Result<(), AgentsError> {
         let mut out = self.pending_input.take().unwrap_or_default();
@@ -1382,6 +1411,7 @@ async fn run_loop_inner(
                 &options.run_config.output_guardrails,
                 input_guardrail_results,
                 None,
+                session_writer.as_deref_mut(),
             )
             .await;
         }
@@ -1765,7 +1795,8 @@ async fn run_loop_inner(
                                         &options.run_config.output_guardrails,
                                         input_guardrail_results,
                                         None,
-                                    )
+                session_writer.as_deref_mut(),
+            )
                                     .await;
                                 }
                                 Err(error) => error,
@@ -1812,6 +1843,7 @@ async fn run_loop_inner(
                 &options.run_config.output_guardrails,
                 input_guardrail_results,
                 None,
+                session_writer.as_deref_mut(),
             )
             .await;
         }
@@ -2176,7 +2208,8 @@ async fn run_loop_inner(
                         &options.run_config.output_guardrails,
                         input_guardrail_results,
                         Some(&options.run_config),
-                    )
+                session_writer.as_deref_mut(),
+            )
                     .await;
                 }
             }
@@ -2196,7 +2229,8 @@ async fn run_loop_inner(
                             &options.run_config.output_guardrails,
                             input_guardrail_results,
                             Some(&options.run_config),
-                        )
+                session_writer.as_deref_mut(),
+            )
                         .await;
                     }
                 }
@@ -2226,7 +2260,8 @@ async fn run_loop_inner(
                         &options.run_config.output_guardrails,
                         input_guardrail_results,
                         Some(&options.run_config),
-                    )
+                session_writer.as_deref_mut(),
+            )
                     .await;
                 }
             }
@@ -2278,6 +2313,7 @@ async fn finalize_run(
     extra_output_guardrails: &[OutputGuardrail],
     input_guardrail_results: Vec<InputGuardrailResult>,
     tool_origin: Option<&RunConfig>,
+    session_writer: Option<&mut SessionWriter>,
 ) -> Result<RunResult, AgentsError> {
     // Python closes the turn span before the run's end hooks and output guardrails.
     let _outside_turn = crate::tracing::leave_turn_span();
@@ -2311,14 +2347,19 @@ async fn finalize_run(
         output_guardrail_results = results;
         if let Some(mut result) = tripped {
             // Python (`blocked_output.py`): a final output that came from a tool is withheld, so
-            // the error carries a data-free placeholder instead of the tool's output.
+            // the error carries a data-free placeholder instead of the tool's output, and so
+            // does the session.
             if let Some(run_config) = tool_origin {
-                result.agent_output = Value::String(resolve_blocked_message(
+                let placeholder = resolve_blocked_message(
                     run_config,
                     &result.guardrail_name,
                     &agent,
                     context,
-                ));
+                );
+                if let Some(writer) = session_writer {
+                    writer.save_blocked_turn(&new_items, &placeholder).await?;
+                }
+                result.agent_output = Value::String(placeholder);
                 result.output.output_info = Value::Null;
             }
             return Err(OutputGuardrailTripwireTriggered { result }.into());
