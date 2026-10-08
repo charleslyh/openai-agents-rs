@@ -25,6 +25,10 @@ Rust language difference) · **Gap** (known missing capability, tracked by COMPA
 | D-I | Default OpenAI API | Crate default is Responses (Python-aligned); only the *example harness* defaults to `chat_completions`. README now says so. | Aligned |
 | D-J | `ModelTracing.ENABLED_WITHOUT_DATA` | Driven by `RunConfig.trace_include_sensitive_data` (env `OPENAI_AGENTS_TRACE_INCLUDE_SENSITIVE_DATA`). | Aligned |
 | D-K | Chat Completions + `conversation_id` | Returns `ModelError::Unsupported` instead of silently dropping it. | Aligned |
+| B7 | `default_tool_error_function` / `failure_error_function` | A tool that returns `Err` no longer aborts the run: the model receives `DEFAULT_TOOL_ERROR_MESSAGE` (the error text is not exposed). `FunctionTool::with_failure_error_function` formats it, `raise_on_error()` restores abort (Python: `failure_error_function=None`). The formatter is synchronous | Aligned |
+| B8 | `turn_resolution.py` handoff execution | A turn with a handoff now runs its sibling function tools first, then the first handoff; later handoffs get a `ToolCallOutputItem` with `"Multiple handoffs detected, ignoring this one."`. Every call id has an output. Handoffs take precedence over `tool_use_behavior` stops, as in Python | Aligned |
+| B9 | `InputGuardrail.run_in_parallel` | `run_in_parallel(false)` guardrails finish before the first model call and trip without calling the model. Parallel guardrails race the model call: a tripwire drops the in-flight call instead of waiting for it | Aligned |
+| B10 | `RunConfig.tool_not_found_behavior` | Unknown tool raises `ModelError::Behavior("Tool X not found in agent Y")`; `ToolNotFoundBehavior::ReturnErrorToModel` answers `"Tool 'X' not found."` and continues | Aligned |
 | D-L | Error source chain | `AgentsError::Tool` / `Internal` carry an optional `#[source]`; helpers `tool_with_source` / `internal_with_source` exist. | Aligned |
 
 ## Accepted deviations
@@ -39,7 +43,7 @@ Rust language difference) · **Gap** (known missing capability, tracked by COMPA
 | D-006 | MCP / sessions / hosted tools / sandbox | Not exported | Out of scope | Later phases |
 | D-007 | Package layout | Single crate `openai-agents` with modules + Cargo features | Mirrors the Python single package; no empty facade | N/A (aligned intent) |
 | D-008 | Default max turns `10` | Same default (`DEFAULT_MAX_TURNS = 10`) | — | Aligned |
-| D-009 | `function_tool` `failure_error_function` | Tool errors are surfaced as results by default; there is no per-tool error formatter hook | `RunConfig.tool_error_formatter` not ported | Later phase |
+| D-009 | `function_tool` `failure_error_function` | Per-tool `failure_error_function` is ported (B7); async formatters and `RunConfig.tool_error_formatter` (approval-rejected / tool-not-found messages) are not | `RunConfig.tool_error_formatter` not ported | Later phase |
 | D-010 | Prefer git submodule for vendor | Vendored via release tarball + `vendor/PINNED_VERSION` | Network / CI portability | Prefer submodule when accessible |
 | D-011 | Token-level `RawResponsesStreamEvent` from `Model.stream_response` | `StreamEvent::RawResponse.data` is a standard Responses wire event, matching Python's `RawResponsesStreamEvent.data`. Responses forwards provider events verbatim (`openai_responses.py:781`); Chat Completions synthesizes them the way `chatcmpl_stream_handler.py` does; `ScriptedModel` replays a step the way `testing/model.py` does. See [Streaming wire contract](#streaming-wire-contract) | Not ported: `response.refusal.*`, `response.output_text.annotation.added` and logprob payloads (emitted empty); usage token details follow D-016 | Aligned |
 | D-012 | Python `RunState` schema 1.18 wire format | Rust schema `openai-agents-rs/2` via `to_json`/`from_json`; sticky `always_approve`/`always_reject`; `Agent.as_tool` nested HITL | Not byte-compatible with Python snapshots; process-local + Rust JSON is enough for HITL. The pre-rename ids `openai-agents-rust/1` and `openai-agents-rust/2` are still accepted on load | Optional Python-compatible exporter later |
@@ -56,6 +60,24 @@ Rust language difference) · **Gap** (known missing capability, tracked by COMPA
 | D-021 | `ModelCall` recorded fields | Records `streamed` and `output_schema_name`, but not `output_schema`, `handoffs` or `prompt` objects | `ModelRequest` does not carry handoffs; Python exposes the live objects | Later phase |
 | D-018 | `function_tool` variadic / `Annotated` parameters | Not supported; the macro accepts plain owned-typed identifiers and an optional leading context parameter | Rust signatures cannot express `*args` / `**kwargs` with types | Accepted |
 | D-023 | Chat Completions synthesized response id | The synthesized `response` object and `ModelResponse.response_id` carry the provider's `id` (e.g. `chatcmpl-…`) when the gateway sends one; `FAKE_RESPONSES_ID` only when it does not | Python always uses `FAKE_RESPONSES_ID` for Chat Completions. The id is only fed back as `previous_response_id`, which the Chat Completions adapter ignores | Accepted |
+
+## Newly recorded gaps (audit 2026-10)
+
+| ID | Standard location | Rust behavior | Plan |
+|----|-------------------|---------------|------|
+| D-026 | `RunConfig` | Ported: `tool_not_found_behavior` (B10), `model`, `model_provider`, `model_settings`, `input_guardrails`, `output_guardrails`, `tracing_disabled`, `workflow_name`, `trace_id`, `group_id`, `trace_metadata`, `trace_include_sensitive_data`. Missing: `handoff_input_filter`, `nest_handoff_history`, `handoff_history_mapper`, `session_input_callback`, `session_settings`, `call_model_input_filter`, `tool_error_formatter`, `reasoning_item_id_policy`, `tool_execution`, `tool_name_collision_policy`, `output_guardrail_blocked_message`, `tracing` (`TracingConfig`), `sandbox` | Prioritize `call_model_input_filter`, `handoff_input_filter`, `tool_error_formatter` |
+| D-027 | `Runner.run(session=…)` / `agents.memory` | No `session` parameter and no session store. Multi-turn continuity is only `previous_response_id` / `conversation_id` / `RunResult::to_input_list` (D-006 covers it as "sessions not exported") | Later phase; a `Session` trait plus an in-memory impl is the smallest useful step |
+| D-028 | `Agent` fields | Missing: `prompt` (`Prompt` / dynamic prompt), `mcp_servers` / `mcp_config`, async `tool_use_behavior` functions (`ToolsToFinalOutputFunction`; the sync `ToolUseBehavior::Custom` is ported and sees tool name / call id / output only, not the run item), `Agent.clone(**overrides)` (use struct `Clone` + builder), `get_all_tools` | Async custom behavior can follow; the rest follow MCP / prompt phases |
+| D-029 | `FunctionTool` / `tool_guardrails.py` | Only `FunctionTool` exists (no hosted, computer, shell, apply-patch, custom or MCP tools). `is_enabled` is a static `bool` (Python: bool or callable of `(context, agent)`), so it cannot depend on the run. No `timeout_seconds` / `timeout_behavior`, no tool input/output guardrails, no `defer_loading` / namespaces | `is_enabled` as a `bool | async fn` enum mirrors `NeedsApproval` |
+| D-030 | `Handoff` | `Agent.handoffs` takes `Handoff` only (Python also accepts a bare `Agent`). No `is_enabled`, `input_json_schema`, `on_invoke_handoff`, `input_filter` (extends D-003). The target is stored as `Arc<Agent>` by value, so a cyclic graph (A → B → A) cannot be built, while Python allows it by reference | Cycle support needs `Weak` / name-based resolution; consider alongside `input_filter` |
+| D-031 | `RunResultStreaming` | No `cancel()` and no `stream_events` back-pressure control; `run_streamed` takes the agent by value, and the consumer dropping the stream does not stop the spawned run | Add a cancellation token; relevant to B9 |
+| D-032 | Tool-name collisions | Handoff tool names and function tool names are not checked for collisions (`tool_name_collision_policy`); the first match wins silently, handoffs checked first | Add a validation pass before the model call |
+| D-033 | Max-turns handling | `MaxTurnsExceeded` is always an error; there are no `run_error_handlers` (`run_error_handlers.py`) to turn it into a final output | Later phase |
+
+Verified to **match** Python in this audit: `AgentHooks.on_handoff(context, agent=new, source=old)`
+is invoked on the *source* agent's hooks; output guardrails combine `RunConfig` + agent guardrails
+and trip as `OutputGuardrailTripwireTriggered`; `tool_choice` reset; `HandoffCallItem` /
+`HandoffOutputItem` payload (`{"assistant": name}`); input guardrails run only on the first agent.
 
 ## Streaming wire contract
 

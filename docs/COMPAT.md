@@ -20,6 +20,9 @@ Legend: **S** = supported · **P** = partial · **N** = not supported · **D** =
 | Tool context injection | S | Optional first `ToolContext` / `RunContextWrapper` parameter |
 | Parallel function tools | S | `join_all`; results ordered by model tool-call order |
 | `ToolExecutionConfig.max_function_tool_concurrency` | N | All tools in a batch start concurrently |
+| `failure_error_function` | P | Sync formatter or `raise_on_error`; default message sent to the model (B7) |
+| `tool_use_behavior` callable | P | Sync `ToolUseBehavior::Custom` |
+| `RunConfig.tool_not_found_behavior` | S | B10 |
 
 ## Model layer
 
@@ -102,7 +105,7 @@ dictionaries are merged (`model_settings.py:273`).
 
 | Capability | Status | Notes |
 |------------|--------|-------|
-| Basic handoff (tool + agent switch) | S | |
+| Basic handoff (tool + agent switch) | S | Sibling tools run first; extra handoffs ignored with Python's message (B8) |
 | `HandoffCallItem` / `HandoffOutputItem` | S | |
 | `handoff_span` | S | |
 | `input_filter` / `nest_handoff_history` | N | D-003 |
@@ -125,7 +128,7 @@ dictionaries are merged (`model_settings.py:273`).
 |------------|--------|-------|
 | `RunContextWrapper` (type-erased) | S | `context::<T>()` / `try_context::<T>()`; D-014 |
 | `RunOptions.context` | S | |
-| Input / output guardrails | S | Run concurrently; tripwire raises |
+| Input / output guardrails | S | `run_in_parallel` honoured; parallel tripwire cancels the model call (B9) |
 | Guardrail results on `RunResult` | S | |
 | `RunHooks` / `AgentHooks` | S | All methods default to no-op |
 | Tool input/output guardrails | N | |
