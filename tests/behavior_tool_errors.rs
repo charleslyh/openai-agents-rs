@@ -1014,3 +1014,39 @@ async fn tool_output_guardrails_replace_or_raise() {
     let err = Runner::run(&build(stop), "go", RunOptions::default()).await.unwrap_err();
     assert!(matches!(err, AgentsError::ToolOutputGuardrailTripwire(_)), "{err}");
 }
+
+/// D-026: `reasoning_item_id_policy = Omit` strips reasoning ids from the next turn's input and
+/// from `to_input_list`, and only from reasoning items.
+#[tokio::test]
+async fn reasoning_item_id_policy_omit_strips_reasoning_ids() {
+    use openai_agents::{ReasoningItemIdPolicy, RunConfig};
+    let reasoning = json!({"id": "rs_1", "type": "reasoning", "summary": []});
+    let run = |policy: Option<ReasoningItemIdPolicy>| {
+        let model = Arc::new(ScriptedModel::new([
+            ModelStep::output([reasoning.clone(), ItemHelpers::function_tool_call("echo", "{}", "c1")]),
+            ModelStep::from(ItemHelpers::text_message("done")),
+        ]));
+        let agent = Agent::new("a")
+            .model(model.clone())
+            .tools(vec![FunctionTool::constant("echo", "e", "x")]);
+        let mut options = RunOptions::default();
+        options.run_config = RunConfig { reasoning_item_id_policy: policy, ..RunConfig::default() };
+        async move {
+            let result = Runner::run(&agent, "go", options).await.expect("run");
+            (model.calls()[1].input.clone(), result.to_input_list())
+        }
+    };
+
+    let (input, list) = run(Some(ReasoningItemIdPolicy::Omit)).await;
+    let reasoning_of = |items: &Value| {
+        items.as_array().unwrap().iter().find(|i| i["type"] == "reasoning").unwrap().clone()
+    };
+    assert!(reasoning_of(&input).get("id").is_none(), "{input}");
+    assert!(reasoning_of(&json!(list)).get("id").is_none());
+    assert!(input.as_array().unwrap().iter().any(|i| i["call_id"] == "c1" && i["type"] == "function_call"));
+    assert!(input.as_array().unwrap().iter().filter(|i| i["type"] != "reasoning").all(|i| i.get("id").is_some() || i["type"] == "function_call_output" || i.get("role").is_some()));
+
+    let (input, list) = run(None).await;
+    assert_eq!(reasoning_of(&input)["id"], "rs_1");
+    assert_eq!(reasoning_of(&json!(list))["id"], "rs_1");
+}

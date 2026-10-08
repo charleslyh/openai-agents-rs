@@ -91,6 +91,7 @@ pub use tool_guardrails::{
     ToolInputGuardrailResult, ToolOutputGuardrail, ToolOutputGuardrailData,
     ToolOutputGuardrailResult,
 };
+pub use items::ReasoningItemIdPolicy;
 pub use retry::{
     retry_policies, ModelRetryAdvice, ModelRetryAdviceRequest, ModelRetryBackoffSettings,
     ModelRetryNormalizedError, ModelRetrySettings, ReplaySafety, RetryDecision, RetryPolicy,

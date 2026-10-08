@@ -27,6 +27,7 @@ Legend: **S** = supported · **P** = partial · **N** = not supported · **D** =
 | `tool_use_behavior` callable | P | Sync `ToolUseBehavior::Custom` |
 | `RunConfig.tool_not_found_behavior` | S | B10 |
 | `RunConfig.tool_name_collision_policy` | S | D-032 |
+| `RunConfig.reasoning_item_id_policy` | S | Checked against Python (D-035) |
 | `RunConfig.tool_error_formatter` | S | Rejection and not-found messages (D-009) |
 | `RunConfig.call_model_input_filter` | S | D-M |
 

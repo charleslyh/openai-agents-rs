@@ -16,6 +16,7 @@ use crate::error::{
     OutputGuardrailTripwireTriggered, ToolTimeoutError, UserError,
 };
 use crate::guardrail::{InputGuardrail, InputGuardrailResult, OutputGuardrail};
+use crate::items::{apply_reasoning_item_id_policy, ReasoningItemIdPolicy};
 use crate::handoffs::{
     nest_handoff_history, Handoff, HandoffHistoryMapper, HandoffInputData, HandoffInputFilter,
 };
@@ -324,6 +325,9 @@ pub struct RunConfig {
     /// Session read settings for this run, overlaid on the session's own
     /// (Python: `RunConfig.session_settings`).
     pub session_settings: Option<SessionSettings>,
+    /// Whether reasoning item ids are kept in the input the runner builds
+    /// (Python: `RunConfig.reasoning_item_id_policy`; `None` preserves them).
+    pub reasoning_item_id_policy: Option<ReasoningItemIdPolicy>,
     /// Collision handling for tool and handoff names (Python: `tool_name_collision_policy`).
     pub tool_name_collision_policy: ToolNameCollisionPolicy,
     /// Customize approval-rejection and tool-not-found messages
@@ -385,6 +389,7 @@ impl Default for RunConfig {
             tool_error_formatter: None,
             tool_name_collision_policy: ToolNameCollisionPolicy::default(),
             tool_execution: None,
+            reasoning_item_id_policy: None,
             session_input_callback: None,
             session_settings: None,
         }
@@ -758,6 +763,7 @@ async fn run_loop(
         (start, _) => start,
     };
     let tool_guardrail_log = SharedToolGuardrailLog::default();
+    let reasoning_policy = options.run_config.reasoning_item_id_policy;
     let mut result = crate::tracing::with_run_tracing_disabled(
         run_tracing_disabled,
         run_loop_inner(
@@ -775,6 +781,7 @@ async fn run_loop(
         result.tool_input_guardrail_results = std::mem::take(&mut log.input);
         result.tool_output_guardrail_results = std::mem::take(&mut log.output);
     }
+    result.reasoning_item_id_policy = reasoning_policy;
     // Python saves the turn's input and generated items to the session; a run paused for
     // approval is saved when it is resumed with the same session.
     if let Some(session) = session {
@@ -786,7 +793,7 @@ async fn run_loop(
                     .new_items
                     .iter()
                     .filter(|i| i.is_model_input())
-                    .map(|i| i.raw_item().clone()),
+                    .map(|i| apply_reasoning_item_id_policy(i.raw_item(), reasoning_policy)),
             );
             session.add_items(items).await?;
         }
@@ -976,7 +983,13 @@ async fn run_loop_inner(
             };
             // Python (`finalize_max_turns_handler_output`): validate the handler's output,
             // record it as an assistant message, then run the end hooks and output guardrails.
-            let run_data = build_run_error_data(&input, &generated_items, &raw_responses, &current_agent);
+            let run_data = build_run_error_data(
+                &input,
+                &generated_items,
+                &raw_responses,
+                &current_agent,
+                options.run_config.reasoning_item_id_policy,
+            );
             let handled = handler(RunErrorHandlerInput {
                 error: error.clone(),
                 context: context.clone(),
@@ -1511,7 +1524,10 @@ async fn run_loop_inner(
         if !handoff_calls.is_empty() {
             let turn_start_len = current_input_items.len();
             for item in &response.output {
-                current_input_items.push(item.clone());
+                current_input_items.push(apply_reasoning_item_id_policy(
+                    item,
+                    options.run_config.reasoning_item_id_policy,
+                ));
             }
             for (_tool, output, call_id) in &tool_results {
                 current_input_items.push(ItemHelpers::function_call_output(
@@ -1729,7 +1745,10 @@ async fn run_loop_inner(
         }
 
         for item in &response.output {
-            current_input_items.push(item.clone());
+            current_input_items.push(apply_reasoning_item_id_policy(
+                item,
+                options.run_config.reasoning_item_id_policy,
+            ));
         }
         for (_tool, output, call_id) in &tool_results {
             if !has_tool_output(&generated_items, call_id) {
@@ -1867,11 +1886,12 @@ fn build_run_error_data(
     items: &[RunItem],
     raw_responses: &[ModelResponse],
     agent: &Agent,
+    policy: Option<ReasoningItemIdPolicy>,
 ) -> RunErrorData {
     let output: Vec<Value> = items
         .iter()
         .filter(|i| i.is_model_input())
-        .map(|i| i.raw_item().clone())
+        .map(|i| apply_reasoning_item_id_policy(i.raw_item(), policy))
         .collect();
     let mut history = ItemHelpers::input_to_new_input_list(input);
     history.extend(output.iter().cloned());
@@ -2263,6 +2283,7 @@ fn finished_result(
         output_guardrail_results: Vec::new(),
         tool_input_guardrail_results: Vec::new(),
         tool_output_guardrail_results: Vec::new(),
+        reasoning_item_id_policy: None,
         interrupt_state: None,
     }
 }
@@ -2292,6 +2313,7 @@ fn interrupted_result(
         output_guardrail_results: Vec::new(),
         tool_input_guardrail_results: Vec::new(),
         tool_output_guardrail_results: Vec::new(),
+        reasoning_item_id_policy: None,
         interrupt_state: Some(interrupt_state),
     }
 }

@@ -43,6 +43,8 @@ pub struct RunResult {
     pub tool_input_guardrail_results: Vec<ToolInputGuardrailResult>,
     /// Results of the tool output guardrails that ran (Python: `tool_output_guardrail_results`).
     pub tool_output_guardrail_results: Vec<ToolOutputGuardrailResult>,
+    /// The `RunConfig.reasoning_item_id_policy` this run used, applied by [`Self::to_input_list`].
+    pub reasoning_item_id_policy: Option<crate::items::ReasoningItemIdPolicy>,
     /// Internal snapshot used by [`Self::to_state`] when interrupted.
     pub(crate) interrupt_state: Option<InterruptSnapshot>,
 }
@@ -98,7 +100,10 @@ impl RunResult {
         let mut items = ItemHelpers::input_to_new_input_list(&self.input);
         for item in &self.new_items {
             if item.is_model_input() {
-                items.push(item.raw_item().clone());
+                items.push(crate::items::apply_reasoning_item_id_policy(
+                    item.raw_item(),
+                    self.reasoning_item_id_policy,
+                ));
             }
         }
         items
