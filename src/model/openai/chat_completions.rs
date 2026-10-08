@@ -97,7 +97,7 @@ impl Model for OpenAIChatCompletionsModel {
             self.endpoint.http.post(self.endpoint.url("/chat/completions")),
             request.model_settings,
         )
-        .bearer_auth(self.endpoint.api_key())
+        .headers(self.endpoint.auth_headers())
         .json(&body)
         .send()
         .await
@@ -140,7 +140,7 @@ impl Model for OpenAIChatCompletionsModel {
             self.endpoint.http.post(self.endpoint.url("/chat/completions")),
             request.model_settings,
         )
-        .bearer_auth(self.endpoint.api_key())
+        .headers(self.endpoint.auth_headers())
         .json(&body)
         .send()
         .await

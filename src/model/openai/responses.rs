@@ -58,7 +58,7 @@ impl Model for OpenAIResponsesModel {
             self.endpoint.http.post(self.endpoint.url("/responses")),
             request.model_settings,
         )
-        .bearer_auth(self.endpoint.api_key())
+        .headers(self.endpoint.auth_headers())
         .json(&body)
         .send()
         .await
@@ -90,7 +90,7 @@ impl Model for OpenAIResponsesModel {
             self.endpoint.http.post(self.endpoint.url("/responses")),
             request.model_settings,
         )
-        .bearer_auth(self.endpoint.api_key())
+        .headers(self.endpoint.auth_headers())
         .json(&body)
         .send()
         .await
