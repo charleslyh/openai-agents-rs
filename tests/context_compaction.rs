@@ -183,6 +183,7 @@ async fn model_summarizer_sends_a_transcript_and_returns_the_text() {
     ];
     let notes = summarizer.summarize(Some("old notes"), &items).await.unwrap();
     assert_eq!(notes, "User wants X; decided Y.");
+    assert_eq!(summarizer.usage().requests, 1, "the summary call is counted");
 
     let call = &summary_model.calls()[0];
     assert!(call.system_instructions.as_deref().unwrap().contains("notes"));

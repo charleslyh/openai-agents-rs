@@ -9,7 +9,7 @@
 //! endpoint and is not portable; this is a new, provider-neutral feature. It never splits a tool
 //! call from its output (turns are replaced as a whole).
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use serde_json::Value;
@@ -23,6 +23,7 @@ use crate::error::{AgentsError, ModelError};
 use crate::items::extract_message_text;
 use crate::model::{Model, ModelInput, ModelRequest, ModelTracing};
 use crate::model_settings::ModelSettings;
+use crate::usage::Usage;
 
 /// Estimated tokens of stored history above which compaction starts, when no trigger is set.
 pub const DEFAULT_TRIGGER_TOKENS: usize = 8_000;
@@ -37,6 +38,12 @@ pub trait Summarizer: Send + Sync {
         previous_summary: Option<&str>,
         items: &[Value],
     ) -> Result<String, AgentsError>;
+
+    /// Token usage of every summary written so far. Summaries are model calls the runner does
+    /// not see, so they are not part of `RunResult.usage`; read this to account for them.
+    fn usage(&self) -> Usage {
+        Usage::default()
+    }
 }
 
 const DEFAULT_SUMMARY_INSTRUCTIONS: &str = "You condense a conversation between a user and an AI \
@@ -53,6 +60,7 @@ pub struct ModelSummarizer {
     model_settings: ModelSettings,
     instructions: String,
     max_tool_chars: usize,
+    usage: Arc<Mutex<Usage>>,
 }
 
 impl ModelSummarizer {
@@ -63,6 +71,7 @@ impl ModelSummarizer {
             model_settings: ModelSettings::default(),
             instructions: DEFAULT_SUMMARY_INSTRUCTIONS.to_string(),
             max_tool_chars: 1_500,
+            usage: Arc::default(),
         }
     }
 
@@ -166,6 +175,8 @@ impl Summarizer for ModelSummarizer {
         prompt.push_str("New conversation to fold into the notes:\n");
         prompt.push_str(&render_transcript(items, self.max_tool_chars));
 
+        // Shows up in the trace of the run whose save triggered the compaction.
+        let _span = crate::tracing::custom_span("conversation_summary");
         let response = self
             .model
             .get_response(ModelRequest {
@@ -179,11 +190,16 @@ impl Summarizer for ModelSummarizer {
                 output_schema: None,
             })
             .await?;
+        self.usage.lock().expect("summarizer usage").add(&response.usage);
         let text: String = response.output.iter().filter_map(extract_message_text).collect();
         if text.trim().is_empty() {
             return Err(ModelError::Behavior("the summarizer model returned no text".into()).into());
         }
         Ok(text)
+    }
+
+    fn usage(&self) -> Usage {
+        self.usage.lock().expect("summarizer usage").clone()
     }
 }
 
@@ -267,6 +283,11 @@ impl CompactingSession {
     {
         self.counter = Arc::new(counter);
         self
+    }
+
+    /// Usage of the summaries written so far (see [`Summarizer::usage`]).
+    pub fn summarizer_usage(&self) -> Usage {
+        self.summarizer.usage()
     }
 
     /// Wrap in an `Arc`, ready for `RunOptions::session`.
