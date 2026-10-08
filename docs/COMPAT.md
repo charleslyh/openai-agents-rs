@@ -63,7 +63,7 @@ from the provider, **S** = synthesized by the adapter, **N** = not emitted.
 | `response.completed` | F | S | S |
 | `response.refusal.*` | F | N | N |
 | `response.output_text.annotation.added` | F | N | N |
-| MCP / hosted-tool events | F | N | N |
+| MCP / hosted-tool events | F | N | N (hosted tools not planned, D-006) |
 | `sequence_number` | forwarded as-is | synthesized, 0-based | synthesized, 0-based |
 | `logprobs` payloads | forwarded as-is | `[]` | `[]` |
 | `usage` token details | forwarded as-is | cached / reasoning tokens (D-016) | totals only |
@@ -159,7 +159,7 @@ dictionaries are merged (`model_settings.py:273`).
 | Processor start events | S | `InMemoryProcessor::started_spans` / `started_traces` |
 | `flush_traces` | S | Calls `TracingProcessor::force_flush` |
 | `task_span` / `turn_span` / speech / transcription spans | N | |
-| OpenAI cloud export | N | D-004 |
+| OpenAI cloud export | N | D-004, not planned |
 
 ## Testing
 
