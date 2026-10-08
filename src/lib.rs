@@ -122,7 +122,9 @@ pub use usage::{InputTokensDetails, OutputTokensDetails, RequestUsage, Usage};
 pub use openai_agents_macros::function_tool;
 
 #[cfg(feature = "openai")]
-pub use model::openai::{OpenAIChatCompletionsModel, OpenAIProvider, OpenAIResponsesModel};
+pub use model::openai::{
+    CompatibleProvider, OpenAIChatCompletionsModel, OpenAIProvider, OpenAIResponsesModel,
+};
 
 /// Crate version.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

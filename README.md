@@ -48,10 +48,15 @@ Numbered from core path → extended usage. Live OpenAI-compatible API (not `Scr
 Required env: `OPENAI_API_KEY`, `OPENAI_MODEL`.  
 Optional: `OPENAI_BASE_URL`, `OPENAI_API` (`chat_completions` | `responses`).
 
-The crate default is the **Responses** API, matching `set_default_openai_api()` in Python. Both
-APIs stream standard Responses wire events such as `response.output_text.delta` (D-011); the
-example harness below defaults `OPENAI_API` to `chat_completions` because most OpenAI-compatible
-gateways implement Chat Completions SSE first. Set `OPENAI_API=responses` to use the Responses API.
+Which API a model uses (D-I): `OpenAIProvider::api(..)` / `CompatibleProvider::api(..)` first, then
+`set_default_openai_api()`, then the server: a base URL other than `api.openai.com` gets **Chat
+Completions** (what nearly every compatible server implements), OpenAI itself gets **Responses**.
+Both APIs stream standard Responses wire events such as `response.output_text.delta` (D-011). The
+example harness reads `OPENAI_API` (`chat_completions` | `responses`) to override the choice.
+
+To talk to a server that needs no key, or to route several servers by model prefix, use
+`CompatibleProvider::new(base_url)` (key optional, Chat Completions by default) with
+`MultiProvider`: `"local/qwen2.5"`, `"gateway/my-model"`.
 
 | # | Example | What it shows |
 |---|---------|----------------|

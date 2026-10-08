@@ -45,7 +45,8 @@ Legend: **X** = out of scope (OpenAI-hosted) · **S** = supported · **P** = par
 | Third-party servers (base URL + key) | S | `stream_options` opt-in, DeepSeek reasoning replay, generated tool call ids, `finish_reason` handling (D-040) |
 | Default API = Responses | S | `set_default_openai_api` |
 | `ModelProvider` / `MultiProvider` | S | `prefix/model` routing, default prefix `openai` |
-| `OpenAIProvider` | S | Reads `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL`; caches per name |
+| `OpenAIProvider` | S | Reads `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL` (the key is optional with a base URL); caches per name; API per provider, global or by host (D-I) |
+| `CompatibleProvider` | S | Provider-neutral entry: base URL, optional key, Chat Completions by default (D-013) |
 | Model retry (`ModelSettings.retry`, `retry_policies`) | S | Checked against Python scenario by scenario; typed `ModelError::Status` / `Connection` (D-034) |
 | Per-attempt `ModelSettings.timeout` | S | `ModelError::Timeout`; retryable (D-034) |
 | Litellm / other providers | N | Register a custom `ModelProvider` |

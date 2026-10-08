@@ -77,20 +77,23 @@ pub enum DefaultOpenAiApi {
     ChatCompletions,
 }
 
-static DEFAULT_OPENAI_API: OnceLock<Mutex<DefaultOpenAiApi>> = OnceLock::new();
-
-fn default_openai_api_slot() -> &'static Mutex<DefaultOpenAiApi> {
-    DEFAULT_OPENAI_API.get_or_init(|| Mutex::new(DefaultOpenAiApi::Responses))
-}
+static DEFAULT_OPENAI_API: Mutex<Option<DefaultOpenAiApi>> = Mutex::new(None);
 
 /// Set the default OpenAI API (Python: `set_default_openai_api`).
+///
+/// An explicit choice wins over the host-based default of [`OpenAIProvider`] (see D-I).
 pub fn set_default_openai_api(api: DefaultOpenAiApi) {
-    *default_openai_api_slot().lock().expect("api lock") = api;
+    *DEFAULT_OPENAI_API.lock().expect("api lock") = Some(api);
 }
 
-/// Get the default OpenAI API.
+/// Get the default OpenAI API: the explicit choice, else Responses.
 pub fn get_default_openai_api() -> DefaultOpenAiApi {
-    *default_openai_api_slot().lock().expect("api lock")
+    explicit_default_openai_api().unwrap_or_default()
+}
+
+/// The API chosen with [`set_default_openai_api`], if any.
+pub(crate) fn explicit_default_openai_api() -> Option<DefaultOpenAiApi> {
+    *DEFAULT_OPENAI_API.lock().expect("api lock")
 }
 
 /// Default for `trace_include_sensitive_data`, mirroring Python's

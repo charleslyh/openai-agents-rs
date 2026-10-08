@@ -27,7 +27,7 @@ pub struct OpenAIProvider {
     api_key: String,
     base_url: Option<String>,
     default_model: Option<String>,
-    force_chat_completions: bool,
+    api: Option<crate::run::DefaultOpenAiApi>,
     cache: Arc<Mutex<HashMap<String, Arc<dyn Model>>>>,
 }
 
@@ -37,7 +37,7 @@ impl std::fmt::Debug for OpenAIProvider {
         f.debug_struct("OpenAIProvider")
             .field("base_url", &self.base_url)
             .field("default_model", &self.default_model)
-            .field("force_chat_completions", &self.force_chat_completions)
+            .field("api", &self.api)
             .finish()
     }
 }
@@ -53,32 +53,116 @@ impl OpenAIProvider {
             api_key: api_key.into(),
             base_url: base_url.map(str::to_string),
             default_model: default_model.map(str::to_string),
-            force_chat_completions: false,
+            api: None,
             cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
     /// Build from `OPENAI_API_KEY`, `OPENAI_BASE_URL` and `OPENAI_MODEL`.
     ///
+    /// The key may be missing when `OPENAI_BASE_URL` points at another server: many local and
+    /// gateway endpoints need no key, and no `Authorization` header is sent for an empty one.
     /// Secrets are only read from the environment or passed explicitly; they are never logged.
     pub fn from_env() -> Result<Self, UserError> {
-        let api_key = std::env::var("OPENAI_API_KEY").map_err(|_| {
-            UserError::new("OPENAI_API_KEY is not set; pass an API key to OpenAIProvider::new")
-        })?;
-        if api_key.trim().is_empty() {
-            return Err(UserError::new("OPENAI_API_KEY is empty"));
+        let base_url = std::env::var("OPENAI_BASE_URL").ok().filter(|v| !v.trim().is_empty());
+        let api_key = std::env::var("OPENAI_API_KEY").unwrap_or_default();
+        if api_key.trim().is_empty() && base_url.is_none() {
+            return Err(UserError::new(
+                "OPENAI_API_KEY is not set; set it, set OPENAI_BASE_URL for a server that needs \
+                 no key, or build a provider with OpenAIProvider::new / CompatibleProvider",
+            ));
         }
         Ok(Self::new(
-            api_key,
-            std::env::var("OPENAI_BASE_URL").ok().as_deref(),
+            api_key.trim(),
+            base_url.as_deref(),
             std::env::var("OPENAI_MODEL").ok().as_deref(),
         ))
     }
 
     /// Always resolve to Chat Completions models regardless of the global default.
-    pub fn always_chat_completions(mut self) -> Self {
-        self.force_chat_completions = true;
+    pub fn always_chat_completions(self) -> Self {
+        self.api(crate::run::DefaultOpenAiApi::ChatCompletions)
+    }
+
+    /// Use this API for every model of the provider, whatever the global default says.
+    pub fn api(mut self, api: crate::run::DefaultOpenAiApi) -> Self {
+        self.api = Some(api);
         self
+    }
+
+    /// The API a model gets (D-I): the provider's own choice, else `set_default_openai_api`,
+    /// else Chat Completions for a server other than OpenAI (the protocol every compatible
+    /// server speaks; a wrong guess there fails on the first request), else Responses.
+    fn resolve_api(&self) -> crate::run::DefaultOpenAiApi {
+        use crate::run::DefaultOpenAiApi::{ChatCompletions, Responses};
+        if let Some(api) = self.api.or_else(crate::run::explicit_default_openai_api) {
+            return api;
+        }
+        match self.base_url.as_deref() {
+            Some(base) if !base.to_lowercase().contains("://api.openai.com") => ChatCompletions,
+            _ => Responses,
+        }
+    }
+}
+
+/// A provider for any server that speaks the OpenAI Chat Completions or Responses protocol:
+/// third-party hosts, gateways and local servers (vLLM, Ollama, llama.cpp, LiteLLM, ...).
+///
+/// Unlike [`OpenAIProvider`] it needs a base URL, takes the API key as optional, and defaults to
+/// Chat Completions, which is what nearly every compatible server implements.
+///
+/// ```no_run
+/// use std::sync::Arc;
+/// use openai_agents::{CompatibleProvider, DefaultOpenAiApi, MultiProvider};
+///
+/// let router = MultiProvider::new()
+///     .register("local", Arc::new(CompatibleProvider::new("http://localhost:8000/v1")))
+///     .register(
+///         "gateway",
+///         Arc::new(
+///             CompatibleProvider::new("https://gateway.example.com/v1")
+///                 .api_key("secret")
+///                 .api(DefaultOpenAiApi::Responses),
+///         ),
+///     );
+/// // Agents then name models as "local/qwen2.5-7b" or "gateway/my-model".
+/// ```
+#[derive(Clone, Debug)]
+pub struct CompatibleProvider {
+    inner: OpenAIProvider,
+}
+
+impl CompatibleProvider {
+    /// A provider for the server at `base_url` (for example `http://localhost:8000/v1`).
+    pub fn new(base_url: impl AsRef<str>) -> Self {
+        Self {
+            inner: OpenAIProvider::new("", Some(base_url.as_ref()), None)
+                .api(crate::run::DefaultOpenAiApi::ChatCompletions),
+        }
+    }
+
+    /// Send `Authorization: Bearer <key>`; without a key no such header is sent.
+    pub fn api_key(mut self, key: impl Into<String>) -> Self {
+        self.inner.api_key = key.into();
+        self
+    }
+
+    /// The protocol to speak (default: Chat Completions).
+    pub fn api(mut self, api: crate::run::DefaultOpenAiApi) -> Self {
+        self.inner.api = Some(api);
+        self
+    }
+
+    /// The model used when a name is not given.
+    pub fn default_model(mut self, name: impl Into<String>) -> Self {
+        self.inner.default_model = Some(name.into());
+        self
+    }
+}
+
+impl ModelProvider for CompatibleProvider {
+    fn get_model(&self, model_name: Option<&str>) -> Result<Arc<dyn Model>, UserError> {
+        self.inner.get_model(model_name)
     }
 }
 
@@ -100,11 +184,7 @@ impl ModelProvider for OpenAIProvider {
             }
         }
 
-        let use_responses = !self.force_chat_completions
-            && matches!(
-                crate::run::get_default_openai_api(),
-                crate::run::DefaultOpenAiApi::Responses
-            );
+        let use_responses = matches!(self.resolve_api(), crate::run::DefaultOpenAiApi::Responses);
         let model: Arc<dyn Model> = if use_responses {
             Arc::new(OpenAIResponsesModel::new(
                 name.clone(),
@@ -174,6 +254,20 @@ impl OpenAiEndpoint {
     /// API key string for Authorization header.
     pub fn api_key(&self) -> &str {
         &self.api_key
+    }
+
+    /// `Authorization: Bearer <key>`, or no header at all for an empty key (servers that need none).
+    pub(crate) fn auth_headers(&self) -> reqwest::header::HeaderMap {
+        let mut headers = reqwest::header::HeaderMap::new();
+        if !self.api_key.is_empty() {
+            if let Ok(mut value) =
+                reqwest::header::HeaderValue::from_str(&format!("Bearer {}", self.api_key))
+            {
+                value.set_sensitive(true);
+                headers.insert(reqwest::header::AUTHORIZATION, value);
+            }
+        }
+        headers
     }
 }
 
@@ -466,5 +560,38 @@ impl SseReader {
             );
         }
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::run::DefaultOpenAiApi::{ChatCompletions, Responses};
+
+    /// D-I: OpenAI itself (or no base URL) keeps Responses, any other host gets Chat
+    /// Completions, and an explicit provider choice always wins. (These cases never touch the
+    /// process-global `set_default_openai_api`.)
+    #[test]
+    fn api_defaults_follow_the_host() {
+        assert_eq!(OpenAIProvider::new("k", None, None).resolve_api(), Responses);
+        assert_eq!(
+            OpenAIProvider::new("k", Some("https://api.openai.com/v1"), None).resolve_api(),
+            Responses
+        );
+        assert_eq!(
+            OpenAIProvider::new("k", Some("https://API.OpenAI.com/v1"), None).resolve_api(),
+            Responses
+        );
+        assert_eq!(
+            OpenAIProvider::new("k", Some("http://localhost:8000/v1"), None).resolve_api(),
+            ChatCompletions
+        );
+        assert_eq!(
+            OpenAIProvider::new("k", Some("http://localhost:8000/v1"), None)
+                .api(Responses)
+                .resolve_api(),
+            Responses
+        );
+        assert_eq!(OpenAIProvider::new("k", None, None).always_chat_completions().resolve_api(), ChatCompletions);
     }
 }
