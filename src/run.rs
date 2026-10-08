@@ -141,6 +141,81 @@ const TOOL_NOT_FOUND_PLACEHOLDER: &str = "__tool_not_found__";
 /// Output sent for every handoff after the first in one turn (Python: same literal).
 const MULTIPLE_HANDOFFS_MESSAGE: &str = "Multiple handoffs detected, ignoring this one.";
 
+/// Default text that replaces a tool output withheld by an output guardrail
+/// (Python: `OUTPUT_GUARDRAIL_BLOCKED_TOOL_OUTPUT`).
+pub const OUTPUT_GUARDRAIL_BLOCKED_TOOL_OUTPUT: &str = "Output withheld by an output guardrail.";
+
+/// Data passed to an output guardrail blocked-message formatter
+/// (Python: `OutputGuardrailBlockedMessageArgs`).
+#[derive(Debug, Clone)]
+pub struct OutputGuardrailBlockedMessageArgs {
+    /// The SDK default placeholder.
+    pub default_message: String,
+    /// Name of the output guardrail that tripped.
+    pub guardrail_name: String,
+    /// The agent whose final output was rejected.
+    pub agent: Arc<Agent>,
+    /// The run context.
+    pub run_context: RunContextWrapper,
+}
+
+/// Placeholder for a tool output rejected by an output guardrail
+/// (Python: `RunConfig.output_guardrail_blocked_message`).
+#[derive(Clone)]
+pub enum OutputGuardrailBlockedMessage {
+    /// A fixed, non-empty message.
+    Text(String),
+    /// A synchronous formatter; `None`, an empty string or a panic falls back to the default.
+    Formatter(Arc<dyn Fn(OutputGuardrailBlockedMessageArgs) -> Option<String> + Send + Sync>),
+}
+
+impl std::fmt::Debug for OutputGuardrailBlockedMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Text(text) => f.debug_tuple("Text").field(text).finish(),
+            Self::Formatter(_) => f.write_str("Formatter(..)"),
+        }
+    }
+}
+
+impl OutputGuardrailBlockedMessage {
+    /// Build a formatter variant from a closure.
+    pub fn formatter<F>(f: F) -> Self
+    where
+        F: Fn(OutputGuardrailBlockedMessageArgs) -> Option<String> + Send + Sync + 'static,
+    {
+        Self::Formatter(Arc::new(f))
+    }
+}
+
+/// Resolve the placeholder for a tripped tool-output guardrail
+/// (Python: `_resolve_output_guardrail_blocked_message`). Never fails: any problem with the
+/// configured message yields the default.
+fn resolve_blocked_message(
+    run_config: &RunConfig,
+    guardrail_name: &str,
+    agent: &Agent,
+    context: &RunContextWrapper,
+) -> String {
+    let default = OUTPUT_GUARDRAIL_BLOCKED_TOOL_OUTPUT.to_string();
+    let resolved = match &run_config.output_guardrail_blocked_message {
+        None => return default,
+        Some(OutputGuardrailBlockedMessage::Text(text)) => Some(text.clone()),
+        Some(OutputGuardrailBlockedMessage::Formatter(format)) => {
+            let args = OutputGuardrailBlockedMessageArgs {
+                default_message: default.clone(),
+                guardrail_name: guardrail_name.to_string(),
+                agent: Arc::new(agent.clone()),
+                run_context: context.clone(),
+            };
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| format(args)))
+                .ok()
+                .flatten()
+        }
+    };
+    resolved.filter(|text| !text.is_empty()).unwrap_or(default)
+}
+
 /// Snapshot of the run handed to a run error handler (Python: `RunErrorData`).
 #[derive(Debug, Clone)]
 pub struct RunErrorData {
@@ -325,6 +400,9 @@ pub struct RunConfig {
     /// Session read settings for this run, overlaid on the session's own
     /// (Python: `RunConfig.session_settings`).
     pub session_settings: Option<SessionSettings>,
+    /// Placeholder shown instead of a tool output that an output guardrail rejected
+    /// (Python: `RunConfig.output_guardrail_blocked_message`).
+    pub output_guardrail_blocked_message: Option<OutputGuardrailBlockedMessage>,
     /// Whether reasoning item ids are kept in the input the runner builds
     /// (Python: `RunConfig.reasoning_item_id_policy`; `None` preserves them).
     pub reasoning_item_id_policy: Option<ReasoningItemIdPolicy>,
@@ -390,6 +468,7 @@ impl Default for RunConfig {
             tool_name_collision_policy: ToolNameCollisionPolicy::default(),
             tool_execution: None,
             reasoning_item_id_policy: None,
+            output_guardrail_blocked_message: None,
             session_input_callback: None,
             session_settings: None,
         }
@@ -816,6 +895,12 @@ async fn run_loop_inner(
         .run_config
         .tool_execution
         .and_then(|c| c.max_function_tool_concurrency);
+    if matches!(
+        &options.run_config.output_guardrail_blocked_message,
+        Some(OutputGuardrailBlockedMessage::Text(text)) if text.is_empty()
+    ) {
+        return Err(UserError::new("output_guardrail_blocked_message must be non-empty").into());
+    }
     if max_tool_concurrency == Some(0) {
         return Err(UserError::new(
             "tool_execution.max_function_tool_concurrency must be at least 1",
@@ -1021,6 +1106,7 @@ async fn run_loop_inner(
                 options.hooks.as_ref(),
                 &options.run_config.output_guardrails,
                 input_guardrail_results,
+                None,
             )
             .await;
         }
@@ -1347,6 +1433,7 @@ async fn run_loop_inner(
                 options.hooks.as_ref(),
                 &options.run_config.output_guardrails,
                 input_guardrail_results,
+                None,
             )
             .await;
         }
@@ -1689,6 +1776,7 @@ async fn run_loop_inner(
                         options.hooks.as_ref(),
                         &options.run_config.output_guardrails,
                         input_guardrail_results,
+                        Some(&options.run_config),
                     )
                     .await;
                 }
@@ -1708,6 +1796,7 @@ async fn run_loop_inner(
                             options.hooks.as_ref(),
                             &options.run_config.output_guardrails,
                             input_guardrail_results,
+                            Some(&options.run_config),
                         )
                         .await;
                     }
@@ -1737,6 +1826,7 @@ async fn run_loop_inner(
                         options.hooks.as_ref(),
                         &options.run_config.output_guardrails,
                         input_guardrail_results,
+                        Some(&options.run_config),
                     )
                     .await;
                 }
@@ -1788,6 +1878,7 @@ async fn finalize_run(
     hooks: Option<&Arc<dyn RunHooks>>,
     extra_output_guardrails: &[OutputGuardrail],
     input_guardrail_results: Vec<InputGuardrailResult>,
+    tool_origin: Option<&RunConfig>,
 ) -> Result<RunResult, AgentsError> {
     if let Some(h) = hooks {
         h.on_agent_end(context.clone(), agent, &final_output).await;
@@ -1817,7 +1908,18 @@ async fn finalize_run(
             .find(|r| r.output.tripwire_triggered)
             .cloned();
         output_guardrail_results = results;
-        if let Some(result) = tripped {
+        if let Some(mut result) = tripped {
+            // Python (`blocked_output.py`): a final output that came from a tool is withheld, so
+            // the error carries a data-free placeholder instead of the tool's output.
+            if let Some(run_config) = tool_origin {
+                result.agent_output = Value::String(resolve_blocked_message(
+                    run_config,
+                    &result.guardrail_name,
+                    &agent,
+                    context,
+                ));
+                result.output.output_info = Value::Null;
+            }
             return Err(OutputGuardrailTripwireTriggered { result }.into());
         }
     }

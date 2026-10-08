@@ -1050,3 +1050,74 @@ async fn reasoning_item_id_policy_omit_strips_reasoning_ids() {
     assert_eq!(reasoning_of(&input)["id"], "rs_1");
     assert_eq!(reasoning_of(&json!(list))["id"], "rs_1");
 }
+
+/// D-026: an output guardrail that rejects a *tool-derived* final output withholds it; the error
+/// carries a placeholder (default, fixed text or formatter) instead. Model text is untouched.
+#[tokio::test]
+async fn output_guardrail_blocked_message_replaces_tool_output() {
+    use openai_agents::{
+        GuardrailFunctionOutput, OutputGuardrail, OutputGuardrailBlockedMessage, RunConfig,
+        ToolUseBehavior, OUTPUT_GUARDRAIL_BLOCKED_TOOL_OUTPUT,
+    };
+    let trip = || {
+        OutputGuardrail::new("g", |_ctx, _agent, _out| async {
+            GuardrailFunctionOutput::trip(json!("details"))
+        })
+    };
+    let tripped = |config: RunConfig, from_tool: bool| async move {
+        let step = if from_tool {
+            ModelStep::from(ItemHelpers::function_tool_call("secret", "{}", "c1"))
+        } else {
+            ModelStep::from(ItemHelpers::text_message("PLAIN-MODEL-TEXT"))
+        };
+        let agent = Agent::new("a")
+            .model(Arc::new(ScriptedModel::new([step])))
+            .tools(vec![FunctionTool::constant("secret", "s", "TOP-SECRET-DATA")])
+            .tool_use_behavior(ToolUseBehavior::StopOnFirstTool)
+            .output_guardrails(vec![trip()]);
+        let mut options = RunOptions::default();
+        options.run_config = config;
+        match Runner::run(&agent, "go", options).await {
+            Err(AgentsError::OutputGuardrailTripwire(t)) => t.result,
+            other => panic!("expected a tripwire, got {other:?}"),
+        }
+    };
+    let with = |message| RunConfig { output_guardrail_blocked_message: message, ..RunConfig::default() };
+
+    let r = tripped(RunConfig::default(), true).await;
+    assert_eq!(r.agent_output, json!(OUTPUT_GUARDRAIL_BLOCKED_TOOL_OUTPUT));
+    assert_eq!(r.output.output_info, Value::Null, "the guardrail's own details are dropped too");
+
+    let r = tripped(with(Some(OutputGuardrailBlockedMessage::Text("[blocked]".into()))), true).await;
+    assert_eq!(r.agent_output, json!("[blocked]"));
+
+    let r = tripped(
+        with(Some(OutputGuardrailBlockedMessage::formatter(|args| {
+            Some(format!("{} by {} on {}", args.default_message.len(), args.guardrail_name, args.agent.name))
+        }))),
+        true,
+    )
+    .await;
+    assert_eq!(r.agent_output, json!("39 by g on a"));
+
+    for bad in [
+        OutputGuardrailBlockedMessage::formatter(|_| None),
+        OutputGuardrailBlockedMessage::formatter(|_| Some(String::new())),
+        OutputGuardrailBlockedMessage::formatter(|_| panic!("formatter bug")),
+    ] {
+        let r = tripped(with(Some(bad)), true).await;
+        assert_eq!(r.agent_output, json!(OUTPUT_GUARDRAIL_BLOCKED_TOOL_OUTPUT));
+    }
+
+    let r = tripped(with(Some(OutputGuardrailBlockedMessage::Text("[blocked]".into()))), false).await;
+    assert_eq!(r.agent_output, json!("PLAIN-MODEL-TEXT"), "model text is not withheld");
+    assert_eq!(r.output.output_info, json!("details"));
+
+    let mut options = RunOptions::default();
+    options.run_config = with(Some(OutputGuardrailBlockedMessage::Text(String::new())));
+    let agent = Agent::new("a").model(Arc::new(ScriptedModel::new([])));
+    assert!(matches!(
+        Runner::run(&agent, "go", options).await.unwrap_err(),
+        AgentsError::User(_)
+    ));
+}
