@@ -75,6 +75,12 @@ struct ToolSpec {
     /// When set the tool fails with this message (Python: the function raises).
     #[serde(default)]
     error: Option<String>,
+    /// Make the tool sleep this long before returning (an async Python tool).
+    #[serde(default)]
+    sleep_seconds: Option<f64>,
+    /// Per-invocation timeout in seconds.
+    #[serde(default)]
+    timeout_seconds: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -112,6 +118,9 @@ struct Golden {
     tool_output_count: Option<usize>,
     #[serde(default)]
     error: Option<String>,
+    /// The text of every tool output, in order.
+    #[serde(default)]
+    tool_outputs: Option<Vec<String>>,
     /// First model input of every handoff target that ran, by agent name.
     #[serde(default)]
     handoff_inputs: Option<std::collections::BTreeMap<String, Value>>,
@@ -163,6 +172,29 @@ fn build_tools(specs: Vec<ToolSpec>) -> Vec<FunctionTool> {
     specs
         .into_iter()
         .map(|t| {
+            if let Some(seconds) = t.sleep_seconds {
+                let value = t.return_value.clone().unwrap_or_else(|| "ok".into());
+                let tool = FunctionTool::new(
+                    t.name,
+                    t.description.unwrap_or_else(|| "tool".into()),
+                    serde_json::json!({
+                        "type": "object",
+                        "properties": {},
+                        "additionalProperties": false
+                    }),
+                    move |_ctx, _args| {
+                        let value = value.clone();
+                        async move {
+                            tokio::time::sleep(std::time::Duration::from_secs_f64(seconds)).await;
+                            Ok::<Value, AgentsError>(Value::String(value))
+                        }
+                    },
+                );
+                return match t.timeout_seconds {
+                    Some(timeout) => tool.with_timeout(timeout),
+                    None => tool,
+                };
+            }
             if let Some(message) = t.error {
                 return FunctionTool::new(
                     t.name,
@@ -299,6 +331,19 @@ async fn parity_scenarios_match_expect_and_golden() {
             }
             if let Some(count) = golden.tool_output_count {
                 assert_eq!(tool_output_count(&result), count, "golden tool outputs {name}");
+            }
+            if let Some(expected) = &golden.tool_outputs {
+                let actual: Vec<String> = result
+                    .new_items
+                    .iter()
+                    .filter_map(|i| match i {
+                        RunItem::ToolCallOutput(o) => {
+                            o.raw_item["output"].as_str().map(str::to_string)
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                assert_eq!(&actual, expected, "golden tool outputs text {name}");
             }
             if let Some(expected) = &golden.handoff_inputs {
                 for (target, input) in expected {

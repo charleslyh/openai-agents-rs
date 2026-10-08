@@ -43,6 +43,8 @@ def _build_tools(tool_specs: list[dict]):
         name = spec["name"]
         return_value = spec.get("return_value", "ok")
         error = spec.get("error")
+        sleep_seconds = spec.get("sleep_seconds")
+        timeout_seconds = spec.get("timeout_seconds")
 
         def _make(rv: str, err: str | None):
             def _fn() -> str:
@@ -52,11 +54,27 @@ def _build_tools(tool_specs: list[dict]):
 
             return _fn
 
+        def _make_async(rv: str, seconds: float):
+            async def _fn() -> str:
+                await asyncio.sleep(seconds)
+                return rv
+
+            return _fn
+
+        kwargs = {}
+        if timeout_seconds is not None:
+            kwargs["timeout"] = timeout_seconds
+        handler = (
+            _make_async(return_value, sleep_seconds)
+            if sleep_seconds is not None
+            else _make(return_value, error)
+        )
         tools.append(
             function_tool(
-                _make(return_value, error),
+                handler,
                 name_override=name,
                 description_override=spec.get("description", name),
+                **kwargs,
             )
         )
     return tools
@@ -138,6 +156,10 @@ async def run_scenario(path: Path) -> dict:
             1 for item in result.new_items if item.type == "tool_call_output_item"
         ),
     }
+    # The text the model reads for every tool call, in order.
+    golden["tool_outputs"] = [
+        str(item.output) for item in result.new_items if item.type == "tool_call_output_item"
+    ]
     # What each handoff target's model received on its first call: the observable contract of
     # handoff input filtering and history nesting.
     handoff_inputs = {

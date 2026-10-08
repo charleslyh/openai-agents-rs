@@ -3,14 +3,16 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Duration;
 
+use futures::StreamExt;
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 
 use crate::agent::{Agent, AsToolConfig, FunctionToolResult, ToolUseBehavior};
 use crate::error::{
     AgentsError, InputGuardrailTripwireTriggered, MaxTurnsExceeded, ModelError,
-    OutputGuardrailTripwireTriggered, UserError,
+    OutputGuardrailTripwireTriggered, ToolTimeoutError, UserError,
 };
 use crate::guardrail::{InputGuardrail, InputGuardrailResult, OutputGuardrail};
 use crate::handoffs::{
@@ -31,7 +33,10 @@ use crate::result::{InterruptSnapshot, RunResult, RunResultStreaming, StreamingS
 use crate::run_context::{ContextValue, RunContextWrapper};
 use crate::run_state::{ApprovalDecision, ApprovalStore, RunState};
 use crate::stream_events::{RunItemStreamName, StreamEvent};
-use crate::tool::{FunctionTool, ToolContext, ToolResult, DEFAULT_APPROVAL_REJECTION_MESSAGE};
+use crate::tool::{
+    default_tool_timeout_error_message, FunctionTool, ToolContext, ToolResult, ToolTimeoutBehavior,
+    DEFAULT_APPROVAL_REJECTION_MESSAGE,
+};
 use crate::tracing::{agent_span, function_span, generation_span, handoff_span};
 use crate::model::wire_events::FAKE_RESPONSES_ID;
 use crate::usage::Usage;
@@ -206,6 +211,14 @@ impl RunErrorHandlers {
     }
 }
 
+/// SDK-side execution settings for local tool calls (Python: `ToolExecutionConfig`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ToolExecutionConfig {
+    /// At most this many function tools of one turn run at once; `None` starts them all
+    /// (Python: `max_function_tool_concurrency`). Must be at least 1.
+    pub max_function_tool_concurrency: Option<usize>,
+}
+
 /// What to do when a function tool and a handoff (or two tools) share a name
 /// (Python: `RunConfig.tool_name_collision_policy`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -297,6 +310,8 @@ pub struct RunConfig {
     pub output_guardrails: Vec<OutputGuardrail>,
     /// Behavior when the model calls an unknown tool (Python: `RunConfig.tool_not_found_behavior`).
     pub tool_not_found_behavior: ToolNotFoundBehavior,
+    /// Execution settings for local function tools (Python: `RunConfig.tool_execution`).
+    pub tool_execution: Option<ToolExecutionConfig>,
     /// Collision handling for tool and handoff names (Python: `tool_name_collision_policy`).
     pub tool_name_collision_policy: ToolNameCollisionPolicy,
     /// Customize approval-rejection and tool-not-found messages
@@ -357,6 +372,7 @@ impl Default for RunConfig {
             handoff_history_mapper: None,
             tool_error_formatter: None,
             tool_name_collision_policy: ToolNameCollisionPolicy::default(),
+            tool_execution: None,
         }
     }
 }
@@ -644,6 +660,21 @@ fn resolve_tool_name_collisions(
     Ok((tools, handoffs))
 }
 
+/// Python (`_validate_function_tool_timeout_config`): finite and greater than zero.
+fn validate_tool_timeout(tool: &FunctionTool) -> Result<(), AgentsError> {
+    match tool.timeout_seconds {
+        Some(seconds) if !seconds.is_finite() => Err(UserError::new(
+            "FunctionTool timeout_seconds must be a finite number.",
+        )
+        .into()),
+        Some(seconds) if seconds <= 0.0 => Err(UserError::new(
+            "FunctionTool timeout_seconds must be greater than 0.",
+        )
+        .into()),
+        _ => Ok(()),
+    }
+}
+
 fn tools_for_agent(mut tools: Vec<FunctionTool>, handoffs: &[Handoff]) -> Vec<FunctionTool> {
     for h in handoffs {
         tools.push(handoff_as_tool(h));
@@ -710,6 +741,18 @@ async fn run_loop_inner(
     snapshot: Option<Arc<Mutex<StreamingSnapshot>>>,
 ) -> Result<RunResult, AgentsError> {
     let max_turns = options.max_turns.unwrap_or(DEFAULT_MAX_TURNS);
+    // Python raises `ValueError` when the config is built; Rust has no constructor to hook, so
+    // the run reports it as a `UserError` before doing any work.
+    let max_tool_concurrency = options
+        .run_config
+        .tool_execution
+        .and_then(|c| c.max_function_tool_concurrency);
+    if max_tool_concurrency == Some(0) {
+        return Err(UserError::new(
+            "tool_execution.max_function_tool_concurrency must be at least 1",
+        )
+        .into());
+    }
     let workflow = options
         .run_config
         .workflow_name
@@ -927,6 +970,9 @@ async fn run_loop_inner(
             current_agent.enabled_handoffs(&context).await,
             options.run_config.tool_name_collision_policy,
         )?;
+        for tool in &enabled_tools {
+            validate_tool_timeout(tool)?;
+        }
         let tools = tools_for_agent(enabled_tools, &enabled_handoffs);
 
         let _agent_span = agent_span(&current_agent.name);
@@ -1234,6 +1280,7 @@ async fn run_loop_inner(
                     &current_agent,
                     &context,
                     options.hooks.as_ref(),
+                    max_tool_concurrency,
                 )
                 .await?;
                 for (_tool, output, call_id) in &auto_results {
@@ -1309,6 +1356,7 @@ async fn run_loop_inner(
             &current_agent,
             &context,
             options.hooks.as_ref(),
+            max_tool_concurrency,
         )
         .await?;
         if !nested_interruptions.is_empty() {
@@ -1877,6 +1925,7 @@ async fn execute_planned_tools(
     agent: &Agent,
     context: &RunContextWrapper,
     hooks: Option<&Arc<dyn RunHooks>>,
+    max_concurrency: Option<usize>,
 ) -> Result<
     (
         Vec<(FunctionTool, Value, String)>,
@@ -1906,7 +1955,7 @@ async fn execute_planned_tools(
     let resume_map = nested_resume.clone();
     let hooks = hooks.cloned();
     let agent_hooks = agent.hooks.clone();
-    let invoke_futs = plan.to_invoke.iter().map(|(tool, arguments, call_id)| {
+    let invoke_futs: Vec<_> = plan.to_invoke.iter().map(|(tool, arguments, call_id)| {
         let tool = tool.clone();
         let arguments = arguments.clone();
         let call_id = call_id.clone();
@@ -1932,12 +1981,36 @@ async fn execute_planned_tools(
             }
             // Python (`failure_error_function`): a failing tool is reported to the model so it
             // can retry, instead of aborting the run.
-            let result = match NESTED_RESUME_STATES
-                .scope(RefCell::new(resume_map), async {
-                    (tool.on_invoke_tool)(ctx, arguments).await
-                })
-                .await
-            {
+            let call = NESTED_RESUME_STATES.scope(RefCell::new(resume_map), async {
+                (tool.on_invoke_tool)(ctx, arguments).await
+            });
+            // Python applies the timeout outside the failure handler, so `RaiseException`
+            // fails the run instead of being reported to the model.
+            let outcome = match tool.timeout_seconds {
+                None => call.await,
+                Some(seconds) => {
+                    match tokio::time::timeout(Duration::from_secs_f64(seconds), call).await {
+                        Ok(outcome) => outcome,
+                        Err(_) => {
+                            let timeout = ToolTimeoutError {
+                                tool_name: tool.name.clone(),
+                                timeout_seconds: seconds,
+                            };
+                            if tool.timeout_behavior == ToolTimeoutBehavior::RaiseException {
+                                return Err(timeout.into());
+                            }
+                            let message = match &tool.timeout_error_function {
+                                Some(format) => format(&context, &AgentsError::from(timeout)),
+                                None => default_tool_timeout_error_message(&tool.name, seconds),
+                            };
+                            Ok(ToolResult::output(Value::String(message)))
+                        }
+                    }
+                }
+            };
+            // Python (`failure_error_function`): a failing tool is reported to the model so it
+            // can retry, instead of aborting the run.
+            let result = match outcome {
                 Ok(result) => result,
                 Err(error) => {
                     let message = tool.failure_error_function.handle(&context, error)?;
@@ -1954,9 +2027,31 @@ async fn execute_planned_tools(
             }
             Ok::<_, AgentsError>((tool, call_id, result))
         }
-    });
-    let invoked = futures::future::try_join_all(invoke_futs).await?;
-    for (tool, call_id, result) in invoked {
+    })
+    .collect();
+    // Python starts every call of the turn unless `max_function_tool_concurrency` is set; a slot
+    // frees as soon as a call finishes, and the first failure cancels the rest.
+    // The window is driven by hand over concrete futures: boxing them would need a `Send` proof
+    // that the recursive agent-as-tool call chain makes impossible to infer.
+    let limit = max_concurrency.unwrap_or(usize::MAX).max(1);
+    let mut waiting = invoke_futs.into_iter().enumerate();
+    let mut running = futures::stream::FuturesUnordered::new();
+    let mut invoked = Vec::new();
+    loop {
+        while running.len() < limit {
+            match waiting.next() {
+                Some((index, fut)) => running.push(async move { (index, fut.await) }),
+                None => break,
+            }
+        }
+        match running.next().await {
+            Some((index, Ok(done))) => invoked.push((index, done)),
+            Some((_, Err(error))) => return Err(error),
+            None => break,
+        }
+    }
+    invoked.sort_by_key(|(index, _)| *index);
+    for (_, (tool, call_id, result)) in invoked {
         if !result.interruptions.is_empty() {
             if let Some(state) = result.nested_state {
                 nested_states.insert(call_id.clone(), *state);

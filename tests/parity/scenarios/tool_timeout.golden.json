@@ -1,0 +1,12 @@
+{
+  "name": "tool_timeout",
+  "final_output": "after",
+  "raw_response_count": 2,
+  "last_agent": "assistant",
+  "new_item_count": 5,
+  "tool_output_count": 2,
+  "tool_outputs": [
+    "Tool 'sleepy' timed out after 0.05 seconds.",
+    "An error occurred while running the tool. Please try again."
+  ]
+}

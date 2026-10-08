@@ -4,5 +4,9 @@
   "raw_response_count": 1,
   "last_agent": "assistant",
   "new_item_count": 4,
-  "tool_output_count": 2
+  "tool_output_count": 2,
+  "tool_outputs": [
+    "out-1",
+    "out-2"
+  ]
 }

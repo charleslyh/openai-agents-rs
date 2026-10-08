@@ -1,0 +1,61 @@
+{
+  "name": "tool_timeout",
+  "input": "go",
+  "agent": {
+    "name": "assistant",
+    "tools": [
+      {
+        "name": "sleepy",
+        "sleep_seconds": 2,
+        "timeout_seconds": 0.05
+      },
+      {
+        "name": "boom",
+        "error": "secret"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "output": [
+        {
+          "id": "1",
+          "type": "function_call",
+          "name": "sleepy",
+          "arguments": "{}",
+          "call_id": "c1"
+        },
+        {
+          "id": "1",
+          "type": "function_call",
+          "name": "boom",
+          "arguments": "{}",
+          "call_id": "c2"
+        }
+      ]
+    },
+    {
+      "output": [
+        {
+          "id": "1",
+          "type": "message",
+          "role": "assistant",
+          "status": "completed",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "after",
+              "annotations": [],
+              "logprobs": []
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "final_output": "after",
+    "raw_response_count": 2,
+    "tool_output_count": 2
+  }
+}
