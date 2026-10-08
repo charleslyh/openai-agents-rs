@@ -93,22 +93,19 @@ async fn invalid_structured_output_is_a_behavior_error() {
 }
 
 #[tokio::test]
-async fn empty_structured_output_is_a_behavior_error() {
-    let model = Arc::new(ScriptedModel::new([ModelStep::from(
-        ItemHelpers::text_message(""),
-    )]));
+async fn empty_structured_output_asks_the_model_again() {
+    // Python returns `NextStepRunAgain` for an empty structured answer when no
+    // `invalid_final_output` handler is set, so the model is called a second time.
+    let model = Arc::new(ScriptedModel::new([
+        ModelStep::from(ItemHelpers::text_message("")),
+        ModelStep::from(ItemHelpers::text_message(&answer_json())),
+    ]));
     let agent = Agent::new("structured")
-        .model(model)
+        .model(model.clone())
         .output_type(Arc::new(AgentOutputSchema::of::<Answer>().expect("schema")));
-    let err = Runner::run(&agent, "?", RunOptions::default())
-        .await
-        .expect_err("empty output must fail");
-    match err {
-        AgentsError::Model(ModelError::Behavior(msg)) => {
-            assert!(msg.contains("no final output"), "unexpected message: {msg}");
-        }
-        other => panic!("unexpected error: {other}"),
-    }
+    let result = Runner::run(&agent, "?", RunOptions::default()).await.expect("retried");
+    assert_eq!(model.calls().len(), 2);
+    assert_eq!(result.final_output["text"], "42");
 }
 
 /// Python coerces a tool result to `str` unless a non-plain-text `output_type` is declared.

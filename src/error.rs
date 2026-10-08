@@ -11,6 +11,9 @@ pub enum AgentsError {
     /// Model / provider failure.
     #[error(transparent)]
     Model(#[from] ModelError),
+    /// The model refused to answer (Python: `ModelRefusalError`).
+    #[error(transparent)]
+    ModelRefusal(#[from] ModelRefusalError),
     /// Invalid user configuration or input.
     #[error(transparent)]
     User(#[from] UserError),
@@ -126,6 +129,15 @@ pub struct ToolTimeoutError {
 pub struct MaxTurnsExceeded {
     /// Configured maximum turns.
     pub max_turns: usize,
+}
+
+/// Raised when the model refuses to produce the requested output
+/// (Python: `ModelRefusalError`).
+#[derive(Debug, Error, Clone)]
+#[error("Model refused to produce output: {refusal}")]
+pub struct ModelRefusalError {
+    /// The refusal text returned by the model.
+    pub refusal: String,
 }
 
 /// Model-layer errors.

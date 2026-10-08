@@ -595,7 +595,7 @@ async fn max_turns_error_handler_produces_final_output() {
     let mut options = RunOptions::default();
     options.max_turns = Some(2);
     options.error_handlers = RunErrorHandlers::default().on_max_turns(|input| async move {
-        assert_eq!(input.error.max_turns, 2);
+        assert!(matches!(input.error, openai_agents::RunHandledError::MaxTurns(ref e) if e.max_turns == 2));
         assert_eq!(input.run_data.output.len(), 4, "two calls and two outputs");
         Ok(Some(RunErrorHandlerResult::new("gave up")))
     });
@@ -1120,4 +1120,98 @@ async fn output_guardrail_blocked_message_replaces_tool_output() {
         Runner::run(&agent, "go", options).await.unwrap_err(),
         AgentsError::User(_)
     ));
+}
+
+fn refusal_message(text: &str) -> Value {
+    json!({"id": "1", "type": "message", "role": "assistant", "status": "completed",
+           "content": [{"type": "refusal", "refusal": text}]})
+}
+
+/// D-033: a refusal raises `ModelRefusalError` (even for plain-text agents) unless a
+/// `model_refusal` handler supplies the output; Python parity scenarios cover the same cases.
+#[tokio::test]
+async fn model_refusal_raises_or_is_handled() {
+    use openai_agents::{RunErrorHandlerResult, RunErrorHandlers, RunHandledError};
+    let build = || {
+        Agent::new("a").model(Arc::new(ScriptedModel::new([ModelStep::from(refusal_message("no can do"))])))
+    };
+    let err = Runner::run(&build(), "hi", RunOptions::default()).await.unwrap_err();
+    match err {
+        AgentsError::ModelRefusal(e) => assert_eq!(e.refusal, "no can do"),
+        other => panic!("expected a refusal error, got {other}"),
+    }
+
+    let mut options = RunOptions::default();
+    options.error_handlers = RunErrorHandlers::default().on_model_refusal(|input| async move {
+        assert!(matches!(input.error, RunHandledError::ModelRefusal(ref e) if e.refusal == "no can do"));
+        assert_eq!(input.run_data.raw_responses.len(), 1);
+        assert_eq!(input.run_data.new_items.len(), 1);
+        Ok(Some(RunErrorHandlerResult::new("REFUSED")))
+    });
+    let result = Runner::run(&build(), "hi", options.clone()).await.expect("handled");
+    assert_eq!(result.final_output_as_str(), Some("REFUSED"));
+    assert_eq!(result.new_items.len(), 2, "refusal message plus the synthesized one");
+
+    options.error_handlers = RunErrorHandlers::default().on_model_refusal(|_| async {
+        Ok(Some(RunErrorHandlerResult { final_output: json!("R"), include_in_history: false }))
+    });
+    let result = Runner::run(&build(), "hi", options.clone()).await.expect("handled");
+    assert_eq!(result.new_items.len(), 1);
+
+    options.error_handlers = RunErrorHandlers::default().on_model_refusal(|_| async { Ok(None) });
+    assert!(matches!(
+        Runner::run(&build(), "hi", options).await.unwrap_err(),
+        AgentsError::ModelRefusal(_)
+    ));
+}
+
+/// D-033: `invalid_final_output` handles unparsable and empty structured answers. Without a
+/// handler an unparsable answer raises and an empty one asks the model again, as in Python.
+#[tokio::test]
+async fn invalid_final_output_is_handled_or_retried() {
+    use openai_agents::{AgentOutputSchema, RunErrorHandlerResult, RunErrorHandlers, RunHandledError};
+    #[derive(serde::Deserialize, openai_agents::schemars::JsonSchema)]
+    #[allow(dead_code)]
+    struct Out {
+        a: i64,
+    }
+    let build = |steps: Vec<&str>| {
+        Agent::new("a")
+            .model(Arc::new(ScriptedModel::new(
+                steps.into_iter().map(|t| ModelStep::from(ItemHelpers::text_message(t))),
+            )))
+            .output_type(Arc::new(AgentOutputSchema::of::<Out>().expect("schema")))
+    };
+    let handled = |value: Value| {
+        let mut options = RunOptions::default();
+        options.error_handlers = RunErrorHandlers::default().on_invalid_final_output(move |input| {
+            let value = value.clone();
+            async move {
+                assert!(matches!(input.error, RunHandledError::InvalidFinalOutput(_)));
+                assert_eq!(input.run_data.raw_responses.len(), 1);
+                Ok(Some(RunErrorHandlerResult::new(value)))
+            }
+        });
+        options
+    };
+
+    let err = Runner::run(&build(vec!["nope"]), "hi", RunOptions::default()).await.unwrap_err();
+    assert!(matches!(err, AgentsError::Model(ModelError::Behavior(_))), "{err}");
+
+    let result = Runner::run(&build(vec!["nope"]), "hi", handled(json!({"a": 7}))).await.expect("handled");
+    assert_eq!(result.final_output, json!({"a": 7}));
+    assert_eq!(result.new_items.len(), 2);
+
+    let err = Runner::run(&build(vec!["nope"]), "hi", handled(json!({"a": "x"}))).await.unwrap_err();
+    assert!(matches!(err, AgentsError::User(_)), "{err}");
+
+    let result = Runner::run(&build(vec![""]), "hi", handled(json!({"a": 7}))).await.expect("handled");
+    assert_eq!(result.final_output, json!({"a": 7}));
+
+    let result = Runner::run(&build(vec!["", r#"{"a":1}"#]), "hi", RunOptions::default())
+        .await
+        .expect("second attempt");
+    assert_eq!(result.final_output, json!({"a": 1}));
+    assert_eq!(result.raw_responses.len(), 2);
+    assert_eq!(result.new_items.len(), 2);
 }
