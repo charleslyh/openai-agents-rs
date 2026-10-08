@@ -2,7 +2,46 @@
 
 use std::sync::Arc;
 
+use std::future::Future;
+use std::pin::Pin;
+
+use serde_json::Value;
+
 use crate::agent::Agent;
+use crate::error::AgentsError;
+use crate::run_context::RunContextWrapper;
+
+/// Conversation handed to the next agent, as seen by an input filter
+/// (Python: `HandoffInputData`, flattened to Responses input items).
+///
+/// The next agent receives `input_history`, then `pre_handoff_items`, then `new_items`.
+#[derive(Debug, Clone)]
+pub struct HandoffInputData {
+    /// The input given to `Runner::run`.
+    pub input_history: Vec<Value>,
+    /// Items produced before the turn in which the handoff happened.
+    pub pre_handoff_items: Vec<Value>,
+    /// Items of the handoff turn: model output, tool outputs and the handoff output.
+    pub new_items: Vec<Value>,
+    /// The run context when the handoff was invoked.
+    pub run_context: RunContextWrapper,
+}
+
+/// Filters the conversation passed to the next agent (Python: `HandoffInputFilter`).
+pub type HandoffInputFilter = Arc<
+    dyn Fn(HandoffInputData) -> Pin<Box<dyn Future<Output = Result<HandoffInputData, AgentsError>> + Send>>
+        + Send
+        + Sync,
+>;
+
+/// Build a [`HandoffInputFilter`] from an async closure.
+pub fn handoff_input_filter<F, Fut>(f: F) -> HandoffInputFilter
+where
+    F: Fn(HandoffInputData) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = Result<HandoffInputData, AgentsError>> + Send + 'static,
+{
+    Arc::new(move |data| Box::pin(f(data)))
+}
 
 /// A handoff to another agent, exposed to the model as a tool (Python: `Handoff`).
 #[derive(Clone)]
@@ -13,6 +52,8 @@ pub struct Handoff {
     pub tool_name: String,
     /// Tool description shown to the LLM.
     pub tool_description: String,
+    /// Filters the history forwarded to the target agent (Python: `Handoff.input_filter`).
+    pub input_filter: Option<HandoffInputFilter>,
 }
 
 impl std::fmt::Debug for Handoff {
@@ -21,11 +62,18 @@ impl std::fmt::Debug for Handoff {
             .field("tool_name", &self.tool_name)
             .field("tool_description", &self.tool_description)
             .field("agent_name", &self.agent.name)
+            .field("has_input_filter", &self.input_filter.is_some())
             .finish()
     }
 }
 
 impl Handoff {
+    /// Attach an input filter (Python: `handoff(agent, input_filter=...)`).
+    pub fn with_input_filter(mut self, filter: HandoffInputFilter) -> Self {
+        self.input_filter = Some(filter);
+        self
+    }
+
     /// Default tool name (Python: `Handoff.default_tool_name`).
     pub fn default_tool_name(agent_name: &str) -> String {
         transform_string_function_style(&format!("transfer_to_{agent_name}"))
@@ -47,6 +95,7 @@ pub fn handoff(agent: Agent) -> Handoff {
         agent: Arc::new(agent),
         tool_name,
         tool_description,
+        input_filter: None,
     }
 }
 
@@ -68,6 +117,7 @@ pub fn handoff_with(
         agent: Arc::new(agent),
         tool_name,
         tool_description,
+        input_filter: None,
     }
 }
 

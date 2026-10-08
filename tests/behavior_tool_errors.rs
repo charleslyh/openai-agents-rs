@@ -261,3 +261,52 @@ async fn call_model_input_filter_edits_input_and_instructions() {
     assert_eq!(call.input.as_array().map(Vec::len), Some(2));
     assert_eq!(result.to_input_list().len(), 2, "history keeps only input + output");
 }
+
+/// D-003: `Handoff.input_filter` rewrites the history the next agent sees.
+#[tokio::test]
+async fn handoff_input_filter_rewrites_next_agent_input() {
+    use openai_agents::handoff_input_filter;
+    let b_model = Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::text_message("b"))]));
+    let b = Agent::new("B").model(b_model.clone());
+    let filter = handoff_input_filter(|mut data| async move {
+        // Drop the handoff turn entirely and keep only the original input.
+        data.new_items.clear();
+        data.pre_handoff_items.clear();
+        Ok(data)
+    });
+    let a_model = Arc::new(ScriptedModel::new([ModelStep::from(
+        ItemHelpers::function_tool_call(Handoff::default_tool_name("B"), "{}", "h1"),
+    )]));
+    let a = Agent::new("A")
+        .model(a_model)
+        .handoffs(vec![handoff(b).with_input_filter(filter)]);
+    Runner::run(&a, "hello", RunOptions::default()).await.expect("run");
+    let input = b_model.calls()[0].input.clone();
+    assert_eq!(input.as_array().map(Vec::len), Some(1), "{input}");
+}
+
+/// D-003: a run-level filter applies when the handoff has none; server-managed
+/// conversations reject filters like Python.
+#[tokio::test]
+async fn run_level_handoff_filter_and_server_managed_conversation() {
+    use openai_agents::{handoff_input_filter, RunConfig};
+    let build = || {
+        let b = Agent::new("B")
+            .model(Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::text_message("b"))])));
+        Agent::new("A")
+            .model(Arc::new(ScriptedModel::new([ModelStep::from(
+                ItemHelpers::function_tool_call(Handoff::default_tool_name("B"), "{}", "h1"),
+            )])))
+            .handoffs(vec![handoff(b)])
+    };
+    let mut options = RunOptions::default();
+    options.run_config = RunConfig {
+        handoff_input_filter: Some(handoff_input_filter(|data| async move { Ok(data) })),
+        ..RunConfig::default()
+    };
+    Runner::run(&build(), "hi", options.clone()).await.expect("run");
+
+    options.conversation_id = Some("conv".into());
+    let err = Runner::run(&build(), "hi", options).await.unwrap_err();
+    assert!(matches!(err, AgentsError::User(_)), "{err}");
+}

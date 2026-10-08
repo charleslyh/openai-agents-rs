@@ -13,7 +13,7 @@ use crate::error::{
     OutputGuardrailTripwireTriggered, UserError,
 };
 use crate::guardrail::{InputGuardrail, InputGuardrailResult, OutputGuardrail};
-use crate::handoffs::Handoff;
+use crate::handoffs::{Handoff, HandoffInputData, HandoffInputFilter};
 use crate::items::{
     extract_message_text, is_function_call, is_reasoning, required_function_call_parts,
     HandoffCallItem, HandoffOutputItem, InputLike, ItemHelpers, MessageOutputItem, ModelResponse,
@@ -167,6 +167,8 @@ pub struct RunConfig {
     pub output_guardrails: Vec<OutputGuardrail>,
     /// Behavior when the model calls an unknown tool (Python: `RunConfig.tool_not_found_behavior`).
     pub tool_not_found_behavior: ToolNotFoundBehavior,
+    /// Default filter for every handoff without its own (Python: `RunConfig.handoff_input_filter`).
+    pub handoff_input_filter: Option<HandoffInputFilter>,
     /// Edit the model input just before each call (Python: `RunConfig.call_model_input_filter`).
     pub call_model_input_filter: Option<CallModelInputFilter>,
 }
@@ -199,6 +201,7 @@ impl Default for RunConfig {
             output_guardrails: Vec::new(),
             tool_not_found_behavior: ToolNotFoundBehavior::default(),
             call_model_input_filter: None,
+            handoff_input_filter: None,
         }
     }
 }
@@ -1016,6 +1019,7 @@ async fn run_loop_inner(
         }
 
         if !handoff_calls.is_empty() {
+            let turn_start_len = current_input_items.len();
             for item in &response.output {
                 current_input_items.push(item.clone());
             }
@@ -1078,6 +1082,37 @@ async fn run_loop_inner(
             if let Some(ah) = &source_agent.hooks {
                 ah.on_handoff(context.clone(), &current_agent, &source_agent)
                     .await;
+            }
+
+            // Python: the handoff's own filter wins over `RunConfig.handoff_input_filter`.
+            let input_filter = h
+                .input_filter
+                .clone()
+                .or_else(|| options.run_config.handoff_input_filter.clone());
+            if let Some(filter) = input_filter {
+                if options.previous_response_id.is_some() || options.conversation_id.is_some() {
+                    return Err(UserError::new(
+                        "Server-managed conversations do not support handoff input filters. \
+                         Remove Handoff.input_filter or RunConfig.handoff_input_filter, \
+                         or disable conversation_id and previous_response_id.",
+                    )
+                    .into());
+                }
+                let original_len =
+                    ItemHelpers::input_to_new_input_list(&input).len().min(turn_start_len);
+                let filtered = filter(HandoffInputData {
+                    input_history: current_input_items[..original_len].to_vec(),
+                    pre_handoff_items: current_input_items[original_len..turn_start_len].to_vec(),
+                    new_items: current_input_items[turn_start_len..].to_vec(),
+                    run_context: context.clone(),
+                })
+                .await?;
+                current_input_items = filtered
+                    .input_history
+                    .into_iter()
+                    .chain(filtered.pre_handoff_items)
+                    .chain(filtered.new_items)
+                    .collect();
             }
 
             emit(
