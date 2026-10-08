@@ -14,6 +14,42 @@ use crate::run_state::RunState;
 /// Default rejection text when a tool call is rejected (Python: `DEFAULT_APPROVAL_REJECTION_MESSAGE`).
 pub const DEFAULT_APPROVAL_REJECTION_MESSAGE: &str = "Tool execution was not approved.";
 
+/// Text returned to the model when a tool fails and no custom handler is set
+/// (Python: `default_tool_error_function`).
+pub const DEFAULT_TOOL_ERROR_MESSAGE: &str =
+    "An error occurred while running the tool. Please try again.";
+
+/// Formats a tool failure as the text sent back to the model
+/// (Python: `failure_error_function`).
+pub type ToolErrorFn = Arc<dyn Fn(&RunContextWrapper, &AgentsError) -> String + Send + Sync>;
+
+/// What happens when a function tool returns an error (Python: `failure_error_function`).
+#[derive(Clone, Default)]
+pub enum ToolFailureHandling {
+    /// Send [`DEFAULT_TOOL_ERROR_MESSAGE`] to the model; the exception is not exposed.
+    #[default]
+    Default,
+    /// Send the formatter's text to the model.
+    Custom(ToolErrorFn),
+    /// Abort the run with the error (Python: `failure_error_function=None`).
+    Raise,
+}
+
+impl ToolFailureHandling {
+    /// Resolve the failure into model-visible text, or hand the error back to abort the run.
+    pub fn handle(
+        &self,
+        context: &RunContextWrapper,
+        error: AgentsError,
+    ) -> Result<String, AgentsError> {
+        match self {
+            Self::Default => Ok(DEFAULT_TOOL_ERROR_MESSAGE.to_string()),
+            Self::Custom(f) => Ok(f(context, &error)),
+            Self::Raise => Err(error),
+        }
+    }
+}
+
 /// Context passed to tool invocations (Python: `ToolContext` subset).
 #[derive(Debug, Clone)]
 pub struct ToolContext {
@@ -82,7 +118,10 @@ impl ToolResult {
 
 /// Async tool invoker signature.
 pub type ToolInvoker = Arc<
-    dyn Fn(ToolContext, String) -> Pin<Box<dyn Future<Output = Result<ToolResult, AgentsError>> + Send>>
+    dyn Fn(
+            ToolContext,
+            String,
+        ) -> Pin<Box<dyn Future<Output = Result<ToolResult, AgentsError>> + Send>>
         + Send
         + Sync,
 >;
@@ -90,9 +129,8 @@ pub type ToolInvoker = Arc<
 /// Dynamic approval policy (Python: `needs_approval` callable).
 ///
 /// Arguments: parsed JSON params object, tool call id → whether approval is required.
-pub type NeedsApprovalFn = Arc<
-    dyn Fn(Value, String) -> Pin<Box<dyn Future<Output = bool> + Send>> + Send + Sync,
->;
+pub type NeedsApprovalFn =
+    Arc<dyn Fn(Value, String) -> Pin<Box<dyn Future<Output = bool> + Send>> + Send + Sync>;
 
 /// When a function tool requires human approval (Python: `FunctionTool.needs_approval`).
 #[derive(Clone)]
@@ -146,6 +184,8 @@ pub struct FunctionTool {
     pub is_enabled: bool,
     /// Whether / when the tool pauses for human approval before invoke.
     pub needs_approval: NeedsApproval,
+    /// How a returned error is surfaced (Python: `failure_error_function`).
+    pub failure_error_function: ToolFailureHandling,
 }
 
 impl std::fmt::Debug for FunctionTool {
@@ -206,7 +246,23 @@ impl FunctionTool {
             strict_json_schema: true,
             is_enabled: true,
             needs_approval: NeedsApproval::Fixed(false),
+            failure_error_function: ToolFailureHandling::Default,
         }
+    }
+
+    /// Format tool errors for the model with `f` instead of the default message.
+    pub fn with_failure_error_function<F>(mut self, f: F) -> Self
+    where
+        F: Fn(&RunContextWrapper, &AgentsError) -> String + Send + Sync + 'static,
+    {
+        self.failure_error_function = ToolFailureHandling::Custom(Arc::new(f));
+        self
+    }
+
+    /// Abort the run when this tool errors (Python: `failure_error_function=None`).
+    pub fn raise_on_error(mut self) -> Self {
+        self.failure_error_function = ToolFailureHandling::Raise;
+        self
     }
 
     /// Require approval before every invoke (Python: `needs_approval=True`).

@@ -51,8 +51,46 @@ pub type DynamicInstructions = Arc<
         + Sync,
 >;
 
-/// How tool results affect the run loop (Python: `tool_use_behavior`).
+/// A completed function tool call handed to a custom [`ToolUseBehavior`]
+/// (Python: `FunctionToolResult`, subset).
 #[derive(Debug, Clone)]
+pub struct FunctionToolResult {
+    /// Name of the tool that ran.
+    pub tool_name: String,
+    /// Call id from the model.
+    pub call_id: String,
+    /// The tool output.
+    pub output: serde_json::Value,
+}
+
+/// Decision of a custom tool-use function (Python: `ToolsToFinalOutputResult`).
+#[derive(Debug, Clone)]
+pub struct ToolsToFinalOutputResult {
+    /// Whether the run ends with `final_output`.
+    pub is_final_output: bool,
+    /// The final output when `is_final_output` is set.
+    pub final_output: Option<serde_json::Value>,
+}
+
+impl ToolsToFinalOutputResult {
+    /// Keep going: feed the tool results back to the model.
+    pub fn run_llm_again() -> Self {
+        Self { is_final_output: false, final_output: None }
+    }
+
+    /// End the run with `output`.
+    pub fn final_output(output: serde_json::Value) -> Self {
+        Self { is_final_output: true, final_output: Some(output) }
+    }
+}
+
+/// Custom rule deciding whether tool results are final
+/// (Python: `ToolsToFinalOutputFunction`, synchronous form).
+pub type ToolsToFinalOutputFn =
+    Arc<dyn Fn(&RunContextWrapper, &[FunctionToolResult]) -> ToolsToFinalOutputResult + Send + Sync>;
+
+/// How tool results affect the run loop (Python: `tool_use_behavior`).
+#[derive(Clone)]
 pub enum ToolUseBehavior {
     /// Feed tool results back to the LLM (default).
     RunLlmAgain,
@@ -63,6 +101,22 @@ pub enum ToolUseBehavior {
         /// Tool names that finalize the run.
         stop_at_tool_names: Vec<String>,
     },
+    /// Decide with a custom function over the turn's tool results.
+    Custom(ToolsToFinalOutputFn),
+}
+
+impl std::fmt::Debug for ToolUseBehavior {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::RunLlmAgain => f.write_str("RunLlmAgain"),
+            Self::StopOnFirstTool => f.write_str("StopOnFirstTool"),
+            Self::StopAtTools { stop_at_tool_names } => f
+                .debug_struct("StopAtTools")
+                .field("stop_at_tool_names", stop_at_tool_names)
+                .finish(),
+            Self::Custom(_) => f.write_str("Custom(..)"),
+        }
+    }
 }
 
 impl Default for ToolUseBehavior {
