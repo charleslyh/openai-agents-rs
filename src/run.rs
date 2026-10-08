@@ -393,9 +393,8 @@ async fn emit(tx: &Option<EventTx>, event: StreamEvent) {
     }
 }
 
-fn tools_for_agent(agent: &Agent) -> Vec<FunctionTool> {
-    let mut tools = agent.enabled_tools();
-    for h in &agent.handoffs {
+fn tools_for_agent(mut tools: Vec<FunctionTool>, handoffs: &[Handoff]) -> Vec<FunctionTool> {
+    for h in handoffs {
         tools.push(handoff_as_tool(h));
     }
     tools
@@ -587,7 +586,10 @@ async fn run_loop_inner(
         }
 
         let model = resolve_model(&current_agent, &options.run_config)?;
-        let tools = tools_for_agent(&current_agent);
+        // Python re-evaluates `is_enabled` every turn; disabled tools and handoffs are hidden
+        // from the model and calls to them are treated as unknown.
+        let enabled_handoffs = current_agent.enabled_handoffs(&context).await;
+        let tools = tools_for_agent(current_agent.enabled_tools(&context).await, &enabled_handoffs);
 
         let _agent_span = agent_span(&current_agent.name);
 
@@ -786,10 +788,7 @@ async fn run_loop_inner(
             }
             for call in &function_calls {
                 let (tool_name, _, _) = required_function_call_parts(call)?;
-                let is_handoff = current_agent
-                    .handoffs
-                    .iter()
-                    .any(|h| h.tool_name == tool_name);
+                let is_handoff = enabled_handoffs.iter().any(|h| h.tool_name == tool_name);
                 // Python separates handoff tool calls into `HandoffCallItem` during
                 // `process_model_response`, so `new_items` distinguishes them from plain tools.
                 let item = if is_handoff {
@@ -865,7 +864,7 @@ async fn run_loop_inner(
         let mut tool_calls: Vec<Value> = Vec::new();
         for call in &function_calls {
             let (name, _args, call_id) = required_function_call_parts(call)?;
-            match current_agent.handoffs.iter().find(|h| h.tool_name == name) {
+            match enabled_handoffs.iter().find(|h| h.tool_name == name) {
                 Some(h) => handoff_calls.push((h.clone(), call.clone(), call_id)),
                 None => tool_calls.push(call.clone()),
             }

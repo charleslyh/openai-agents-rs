@@ -134,7 +134,7 @@ dictionaries are merged (`model_settings.py:273`).
 | Guardrail results on `RunResult` | S | |
 | `RunHooks` / `AgentHooks` | S | All methods default to no-op |
 | Tool input/output guardrails | N | |
-| Dynamic `is_enabled` / `needs_approval` closures | N | |
+| Dynamic `is_enabled` (tools, handoffs) / `needs_approval` closures | S | `ToolEnabled::dynamic`; `NeedsApproval::Dynamic` |
 
 ## Tracing
 

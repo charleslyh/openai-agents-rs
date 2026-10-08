@@ -314,9 +314,26 @@ impl Agent {
         self.output_type.as_deref()
     }
 
-    /// Enabled tools for this run (filters `is_enabled`).
-    pub fn enabled_tools(&self) -> Vec<FunctionTool> {
-        self.tools.iter().filter(|t| t.is_enabled).cloned().collect()
+    /// Enabled tools for this turn (evaluates each tool's `is_enabled`).
+    pub async fn enabled_tools(&self, context: &RunContextWrapper) -> Vec<FunctionTool> {
+        let mut out = Vec::new();
+        for tool in &self.tools {
+            if tool.is_enabled.resolve(context, self).await {
+                out.push(tool.clone());
+            }
+        }
+        out
+    }
+
+    /// Enabled handoffs for this turn (evaluates each handoff's `is_enabled`).
+    pub async fn enabled_handoffs(&self, context: &RunContextWrapper) -> Vec<Handoff> {
+        let mut out = Vec::new();
+        for h in &self.handoffs {
+            if h.is_enabled.resolve(context, self).await {
+                out.push(h.clone());
+            }
+        }
+        out
     }
 
     /// Expose this agent as a function tool (Python: `Agent.as_tool`).
