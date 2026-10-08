@@ -1,5 +1,8 @@
 //! JSON-RPC plumbing shared by the MCP transports.
 
+// Only the transports (feature `mcp`) use most of this.
+#![cfg_attr(not(feature = "mcp"), allow(dead_code))]
+
 use std::time::Duration;
 
 use async_trait::async_trait;

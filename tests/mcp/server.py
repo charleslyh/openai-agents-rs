@@ -10,6 +10,7 @@ server flags as an error, a raised exception, an image, and a slow call.
 
 from __future__ import annotations
 
+import os
 import sys
 import time
 
@@ -52,6 +53,11 @@ def build() -> MCPServer:
     def boom() -> str:
         """Always fails."""
         raise RuntimeError("the tool exploded")
+
+    @server.tool()
+    def env_var(name: str) -> str:
+        """Report an environment variable of the server process."""
+        return os.environ.get(name, "<unset>")
 
     @server.tool()
     def slow(seconds: float) -> str:

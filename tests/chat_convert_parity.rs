@@ -3,6 +3,7 @@
 //! `tests/parity/chat_convert_cases.json` holds shared inputs; `scripts/chat_convert_oracle.py`
 //! runs them through the Python SDK. Skipped when the oracle venv is missing
 //! (`scripts/setup_venv.sh`).
+#![cfg(feature = "openai")]
 
 use std::path::PathBuf;
 use std::process::Command;
