@@ -3,7 +3,9 @@
 Standard reference: `vendor/openai-agents-python` @ **v0.23.1** (`openai-agents==0.23.1`).
 Re-sync the vendored tree with `bash scripts/sync_vendor.sh`.
 
-Legend: **S** = supported · **P** = partial · **N** = not supported · **D** = intentional deviation (see [DEVIATIONS.md](./DEVIATIONS.md))
+Scope: provider-neutral. The SDK targets any OpenAI Responses / Chat Completions compatible endpoint, so OpenAI-hosted features are not planned (see [DEVIATIONS.md#scope](./DEVIATIONS.md#scope)); they appear below as **X**.
+
+Legend: **X** = out of scope (OpenAI-hosted) · **S** = supported · **P** = partial · **N** = not supported · **D** = intentional deviation (see [DEVIATIONS.md](./DEVIATIONS.md))
 
 ## Core
 
@@ -140,7 +142,7 @@ dictionaries are merged (`model_settings.py:273`).
 | `Session` trait, `InMemorySession` | S | `RunOptions.session` (D-027) |
 | `RunConfig.session_input_callback`, `SessionSettings.limit` | S | Checked against Python (D-027) |
 | `SqliteSession` (feature `sqlite`) | S | Python-compatible schema; files interchangeable (D-038) |
-| OpenAI-conversations session, compaction | N | D-027 |
+| OpenAI-conversations session, `responses.compact` compaction | X | OpenAI-hosted |
 
 ## Context, guardrails, hooks
 

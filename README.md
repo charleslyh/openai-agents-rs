@@ -4,6 +4,20 @@ Rust port of the [OpenAI Agents Python SDK](https://github.com/openai/openai-age
 
 Supported now: **Agent**, **Runner** (`run` / `run_blocking` / `run_streamed`), **FunctionTool** (+ `#[function_tool]` with full `schemars` schemas), **handoffs** (`HandoffCallItem` / `HandoffOutputItem` + `handoff_span`), **structured output** (`output_type`), **run context**, **input/output guardrails**, **lifecycle hooks**, **ModelProvider** name resolution, **extended `ModelSettings`**, **local Tracing**, **Responses + Chat Completions**.
 
+## Positioning
+
+This is a **provider-neutral** agent SDK, not a client for the official OpenAI service. It runs
+the Python SDK's agent loop (tools, handoffs, guardrails, sessions, tracing, HITL) on top of **any
+endpoint that speaks the OpenAI Responses or Chat Completions protocol**: OpenAI itself, but also
+gateways, self-hosted servers and third-party models. Point it at a different provider with a base
+URL and key.
+
+Consequently, features that exist only because OpenAI hosts them are **out of scope**: hosted tools
+(web / file search, code interpreter, image generation, hosted MCP, computer, shell, apply_patch),
+server-side prompts (`Agent.prompt`), the Conversations API and `responses.compact`, and OpenAI
+trace export. Anything that only needs a compatible *protocol* is in scope. See
+[`docs/DEVIATIONS.md`](./docs/DEVIATIONS.md#scope) for the full list.
+
 ## Quick start
 
 ```rust
@@ -105,8 +119,8 @@ Python 1.18 wire-compatible (D-012) — use one language per durable state store
 
 ## Still out of scope
 
-MCP, sessions, hosted tools (web search / file search / computer / shell / apply_patch), sandbox,
-and OpenAI trace cloud export.
+OpenAI-hosted capabilities (see [Positioning](#positioning)), the sandbox runtime, and OpenAI trace
+cloud export. Not yet built but in scope: local MCP servers.
 
 ## License
 
