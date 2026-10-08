@@ -60,6 +60,10 @@ pub(crate) struct InterruptSnapshot {
     pub(crate) pending_response: ModelResponse,
     pub(crate) approvals: ApprovalStore,
     pub(crate) nested_agent_runs: std::collections::HashMap<String, RunState>,
+    /// How many `generated_items` the session already holds (see [`RunState`]).
+    pub session_saved_items: usize,
+    /// Whether the run's input is already in the session.
+    pub session_input_saved: bool
 }
 
 impl RunResult {
@@ -142,6 +146,8 @@ impl RunResult {
             pending_response: snap.pending_response.clone(),
             approvals: snap.approvals.clone(),
             nested_agent_runs: snap.nested_agent_runs.clone(),
+            session_saved_items: snap.session_saved_items,
+            session_input_saved: snap.session_input_saved,
         })
     }
 }

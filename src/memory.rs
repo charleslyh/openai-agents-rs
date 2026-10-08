@@ -15,6 +15,7 @@ use serde_json::Value;
 use crate::error::AgentsError;
 
 mod compaction;
+mod history;
 pub use compaction::{CompactingSession, ModelSummarizer, Summarizer, DEFAULT_TRIGGER_TOKENS};
 
 #[cfg(feature = "sqlite")]
@@ -167,13 +168,26 @@ fn session_item_key(item: &Value) -> String {
     canonical(&item).to_string()
 }
 
+/// Key the runner adds to the items it hands a [`SessionInputCallback`], so the items it returns
+/// can be traced back to history or to the new input even when the callback rewrites them.
+const ORIGIN_KEY: &str = "_agents_session_origin";
+
 /// Build the model input for a fresh run from the session
 /// (Python: `prepare_input_with_session`).
 ///
 /// Returns `(prepared, to_save)`: the items sent to the model, and the items of this turn that
 /// belong to the new input and must be saved. Without a callback that is history followed by the
-/// new input, and the new input alone. With one, items are attributed by content: a result item
-/// equal to a stored one counts as history, otherwise it is new and gets saved.
+/// new input, and the new input alone.
+///
+/// With a callback, a returned item counts as history or as new by where it came from, even if
+/// the callback edited it (Python tracks object identity; here each item handed to the callback
+/// carries a hidden [`ORIGIN_KEY`] entry, removed again from everything it returns). That keeps a
+/// callback that rewrites old items (shortening tool outputs, say) from having those edited items
+/// saved a second time as new. Items without the key (built by the callback) are matched by
+/// content against what is left of the history and the new input, then saved.
+///
+/// The model input is then cleaned: stored function calls without an output are dropped (with the
+/// reasoning that led to them), and duplicate items are merged, as Python does.
 pub(crate) async fn prepare_input_with_session(
     session: &dyn Session,
     run_settings: Option<SessionSettings>,
@@ -182,23 +196,115 @@ pub(crate) async fn prepare_input_with_session(
 ) -> Result<(Vec<Value>, Vec<Value>), AgentsError> {
     let settings = session.session_settings().unwrap_or_default().resolve(run_settings);
     let history = session.get_items(settings.limit).await?;
-    let Some(callback) = callback else {
-        let mut prepared = history;
-        prepared.extend(new_items.iter().cloned());
-        return Ok((prepared, new_items));
+
+    let (combined, from_history, to_save) = match callback {
+        None => {
+            let from_history: Vec<bool> = history
+                .iter()
+                .map(|_| true)
+                .chain(new_items.iter().map(|_| false))
+                .collect();
+            let combined: Vec<Value> = history.into_iter().chain(new_items.iter().cloned()).collect();
+            (combined, from_history, new_items)
+        }
+        Some(callback) => {
+            let tag = |items: &[Value], prefix: &str| -> Vec<Value> {
+                items
+                    .iter()
+                    .enumerate()
+                    .map(|(i, item)| {
+                        let mut item = item.clone();
+                        if let Some(map) = item.as_object_mut() {
+                            map.insert(ORIGIN_KEY.into(), Value::String(format!("{prefix}:{i}")));
+                        }
+                        item
+                    })
+                    .collect()
+            };
+            let returned = callback(tag(&history, "h"), tag(&new_items, "n")).await?;
+            attribute_callback_result(returned, &history, &new_items)
+        }
     };
 
-    let mut history_counts: HashMap<String, usize> = HashMap::new();
-    for item in &history {
-        *history_counts.entry(session_item_key(item)).or_default() += 1;
-    }
-    let combined = callback(history, new_items).await?;
-    let mut to_save = Vec::new();
-    for item in &combined {
-        match history_counts.get_mut(&session_item_key(item)) {
-            Some(count) if *count > 0 => *count -= 1,
-            _ => to_save.push(item.clone()),
+    let prune_outputs = callback.is_none() && settings.limit.is_some();
+    let prepared = history::drop_orphan_function_calls(combined, &from_history, prune_outputs);
+    Ok((history::deduplicate_input_items_preferring_latest(prepared), to_save))
+}
+
+/// Split the items a callback returned into `(items, is_history, to_save)`.
+fn attribute_callback_result(
+    returned: Vec<Value>,
+    history: &[Value],
+    new_items: &[Value],
+) -> (Vec<Value>, Vec<bool>, Vec<Value>) {
+    let count = |items: &[Value]| {
+        let mut counts: HashMap<String, usize> = HashMap::new();
+        for item in items {
+            *counts.entry(session_item_key(item)).or_default() += 1;
         }
+        counts
+    };
+    let mut history_counts = count(history);
+    let mut new_counts = count(new_items);
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    let mut combined = Vec::with_capacity(returned.len());
+    let mut from_history = Vec::with_capacity(returned.len());
+    let mut to_save = Vec::new();
+    for mut item in returned {
+        let origin = item
+            .as_object_mut()
+            .and_then(|map| map.remove(ORIGIN_KEY))
+            .and_then(|v| v.as_str().map(str::to_string))
+            .filter(|origin| seen.insert(origin.clone()));
+        let source = origin.as_deref().and_then(|origin| {
+            let (kind, index) = origin.split_once(':')?;
+            let index: usize = index.parse().ok()?;
+            match kind {
+                "h" => history.get(index).map(|original| (true, original)),
+                "n" => new_items.get(index).map(|original| (false, original)),
+                _ => None,
+            }
+        });
+        let is_history = match source {
+            Some((true, original)) => {
+                decrement(&mut history_counts, original);
+                true
+            }
+            Some((false, original)) => {
+                decrement(&mut new_counts, original);
+                false
+            }
+            None => {
+                let key = session_item_key(&item);
+                if take_one(&mut history_counts, &key) {
+                    true
+                } else {
+                    take_one(&mut new_counts, &key);
+                    false
+                }
+            }
+        };
+        if !is_history {
+            to_save.push(item.clone());
+        }
+        from_history.push(is_history);
+        combined.push(item);
     }
-    Ok((combined, to_save))
+    (combined, from_history, to_save)
+}
+
+fn decrement(counts: &mut HashMap<String, usize>, original: &Value) {
+    take_one(counts, &session_item_key(original));
+}
+
+/// Use up one occurrence of `key`; false when none was left.
+fn take_one(counts: &mut HashMap<String, usize>, key: &str) -> bool {
+    match counts.get_mut(key) {
+        Some(n) if *n > 0 => {
+            *n -= 1;
+            true
+        }
+        _ => false,
+    }
 }

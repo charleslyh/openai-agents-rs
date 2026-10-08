@@ -471,19 +471,39 @@ async fn session_carries_history_between_runs() {
     assert!(session.get_items(None).await.unwrap().is_empty());
 }
 
-/// D-027: failed runs are not written to the session.
+/// D-027: a session is written as the run goes, like Python: the input before the first model
+/// call, each turn's items when the turn ends. A failed run keeps what it completed
+/// (Python, checked on the same three scenarios: `[user]`, `[user, call, output]`, two turns).
 #[tokio::test]
-async fn session_is_untouched_when_the_run_fails() {
+async fn session_keeps_the_turns_a_failed_run_completed() {
     use openai_agents::{InMemorySession, Session};
-    let model = Arc::new(ScriptedModel::new([ModelStep::from(
-        ItemHelpers::function_tool_call("nope", "{}", "c1"),
-    )]));
-    let agent = Agent::new("a").model(model);
-    let session = InMemorySession::shared("conv-2");
-    let mut options = RunOptions::default();
-    options.session = Some(session.clone());
-    assert!(Runner::run(&agent, "go", options).await.is_err());
-    assert!(session.get_items(None).await.unwrap().is_empty());
+    let kinds = |items: Vec<Value>| -> Vec<String> {
+        items
+            .iter()
+            .map(|i| i["type"].as_str().or(i["role"].as_str()).unwrap().to_string())
+            .collect()
+    };
+    let echo = || FunctionTool::constant("echo", "e", "x");
+    let call = |name: &str, id: &str| ModelStep::from(ItemHelpers::function_tool_call(name, "{}", id));
+    let run = |steps: Vec<ModelStep>, max_turns: Option<usize>| async move {
+        let agent = Agent::new("a").model(Arc::new(ScriptedModel::new(steps))).tools(vec![echo()]);
+        let session = InMemorySession::shared("conv");
+        let mut options = RunOptions::default();
+        options.session = Some(session.clone());
+        options.max_turns = max_turns;
+        assert!(Runner::run(&agent, "go", options).await.is_err());
+        session.get_items(None).await.unwrap()
+    };
+
+    assert_eq!(kinds(run(vec![call("nope", "c1")], None).await), ["user"]);
+    assert_eq!(
+        kinds(run(vec![call("echo", "c1"), call("nope", "c2")], None).await),
+        ["user", "function_call", "function_call_output"]
+    );
+    assert_eq!(
+        kinds(run(vec![call("echo", "c1"), call("echo", "c2")], Some(2)).await),
+        ["user", "function_call", "function_call_output", "function_call", "function_call_output"]
+    );
 }
 
 /// D-016: `Usage::add` follows Python — entries only for single requests with tokens, and
