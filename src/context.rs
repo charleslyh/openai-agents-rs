@@ -113,10 +113,6 @@ impl Conversation {
         }
         conversation
     }
-
-    pub(crate) fn join(self) -> Vec<Value> {
-        self.pinned.into_iter().chain(self.turns.into_iter().flatten()).collect()
-    }
 }
 
 // ---------------------------------------------------------------------------------------------

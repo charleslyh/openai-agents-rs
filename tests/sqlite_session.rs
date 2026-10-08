@@ -178,3 +178,30 @@ async fn replace_items_swaps_the_history_atomically() {
     a.add_items(vec![msg("user", "again")]).await.unwrap();
     assert_eq!(a.get_items(None).await.unwrap().len(), 1, "an emptied session is still usable");
 }
+
+/// Compaction over SQLite: the summary replaces old turns atomically and survives a reopen.
+#[tokio::test]
+async fn compacting_session_over_sqlite_persists_the_summary() {
+    use async_trait::async_trait;
+    use openai_agents::{CompactingSession, Summarizer};
+    struct Fixed;
+    #[async_trait]
+    impl Summarizer for Fixed {
+        async fn summarize(&self, _: Option<&str>, _: &[Value]) -> Result<String, AgentsError> {
+            Ok("persisted notes".into())
+        }
+    }
+    let db = TempDb::new();
+    let session = CompactingSession::new(Arc::new(SqliteSession::open("c", &db.0).unwrap()), Arc::new(Fixed))
+        .keep_recent_turns(1);
+    session
+        .add_items(vec![msg("user", "t1"), msg("assistant", "a1"), msg("user", "t2"), msg("assistant", "a2")])
+        .await
+        .unwrap();
+    assert!(session.compact().await.unwrap());
+
+    let reopened = SqliteSession::open("c", &db.0).unwrap().get_items(None).await.unwrap();
+    assert_eq!(reopened.len(), 3);
+    assert!(reopened[0]["content"].as_str().unwrap().contains("persisted notes"));
+    assert_eq!(&reopened[1..], &[msg("user", "t2"), msg("assistant", "a2")]);
+}
