@@ -4,11 +4,15 @@
 //! Two independent implementations talking to each other is the point: it checks the wire format
 //! (framing, handshake, SSE, sessions), not just our reading of the spec.
 #![cfg(feature = "mcp")]
+// `ONE_AT_A_TIME` is held for the whole of a test on purpose, across awaits. Each `#[tokio::test]`
+// runs on its own current-thread runtime, so a waiting test blocks only its own thread and the
+// holder can always make progress: there is no deadlock to guard against.
+#![allow(clippy::await_holding_lock)]
 
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
@@ -22,10 +26,47 @@ fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
-fn python() -> Option<PathBuf> {
-    let python = root().join(".venv/bin/python");
-    if python.exists() {
-        Some(python)
+/// Held for a whole test, so no two tests create sockets and spawn processes at the same time.
+///
+/// On macOS a socket is created first and marked close-on-exec afterwards. If another thread
+/// spawns a server process in between, the socket leaks into that process and keeps its port
+/// bound until the process exits. The tests that probe for a free port then see the Python server
+/// fail with `address already in use`, or a client talk to a half-dead server (`connection reset`).
+/// Running these tests one at a time costs a few seconds and removes the race.
+static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+
+fn one_at_a_time() -> MutexGuard<'static, ()> {
+    ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// The oracle venv's interpreter, plus the lock above.
+struct Python {
+    path: PathBuf,
+    _serial: MutexGuard<'static, ()>,
+}
+
+impl AsRef<std::ffi::OsStr> for Python {
+    fn as_ref(&self) -> &std::ffi::OsStr {
+        self.path.as_os_str()
+    }
+}
+
+impl std::ops::Deref for Python {
+    type Target = PathBuf;
+
+    fn deref(&self) -> &PathBuf {
+        &self.path
+    }
+}
+
+fn python() -> Option<Python> {
+    let serial = one_at_a_time();
+    let path = root().join(".venv/bin/python");
+    if path.exists() {
+        Some(Python {
+            path,
+            _serial: serial,
+        })
     } else {
         eprintln!("skipping: no .venv (run scripts/setup_venv.sh)");
         None
@@ -385,6 +426,7 @@ async fn an_agent_uses_tools_from_an_http_server() {
 
 #[tokio::test]
 async fn connection_failures_are_clear_errors() {
+    let _serial = one_at_a_time();
     let missing = McpClient::stdio(StdioParams::new("/definitely/not/a/program"));
     let error = missing.connect().await.unwrap_err();
     assert!(error.to_string().contains("could not start"), "{error}");
