@@ -2,7 +2,7 @@
 
 use serde_json::{json, Value};
 
-use crate::agent::{Agent, AsToolConfig};
+use crate::agent::Agent;
 use crate::error::AgentsError;
 use crate::tool::{FunctionTool, ToolResult};
 
@@ -10,8 +10,36 @@ use super::agent_loop::take_nested_resume_state;
 use super::config::RunOptions;
 use super::Runner;
 
+/// Options for [`Agent::as_tool`] (Python: `Agent.as_tool` kwargs subset).
+///
+/// The Python keyword list is much longer (D-043), so fields will be added here: build one with
+/// `AsToolConfig { field, ..Default::default() }` and the tail keeps you compiling.
+#[derive(Debug, Clone, Default)]
+pub struct AsToolConfig {
+    /// Override tool name (default: sanitized agent name).
+    pub name: Option<String>,
+    /// Tool description (default: handoff_description or agent name).
+    pub description: Option<String>,
+    /// Whether the agent-tool itself needs approval before the nested run starts.
+    pub needs_approval: bool,
+    /// Max turns for the nested run.
+    pub max_turns: Option<usize>,
+}
+
+impl Agent {
+    /// Expose this agent as a function tool (Python: `Agent.as_tool`).
+    ///
+    /// Nested tool approvals surface on the outer run's `interruptions`; approve/reject on the
+    /// outer [`crate::RunState`], then resume with [`crate::Runner::run_state`].
+    ///
+    /// Lives next to the runner it calls, so `agent` stays independent of `run`.
+    pub fn as_tool(&self, config: AsToolConfig) -> FunctionTool {
+        build_agent_as_tool(self, config)
+    }
+}
+
 /// Build an `Agent.as_tool` FunctionTool (Python: `Agent.as_tool`).
-pub(crate) fn build_agent_as_tool(agent: &Agent, config: AsToolConfig) -> FunctionTool {
+fn build_agent_as_tool(agent: &Agent, config: AsToolConfig) -> FunctionTool {
     let nested_agent = agent.clone();
     let tool_name = config
         .name
