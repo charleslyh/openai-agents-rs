@@ -29,7 +29,7 @@ pub use errors::{
 };
 pub use resolve::default_provider;
 
-pub(crate) use as_tool::build_agent_as_tool;
+pub use as_tool::AsToolConfig;
 
 use std::sync::{Arc, Mutex};
 

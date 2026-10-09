@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
-"""Check that `src/` modules only depend downward.
+"""Check the module dependency structure of `src/`.
 
 The refactor in `docs/refactor/01-principles.md` puts every module in a tier and forbids a
-lower tier from importing a higher one. This is the mechanical gate for that rule.
+lower tier from importing a higher one. Two rules are enforced:
+
+1. no upward edges between tiers (`EXCEPTIONS` lists the known ones);
+2. the only dependency cycles allowed are the ones in `ALLOWED_CYCLES`. A tier check cannot see
+   same-tier cycles, so without this rule a single stray import can silently fold a module
+   like `run` into the domain core.
 
 Usage:
     python3 scripts/check_module_deps.py            # fail on violations
     python3 scripts/check_module_deps.py --explain  # print the current edges too
 
-Exit code 1 means a new upward dependency appeared. Either move the type down a tier, or add an
-exception here *with* a `docs/refactor/03-cycle-breaking.md` id and a plan to remove it: the
-exception list must only ever shrink.
+Exit code 1 means a new upward dependency or a new cycle appeared. Either move the type down,
+or register it here *with* a `docs/refactor/03-cycle-breaking.md` id and a plan to remove it:
+the exception list must only ever shrink.
 """
 
 from __future__ import annotations
@@ -56,12 +61,32 @@ TIERS: dict[str, int] = {
     "testing": 3,
 }
 
-# Known upward edges. Every entry needs a refactor id and a removal plan.
-EXCEPTIONS: dict[tuple[str, str], str] = {
-    ("agent", "mcp"): "C6: agent may only use the mcp contract, not client/transport/manager",
-    ("agent", "run"): "C3: as_tool; the runner entry point has to move under core",
-    ("tool", "run_state"): "C4: nested RunState in ToolResult",
-}
+# Known upward edges. Every entry needs a refactor id and a removal plan. Currently none.
+EXCEPTIONS: dict[tuple[str, str], str] = {}
+
+# The dependency cycles that are accepted, as exact module sets.
+#
+# `Agent` aggregates tools, handoffs, guardrails, hooks, the model and MCP servers, while the
+# callbacks of every one of those take `Arc<Agent>` (and `ToolResult` carries a `RunState`). That
+# mutual reference is the domain core and is the same shape as in the Python SDK; breaking it
+# means generics or splitting `Agent` into handle and data (see docs/refactor/03-cycle-breaking.md).
+# Any module outside these sets that joins a cycle is a violation.
+ALLOWED_CYCLES: list[frozenset[str]] = [
+    frozenset(
+        {
+            "agent",
+            "guardrail",
+            "handoffs",
+            "lifecycle",
+            "mcp",
+            "model",
+            "run_state",
+            "tool",
+            "tool_guardrails",
+        }
+    ),
+    frozenset({"context", "memory"}),
+]
 
 # Third-party crates re-exported at the crate root for the `#[function_tool]` macro
 # (see `src/lib.rs`), so `crate::schemars::..` is not a module of ours.
@@ -96,6 +121,48 @@ def edges() -> list[tuple[Path, str, str]]:
     return out
 
 
+def cycles(all_edges: list[tuple[Path, str, str]]) -> list[frozenset[str]]:
+    """Strongly connected components with more than one module (Tarjan)."""
+    graph: dict[str, set[str]] = {}
+    for _, src_module, target in all_edges:
+        graph.setdefault(src_module, set()).add(target)
+        graph.setdefault(target, set())
+
+    index: dict[str, int] = {}
+    low: dict[str, int] = {}
+    on_stack: set[str] = set()
+    stack: list[str] = []
+    found: list[frozenset[str]] = []
+    counter = [0]
+
+    def visit(v: str) -> None:
+        index[v] = low[v] = counter[0]
+        counter[0] += 1
+        stack.append(v)
+        on_stack.add(v)
+        for w in sorted(graph[v]):
+            if w not in index:
+                visit(w)
+                low[v] = min(low[v], low[w])
+            elif w in on_stack:
+                low[v] = min(low[v], index[w])
+        if low[v] == index[v]:
+            comp = []
+            while True:
+                w = stack.pop()
+                on_stack.discard(w)
+                comp.append(w)
+                if w == v:
+                    break
+            if len(comp) > 1:
+                found.append(frozenset(comp))
+
+    for v in sorted(graph):
+        if v not in index:
+            visit(v)
+    return found
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--explain", action="store_true", help="print every edge with its tier")
@@ -103,8 +170,9 @@ def main() -> int:
 
     violations: list[str] = []
     unknown: set[str] = set()
+    all_edges = edges()
 
-    for rel, src_module, target in edges():
+    for rel, src_module, target in all_edges:
         if src_module not in TIERS:
             unknown.add(src_module)
             continue
@@ -129,13 +197,21 @@ def main() -> int:
         print("unknown modules, add them to TIERS: " + ", ".join(sorted(unknown)), file=sys.stderr)
         return 1
 
+    for comp in cycles(all_edges):
+        if comp not in ALLOWED_CYCLES:
+            extra = sorted(comp - set().union(*ALLOWED_CYCLES))
+            violations.append(
+                "unexpected dependency cycle: " + ", ".join(sorted(comp))
+                + (f" (not part of an allowed cycle: {', '.join(extra)})" if extra else "")
+            )
+
     if violations:
-        print("upward module dependencies:", file=sys.stderr)
+        print("module dependency violations:", file=sys.stderr)
         for v in violations:
             print(f"  {v}", file=sys.stderr)
         print(
-            "\nFix by moving the type down a tier, or register it in EXCEPTIONS with a "
-            "docs/refactor id.",
+            "\nFix by moving the type down a tier, or register it in EXCEPTIONS / ALLOWED_CYCLES "
+            "with a docs/refactor id.",
             file=sys.stderr,
         )
         return 1

@@ -32,8 +32,7 @@ pub mod tracing;
 pub mod usage;
 
 pub use agent::{
-    Agent, AsToolConfig, FunctionToolResult, ToolUseBehavior, ToolsToFinalOutputFn,
-    ToolsToFinalOutputResult,
+    Agent, FunctionToolResult, ToolUseBehavior, ToolsToFinalOutputFn, ToolsToFinalOutputResult,
 };
 pub use agent_output::{
     output_schema, AgentOutputSchema, AgentOutputSchemaBase, CustomOutputSchema,
@@ -91,7 +90,7 @@ pub use retry::{
     RetryPolicyContext,
 };
 pub use run::{
-    default_trace_include_sensitive_data, OutputGuardrailBlockedMessage,
+    default_trace_include_sensitive_data, AsToolConfig, OutputGuardrailBlockedMessage,
     OutputGuardrailBlockedMessageArgs, RunConfig, RunErrorData, RunErrorHandler,
     RunErrorHandlerInput, RunErrorHandlerResult, RunErrorHandlers, RunHandledError, RunOptions,
     Runner, ToolErrorFormatter, ToolErrorFormatterArgs, ToolErrorKind, ToolExecutionConfig,
