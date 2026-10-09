@@ -94,3 +94,38 @@ impl RunContextWrapper {
         }
     }
 }
+
+/// Context passed to tool invocations (Python: `ToolContext` subset).
+#[derive(Debug, Clone)]
+pub struct ToolContext {
+    /// Tool name being invoked.
+    pub tool_name: String,
+    /// Call id from the model.
+    pub tool_call_id: String,
+    /// Raw JSON arguments string from the model.
+    pub tool_arguments: String,
+    /// Run context shared with guardrails and hooks.
+    pub run_context: RunContextWrapper,
+}
+
+impl ToolContext {
+    /// Build a tool context from the run context.
+    pub fn new(
+        tool_name: impl Into<String>,
+        tool_call_id: impl Into<String>,
+        tool_arguments: impl Into<String>,
+        run_context: RunContextWrapper,
+    ) -> Self {
+        Self {
+            tool_name: tool_name.into(),
+            tool_call_id: tool_call_id.into(),
+            tool_arguments: tool_arguments.into(),
+            run_context,
+        }
+    }
+
+    /// Convenience accessor for the user context.
+    pub fn context<T: std::any::Any + Send + Sync>(&self) -> Option<&T> {
+        self.run_context.context::<T>()
+    }
+}

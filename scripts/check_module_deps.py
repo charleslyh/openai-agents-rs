@@ -66,11 +66,15 @@ EXCEPTIONS: dict[tuple[str, str], str] = {}
 
 # The dependency cycles that are accepted, as exact module sets.
 #
-# `Agent` aggregates tools, handoffs, guardrails, hooks, the model and MCP servers, while the
-# callbacks of every one of those take `Arc<Agent>` (and `ToolResult` carries a `RunState`). That
-# mutual reference is the domain core and is the same shape as in the Python SDK; breaking it
-# means generics or splitting `Agent` into handle and data (see docs/refactor/03-cycle-breaking.md).
-# Any module outside these sets that joins a cycle is a violation.
+# This is the domain core. `Agent` holds tools, handoffs, guardrails, hooks, the model and MCP
+# servers, and the callbacks of every one of those receive `&Agent` (`ToolContext`-style data is
+# already out of the way). That mutual reference has the same shape as in the Python SDK; removing
+# it would change the signature of every user callback and needs either generics or an
+# `AgentView` mirror of `Agent` (see docs/refactor/07-acyclic-evaluation.md).
+#
+# Things that used to be in this cycle and must stay out of it: `run`, `result`, `context`,
+# `memory`, `error`, `retry`, `tracing`, and `run_state` (it only needs plain data from
+# `error::payload`). Any module outside this set that joins a cycle is a violation.
 ALLOWED_CYCLES: list[frozenset[str]] = [
     frozenset(
         {
@@ -80,7 +84,6 @@ ALLOWED_CYCLES: list[frozenset[str]] = [
             "lifecycle",
             "mcp",
             "model",
-            "run_state",
             "tool",
             "tool_guardrails",
         }

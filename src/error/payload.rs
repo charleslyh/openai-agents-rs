@@ -1,8 +1,9 @@
-//! Payload types carried by error variants.
+//! Plain data shared by the error types and the run state, plus the default texts that go with it.
 //!
 //! They live next to [`super::AgentsError`] so the error module stays a leaf: these types only
 //! need `serde_json`, while the modules that *produce* them (`guardrail`, `tool_guardrails`,
-//! `tool`) are higher up and re-export them for backwards compatibility.
+//! `tool`) are higher up and re-export them for backwards compatibility. `run_state` reads them
+//! from here too, which keeps it out of the agent/tool dependency cycle.
 
 use serde_json::Value;
 
@@ -112,3 +113,24 @@ pub struct OutputGuardrailResult {
 pub fn default_tool_timeout_error_message(tool_name: &str, timeout_seconds: f64) -> String {
     format!("Tool '{tool_name}' timed out after {timeout_seconds} seconds.")
 }
+
+/// Result of one tool input guardrail run (Python: `ToolInputGuardrailResult`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToolInputGuardrailResult {
+    /// Name of the guardrail that ran.
+    pub guardrail_name: String,
+    /// What it returned.
+    pub output: ToolGuardrailFunctionOutput,
+}
+
+/// Result of one tool output guardrail run (Python: `ToolOutputGuardrailResult`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToolOutputGuardrailResult {
+    /// Name of the guardrail that ran.
+    pub guardrail_name: String,
+    /// What it returned.
+    pub output: ToolGuardrailFunctionOutput,
+}
+
+/// Default rejection text when a tool call is rejected (Python: `DEFAULT_APPROVAL_REJECTION_MESSAGE`).
+pub const DEFAULT_APPROVAL_REJECTION_MESSAGE: &str = "Tool execution was not approved.";
