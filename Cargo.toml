@@ -5,8 +5,9 @@ resolver = "2"
 # Lints every member inherits with `[lints] workspace = true`.
 #
 # These three are a *known, tracked backlog*, not a preference: `-D warnings` in CI blocks every
-# other lint, and this list must only ever shrink. Counts as of the 2026-10 audit:
-#   result_large_err          126 — `AgentsError` is a big enum, so `Result<_, AgentsError>` is
+# other lint, and this list must only ever shrink. Counts as of the 2026-10 re-audit (see
+# docs/refactor/06-progress.md for how to re-count):
+#   result_large_err           63 — `AgentsError` is a big enum, so `Result<_, AgentsError>` is
 #                                   large on the stack. Fixing it means boxing the error variant
 #                                   (an API change) or shrinking `ModelStatusError`; both need a
 #                                   design pass.

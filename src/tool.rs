@@ -7,6 +7,8 @@ use std::sync::Arc;
 use serde_json::Value;
 
 use crate::error::AgentsError;
+
+pub use crate::error::default_tool_timeout_error_message;
 use crate::items::ToolApprovalItem;
 use crate::run_context::RunContextWrapper;
 use crate::run_state::RunState;
@@ -59,12 +61,6 @@ pub enum ToolTimeoutBehavior {
     ErrorAsResult,
     /// Fail the run with [`crate::ToolTimeoutError`].
     RaiseException,
-}
-
-/// `Tool '<name>' timed out after <n> seconds.` (Python: `default_tool_timeout_error_message`,
-/// formatted with `:g`, so `2.0` prints as `2`).
-pub fn default_tool_timeout_error_message(tool_name: &str, timeout_seconds: f64) -> String {
-    format!("Tool '{tool_name}' timed out after {timeout_seconds} seconds.")
 }
 
 /// Context passed to tool invocations (Python: `ToolContext` subset).

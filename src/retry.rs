@@ -19,7 +19,7 @@ pub mod retry_policies {
     pub use super::policies::retry_policies::*;
 }
 
-pub(crate) use delay::{apply_retry_attempt_usage, default_retry_delay, retry_after_from_headers};
+pub(crate) use delay::{apply_retry_attempt_usage, default_retry_delay};
 pub(crate) use executor::{call_with_retry, RetryCall};
 pub use policy::{
     ModelRetryAdvice, ModelRetryAdviceRequest, ModelRetryNormalizedError, ReplaySafety,
