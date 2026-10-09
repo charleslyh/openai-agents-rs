@@ -8,6 +8,7 @@ mod retry_after;
 pub use payload::{
     default_tool_timeout_error_message, GuardrailFunctionOutput, InputGuardrailResult,
     OutputGuardrailResult, ToolGuardrailBehavior, ToolGuardrailFunctionOutput,
+    ToolInputGuardrailResult, ToolOutputGuardrailResult, DEFAULT_APPROVAL_REJECTION_MESSAGE,
 };
 pub(crate) use retry_after::retry_after_from_headers;
 

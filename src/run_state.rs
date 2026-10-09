@@ -7,18 +7,16 @@ use std::collections::HashMap;
 
 use serde_json::{json, Value};
 
-use crate::error::{AgentsError, UserError};
-use crate::guardrail::{GuardrailFunctionOutput, InputGuardrailResult};
+use crate::error::{
+    AgentsError, GuardrailFunctionOutput, InputGuardrailResult, ToolGuardrailBehavior,
+    ToolGuardrailFunctionOutput, ToolInputGuardrailResult, ToolOutputGuardrailResult, UserError,
+    DEFAULT_APPROVAL_REJECTION_MESSAGE,
+};
 use crate::items::{
     HandoffCallItem, HandoffOutputItem, InputLike, MessageOutputItem, ModelResponse, ReasoningItem,
     ResponseInputItem, RunItem, ToolApprovalItem, ToolCallItem, ToolCallOutputItem,
 };
 use crate::model_settings::ModelSettings;
-use crate::tool::DEFAULT_APPROVAL_REJECTION_MESSAGE;
-use crate::tool_guardrails::{
-    ToolGuardrailBehavior, ToolGuardrailFunctionOutput, ToolInputGuardrailResult,
-    ToolOutputGuardrailResult,
-};
 use crate::usage::Usage;
 
 /// Schema version embedded in [`RunState::to_json`].

@@ -12,9 +12,12 @@ use serde_json::Value;
 
 use crate::agent::Agent;
 use crate::error::payload as tool_guardrail_payload;
-use crate::tool::ToolContext;
+use crate::run_context::ToolContext;
 
-pub use tool_guardrail_payload::{ToolGuardrailBehavior, ToolGuardrailFunctionOutput};
+pub use tool_guardrail_payload::{
+    ToolGuardrailBehavior, ToolGuardrailFunctionOutput, ToolInputGuardrailResult,
+    ToolOutputGuardrailResult,
+};
 
 /// Data given to a tool input guardrail (Python: `ToolInputGuardrailData`).
 #[derive(Debug, Clone)]
@@ -114,24 +117,6 @@ impl ToolOutputGuardrail {
     pub async fn run(&self, data: ToolOutputGuardrailData) -> ToolGuardrailFunctionOutput {
         (self.guardrail_function)(data).await
     }
-}
-
-/// Result of one tool input guardrail run (Python: `ToolInputGuardrailResult`).
-#[derive(Debug, Clone, PartialEq)]
-pub struct ToolInputGuardrailResult {
-    /// Name of the guardrail that ran.
-    pub guardrail_name: String,
-    /// What it returned.
-    pub output: ToolGuardrailFunctionOutput,
-}
-
-/// Result of one tool output guardrail run (Python: `ToolOutputGuardrailResult`).
-#[derive(Debug, Clone, PartialEq)]
-pub struct ToolOutputGuardrailResult {
-    /// Name of the guardrail that ran.
-    pub guardrail_name: String,
-    /// What it returned.
-    pub output: ToolGuardrailFunctionOutput,
 }
 
 /// Run `guardrails` before a tool call. Returns the message that replaces the call, if one
