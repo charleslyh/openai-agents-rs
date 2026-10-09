@@ -30,10 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .model(model)
         .handoffs(vec![handoff(billing)]);
 
-    let input = common::input_with_fallback(
-        "User: ",
-        "What do I owe on my last invoice?",
-    )?;
+    let input = common::input_with_fallback("User: ", "What do I owe on my last invoice?")?;
     let result = Runner::run(&triage, input, RunOptions::default()).await?;
     println!("last_agent={}", result.last_agent_name);
     println!("{}", result.final_output_as_str().unwrap_or_default());

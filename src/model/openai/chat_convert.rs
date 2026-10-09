@@ -93,9 +93,13 @@ fn extract_all_content(content: &Value) -> Result<Value, ModelError> {
                 out.push(text_part(text));
             }
             Some("input_image") => {
-                let url = str_field(part, "image_url").filter(|u| !u.is_empty()).ok_or_else(|| {
-                    unsupported(format!("Only image URLs are supported for input_image {part}"))
-                })?;
+                let url = str_field(part, "image_url")
+                    .filter(|u| !u.is_empty())
+                    .ok_or_else(|| {
+                        unsupported(format!(
+                            "Only image URLs are supported for input_image {part}"
+                        ))
+                    })?;
                 let detail = str_field(part, "detail").unwrap_or("auto");
                 out.push(json!({"type": "image_url", "image_url": {"url": url, "detail": detail}}));
             }
@@ -105,9 +109,14 @@ fn extract_all_content(content: &Value) -> Result<Value, ModelError> {
                     .and_then(Value::as_str)
                     .filter(|u| !u.is_empty())
                     .ok_or_else(|| {
-                        unsupported(format!("Only image URLs are supported for image_url {part}"))
+                        unsupported(format!(
+                            "Only image URLs are supported for image_url {part}"
+                        ))
                     })?;
-                let detail = part.pointer("/image_url/detail").and_then(Value::as_str).unwrap_or("auto");
+                let detail = part
+                    .pointer("/image_url/detail")
+                    .and_then(Value::as_str)
+                    .unwrap_or("auto");
                 out.push(json!({"type": "image_url", "image_url": {"url": url, "detail": detail}}));
             }
             Some("input_audio") => {
@@ -118,7 +127,9 @@ fn extract_all_content(content: &Value) -> Result<Value, ModelError> {
                     .ok_or_else(|| {
                         unsupported(format!("input_audio requires both data and format {part}"))
                     })?;
-                out.push(json!({"type": "input_audio", "input_audio": {"data": data, "format": format}}));
+                out.push(
+                    json!({"type": "input_audio", "input_audio": {"data": data, "format": format}}),
+                );
             }
             Some("input_file") => {
                 let mut file = Map::new();
@@ -159,17 +170,29 @@ fn extract_text_content(content: &Value) -> Result<Value, ModelError> {
 /// Whether `item` is an "easy" message: only `role`, `content` and optionally `type: message` /
 /// `phase` (Python: `maybe_easy_input_message`).
 fn is_easy_message(item: &Value) -> bool {
-    let Some(map) = item.as_object() else { return false };
+    let Some(map) = item.as_object() else {
+        return false;
+    };
     map.contains_key("content")
         && map.contains_key("role")
-        && map.keys().all(|k| matches!(k.as_str(), "content" | "role" | "type" | "phase"))
+        && map
+            .keys()
+            .all(|k| matches!(k.as_str(), "content" | "role" | "type" | "phase"))
         && map.get("type").is_none_or(|t| t == "message")
-        && map.get("phase").is_none_or(|p| p.is_null() || p == "commentary" || p == "final_answer")
-        && matches!(str_field(item, "role"), Some("user" | "assistant" | "system" | "developer"))
+        && map
+            .get("phase")
+            .is_none_or(|p| p.is_null() || p == "commentary" || p == "final_answer")
+        && matches!(
+            str_field(item, "role"),
+            Some("user" | "assistant" | "system" | "developer")
+        )
 }
 
 fn has_tool_calls(message: &Map<String, Value>) -> bool {
-    message.get("tool_calls").and_then(Value::as_array).is_some_and(|c| !c.is_empty())
+    message
+        .get("tool_calls")
+        .and_then(Value::as_array)
+        .is_some_and(|c| !c.is_empty())
 }
 
 /// The assistant message under construction and the reasoning waiting to be attached to it.
@@ -222,7 +245,8 @@ impl MessageBuilder {
     /// Python: `apply_pending_thinking_blocks`. The provider's own list goes in as
     /// `thinking_blocks`; a list rebuilt from a stored item leads the message `content`.
     fn apply_pending_thinking(&mut self, message: &mut Map<String, Value>) {
-        let Some((blocks, native)) = self.pending_thinking.take().filter(|(b, _)| !b.is_empty()) else {
+        let Some((blocks, native)) = self.pending_thinking.take().filter(|(b, _)| !b.is_empty())
+        else {
             return;
         };
         if native {
@@ -265,7 +289,9 @@ pub fn items_to_chat_messages(
     for item in items {
         let kind = str_field(item, "type");
         let role = str_field(item, "role");
-        if is_easy_message(item) || (kind == Some("message") && matches!(role, Some("user" | "system" | "developer"))) {
+        if is_easy_message(item)
+            || (kind == Some("message") && matches!(role, Some("user" | "system" | "developer")))
+        {
             builder.flush(true);
             let content = item.get("content").unwrap_or(&Value::Null);
             let message = match role {
@@ -273,7 +299,11 @@ pub fn items_to_chat_messages(
                 Some(role @ ("system" | "developer" | "assistant")) => {
                     json!({"role": role, "content": extract_text_content(content)?})
                 }
-                other => return Err(unsupported(format!("Unexpected role in message: {other:?}"))),
+                other => {
+                    return Err(unsupported(format!(
+                        "Unexpected role in message: {other:?}"
+                    )))
+                }
             };
             builder.result.push(message);
         } else if kind == Some("message")
@@ -285,7 +315,9 @@ pub fn items_to_chat_messages(
         } else if kind == Some("function_call") {
             let call_id = str_field(item, "call_id")
                 .ok_or_else(|| unsupported(format!("function_call without call_id: {item}")))?;
-            let arguments = str_field(item, "arguments").filter(|a| !a.is_empty()).unwrap_or("{}");
+            let arguments = str_field(item, "arguments")
+                .filter(|a| !a.is_empty())
+                .unwrap_or("{}");
             let name = str_field(item, "name").unwrap_or_default();
             let mut call = json!({
                 "id": call_id,
@@ -296,10 +328,16 @@ pub fn items_to_chat_messages(
             let signature = item
                 .pointer("/provider_data/thought_signature")
                 .filter(|s| s.as_str().is_some_and(|s| !s.is_empty()));
-            if let (Some(signature), true) = (signature, options.model.to_lowercase().contains("gemini")) {
+            if let (Some(signature), true) =
+                (signature, options.model.to_lowercase().contains("gemini"))
+            {
                 call["extra_content"] = json!({"google": {"thought_signature": signature}});
             }
-            if let Some(calls) = builder.assistant().get_mut("tool_calls").and_then(Value::as_array_mut) {
+            if let Some(calls) = builder
+                .assistant()
+                .get_mut("tool_calls")
+                .and_then(Value::as_array_mut)
+            {
                 calls.push(call);
             }
         } else if kind == Some("function_call_output") {
@@ -335,14 +373,18 @@ pub fn items_to_chat_messages(
                 }
             }
         } else if kind == Some("item_reference") {
-            return Err(unsupported(format!("Encountered an item_reference, which is not supported: {item}")));
+            return Err(unsupported(format!(
+                "Encountered an item_reference, which is not supported: {item}"
+            )));
         } else if kind == Some("compaction") {
             return Err(unsupported(
                 "Compaction items are not supported for chat completions. \
                  Please use the Responses API to handle compaction.",
             ));
         } else {
-            return Err(unsupported(format!("Unhandled item type or structure: {item}")));
+            return Err(unsupported(format!(
+                "Unhandled item type or structure: {item}"
+            )));
         }
     }
     builder.flush(true);
@@ -422,7 +464,12 @@ fn restore_reasoning(builder: &mut MessageBuilder, item: &Value, options: &ChatC
 fn assistant_output_message(builder: &mut MessageBuilder, item: &Value) -> Result<(), ModelError> {
     let mut texts: Vec<&str> = Vec::new();
     let mut refusal: Option<&str> = None;
-    for part in item.get("content").and_then(Value::as_array).into_iter().flatten() {
+    for part in item
+        .get("content")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
         match str_field(part, "type") {
             Some("output_text") => texts.push(str_field(part, "text").unwrap_or_default()),
             Some("refusal") => refusal = str_field(part, "refusal"),
@@ -431,7 +478,11 @@ fn assistant_output_message(builder: &mut MessageBuilder, item: &Value) -> Resul
                     "Only audio IDs are supported for chat completions, but got: {part}"
                 )))
             }
-            _ => return Err(unsupported(format!("Unknown content type in ResponseOutputMessage: {part}"))),
+            _ => {
+                return Err(unsupported(format!(
+                    "Unknown content type in ResponseOutputMessage: {part}"
+                )))
+            }
         }
     }
     let combined = (!texts.is_empty()).then(|| texts.join("\n"));
@@ -439,7 +490,10 @@ fn assistant_output_message(builder: &mut MessageBuilder, item: &Value) -> Resul
     let mergeable = builder.current.as_ref().is_some_and(|m| {
         has_tool_calls(m)
             && !m.contains_key("refusal")
-            && matches!(m.get("content"), None | Some(Value::Null) | Some(Value::Array(_)))
+            && matches!(
+                m.get("content"),
+                None | Some(Value::Null) | Some(Value::Array(_))
+            )
     });
     if mergeable {
         let mut message = builder.current.take().unwrap_or_default();
@@ -570,9 +624,14 @@ pub fn chat_message_to_output_items(message: &Value) -> Vec<Value> {
 /// The origin is what later lets a reply's chain of thought be sent back only to the model that
 /// wrote it. Besides that, a Claude `thinking_blocks` list is kept on the reasoning item, and a
 /// Gemini `thought_signature` (`tool_calls[].extra_content.google`) on its function call.
-pub fn chat_message_to_output_items_with(message: &Value, provider_data: Option<&Value>) -> Vec<Value> {
+pub fn chat_message_to_output_items_with(
+    message: &Value,
+    provider_data: Option<&Value>,
+) -> Vec<Value> {
     let mut items = Vec::new();
-    let origin = provider_data.and_then(Value::as_object).filter(|d| !d.is_empty());
+    let origin = provider_data
+        .and_then(Value::as_object)
+        .filter(|d| !d.is_empty());
 
     let reasoning_content = str_field(message, "reasoning_content").filter(|t| !t.is_empty());
     let thinking_blocks: Vec<Value> = message
@@ -654,7 +713,12 @@ pub fn chat_message_to_output_items_with(message: &Value, provider_data: Option<
         items.push(message_item);
     }
 
-    for call in message.get("tool_calls").and_then(Value::as_array).into_iter().flatten() {
+    for call in message
+        .get("tool_calls")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
         // Servers that omit `type` still mean a function call; other kinds are not supported.
         if !matches!(str_field(call, "type"), None | Some("function")) {
             continue;

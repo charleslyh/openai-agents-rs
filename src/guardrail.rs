@@ -41,14 +41,22 @@ impl GuardrailFunctionOutput {
 
 /// Guardrail body: `(context, agent, input) -> GuardrailFunctionOutput`.
 pub type InputGuardrailFn = Arc<
-    dyn Fn(RunContextWrapper, Arc<Agent>, InputLike) -> Pin<Box<dyn Future<Output = GuardrailFunctionOutput> + Send>>
+    dyn Fn(
+            RunContextWrapper,
+            Arc<Agent>,
+            InputLike,
+        ) -> Pin<Box<dyn Future<Output = GuardrailFunctionOutput> + Send>>
         + Send
         + Sync,
 >;
 
 /// Guardrail body: `(context, agent, agent_output) -> GuardrailFunctionOutput`.
 pub type OutputGuardrailFn = Arc<
-    dyn Fn(RunContextWrapper, Arc<Agent>, Value) -> Pin<Box<dyn Future<Output = GuardrailFunctionOutput> + Send>>
+    dyn Fn(
+            RunContextWrapper,
+            Arc<Agent>,
+            Value,
+        ) -> Pin<Box<dyn Future<Output = GuardrailFunctionOutput> + Send>>
         + Send
         + Sync,
 >;
@@ -176,7 +184,8 @@ impl OutputGuardrail {
         context: RunContextWrapper,
     ) -> OutputGuardrailResult {
         let _span = crate::tracing::guardrail_span(&self.name);
-        let output = (self.guardrail_function)(context, Arc::clone(&agent), agent_output.clone()).await;
+        let output =
+            (self.guardrail_function)(context, Arc::clone(&agent), agent_output.clone()).await;
         OutputGuardrailResult {
             guardrail_name: self.name.clone(),
             agent_name: agent.name.clone(),

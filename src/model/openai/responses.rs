@@ -5,17 +5,17 @@ use std::collections::BTreeMap;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-use crate::usage::Usage;
 use crate::error::ModelError;
 use crate::items::{ModelResponse, ResponseOutputItem};
 use crate::model::wire_events::{
     emit_completed, emit_response_stream, now_seconds, response_object, FAKE_RESPONSES_ID,
 };
 use crate::model::{Model, ModelRequest};
+use crate::usage::Usage;
 
 use super::{
-    apply_model_settings_responses, decorate_request, is_json_response, map_reqwest, map_transport, status_error,
-    tools_as_responses, OpenAiEndpoint, SseReader,
+    apply_model_settings_responses, decorate_request, is_json_response, map_reqwest, map_transport,
+    status_error, tools_as_responses, OpenAiEndpoint, SseReader,
 };
 
 /// OpenAI Responses API model (Python: `OpenAIResponsesModel`).
@@ -26,7 +26,11 @@ pub struct OpenAIResponsesModel {
 
 impl OpenAIResponsesModel {
     /// Create with API key and optional custom base URL (for wiremock / proxies).
-    pub fn new(model: impl Into<String>, api_key: impl Into<String>, base_url: Option<&str>) -> Self {
+    pub fn new(
+        model: impl Into<String>,
+        api_key: impl Into<String>,
+        base_url: Option<&str>,
+    ) -> Self {
         Self {
             endpoint: OpenAiEndpoint::new(api_key, base_url),
             model: model.into(),
@@ -228,10 +232,12 @@ fn remove_incompatible_fields(items: Vec<Value>) -> Vec<Value> {
     items
         .into_iter()
         .filter_map(|mut item| {
-            let Some(map) = item.as_object_mut() else { return Some(item) };
-            let has_provider_data = map.get("provider_data").is_some_and(|d| {
-                !d.is_null() && d.as_object().map_or(true, |o| !o.is_empty())
-            });
+            let Some(map) = item.as_object_mut() else {
+                return Some(item);
+            };
+            let has_provider_data = map
+                .get("provider_data")
+                .is_some_and(|d| !d.is_null() && d.as_object().is_none_or(|o| !o.is_empty()));
             if map.get("type").and_then(Value::as_str) == Some("reasoning") && has_provider_data {
                 return None;
             }

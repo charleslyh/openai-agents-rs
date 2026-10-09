@@ -60,7 +60,10 @@ fn tool_output_trimmer_keeps_recent_turns_and_shrinks_old_outputs() {
         .trim(&items);
     assert_eq!(trimmed.len(), items.len());
     // Old outputs shrink; the originals are untouched.
-    assert!(trimmed[2]["output"].as_str().unwrap().starts_with("[Trimmed: search output"));
+    assert!(trimmed[2]["output"]
+        .as_str()
+        .unwrap()
+        .starts_with("[Trimmed: search output"));
     assert_eq!(items[2]["output"].as_str().unwrap().len(), 300);
     assert_eq!(trimmed[6]["output"], "short", "below the limit");
     // The last two user messages and everything after stay intact.
@@ -75,12 +78,24 @@ fn tool_output_trimmer_respects_trimmable_tools_and_validates() {
         .trimmable_tools(["calc"])
         .trim(&items);
     assert_eq!(trimmed[2], items[2], "search is not trimmable");
-    assert!(trimmed[4]["output"].as_str().unwrap().starts_with("[Trimmed: calc output"));
+    assert!(trimmed[4]["output"]
+        .as_str()
+        .unwrap()
+        .starts_with("[Trimmed: calc output"));
 
     assert!(ToolOutputTrimmer::new().recent_turns(0).validate().is_err());
-    assert!(ToolOutputTrimmer::new().max_output_chars(0).validate().is_err());
+    assert!(ToolOutputTrimmer::new()
+        .max_output_chars(0)
+        .validate()
+        .is_err());
     // Fewer user messages than `recent_turns`: nothing is old.
-    assert_eq!(ToolOutputTrimmer::new().recent_turns(9).max_output_chars(1).trim(&items), items);
+    assert_eq!(
+        ToolOutputTrimmer::new()
+            .recent_turns(9)
+            .max_output_chars(1)
+            .trim(&items),
+        items
+    );
 }
 
 const PYTHON_TRIMMER: &str = r#"
@@ -111,7 +126,10 @@ fn tool_output_trimmer_matches_python() {
     let cases = [
         (
             json!({"recent_turns": 2, "max_output_chars": 100, "preview_chars": 40}),
-            ToolOutputTrimmer::new().recent_turns(2).max_output_chars(100).preview_chars(40),
+            ToolOutputTrimmer::new()
+                .recent_turns(2)
+                .max_output_chars(100)
+                .preview_chars(40),
         ),
         (
             json!({"recent_turns": 1, "max_output_chars": 50, "preview_chars": 10,
@@ -124,7 +142,10 @@ fn tool_output_trimmer_matches_python() {
         ),
         (
             json!({"recent_turns": 3, "max_output_chars": 100, "preview_chars": 200}),
-            ToolOutputTrimmer::new().recent_turns(3).max_output_chars(100).preview_chars(200),
+            ToolOutputTrimmer::new()
+                .recent_turns(3)
+                .max_output_chars(100)
+                .preview_chars(200),
         ),
     ];
     for (config, trimmer) in cases {
@@ -142,9 +163,17 @@ fn tool_output_trimmer_matches_python() {
             .write_all(Value::Array(items.clone()).to_string().as_bytes())
             .unwrap();
         let out = child.wait_with_output().unwrap();
-        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
         let expected: Value = serde_json::from_slice(&out.stdout).expect("python json");
-        assert_eq!(Value::Array(trimmer.trim(&items)), expected, "config {config}");
+        assert_eq!(
+            Value::Array(trimmer.trim(&items)),
+            expected,
+            "config {config}"
+        );
     }
 }
 
@@ -178,18 +207,30 @@ fn window_trimmer_drops_oldest_turns_whole() {
     assert_eq!(by_turns.len(), items.len() - 4, "turn 1 left as a unit");
 
     // One token per item: pinned (1) + latest turn (4) leaves room for the 2-item turn only.
-    let by_tokens = ContextWindowTrimmer::new().max_tokens(7).token_counter(|_| 1).trim(&items, 0);
+    let by_tokens = ContextWindowTrimmer::new()
+        .max_tokens(7)
+        .token_counter(|_| 1)
+        .trim(&items, 0);
     assert_eq!(user_texts(&by_tokens), ["t2", "t3"]);
     // Reserved tokens (instructions) shrink the room.
-    let tight = ContextWindowTrimmer::new().max_tokens(7).token_counter(|_| 1).trim(&items, 2);
+    let tight = ContextWindowTrimmer::new()
+        .max_tokens(7)
+        .token_counter(|_| 1)
+        .trim(&items, 2);
     assert_eq!(user_texts(&tight), ["t3"]);
     // The latest turn is kept even when it alone exceeds the budget.
-    let tiny = ContextWindowTrimmer::new().max_tokens(1).token_counter(|_| 1).trim(&items, 0);
+    let tiny = ContextWindowTrimmer::new()
+        .max_tokens(1)
+        .token_counter(|_| 1)
+        .trim(&items, 0);
     assert_eq!(user_texts(&tiny), ["t3"]);
     assert!(tiny.iter().any(|i| i["call_id"] == "c3"));
     // No limits, no change.
     assert_eq!(ContextWindowTrimmer::new().trim(&items, 0), items);
-    assert!(ContextWindowTrimmer::new().max_turns(1).trim(&[], 0).is_empty());
+    assert!(ContextWindowTrimmer::new()
+        .max_turns(1)
+        .trim(&[], 0)
+        .is_empty());
 }
 
 #[tokio::test]
@@ -198,11 +239,19 @@ async fn filters_apply_to_the_model_call_only_and_chain() {
         ModelStep::from(ItemHelpers::function_tool_call("echo", "{}", "c1")),
         ModelStep::from(ItemHelpers::text_message("done")),
     ]));
-    let agent = Agent::new("a").model(model.clone()).tools(vec![
-        openai_agents::FunctionTool::constant("echo", "e", &"q".repeat(400)),
-    ]);
+    let agent =
+        Agent::new("a")
+            .model(model.clone())
+            .tools(vec![openai_agents::FunctionTool::constant(
+                "echo",
+                "e",
+                "q".repeat(400),
+            )]);
     let filter = chain_input_filters(vec![
-        ToolOutputTrimmer::new().recent_turns(1).max_output_chars(10).into_filter(),
+        ToolOutputTrimmer::new()
+            .recent_turns(1)
+            .max_output_chars(10)
+            .into_filter(),
         ContextWindowTrimmer::new().max_turns(1).into_filter(),
     ]);
     let mut options = RunOptions::default();
@@ -215,5 +264,12 @@ async fn filters_apply_to_the_model_call_only_and_chain() {
     assert_eq!(user_texts(second.as_array().unwrap()), ["new"]);
     assert!(second.to_string().contains("function_call_output"));
     // ...but the run's own history keeps everything.
-    assert_eq!(result.to_input_list().iter().filter(|i| i["role"] == "user").count(), 2);
+    assert_eq!(
+        result
+            .to_input_list()
+            .iter()
+            .filter(|i| i["role"] == "user")
+            .count(),
+        2
+    );
 }

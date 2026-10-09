@@ -105,8 +105,14 @@ impl McpCallToolResult {
                 .and_then(Value::as_array)
                 .cloned()
                 .unwrap_or_default(),
-            structured_content: value.get("structuredContent").filter(|s| !s.is_null()).cloned(),
-            is_error: value.get("isError").and_then(Value::as_bool).unwrap_or(false),
+            structured_content: value
+                .get("structuredContent")
+                .filter(|s| !s.is_null())
+                .cloned(),
+            is_error: value
+                .get("isError")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
         }
     }
 }
@@ -128,10 +134,16 @@ pub fn render_tool_result(result: &McpCallToolResult, use_structured_content: bo
         .content
         .iter()
         .map(|item| match item.get("type").and_then(Value::as_str) {
-            Some("text") => item.get("text").and_then(Value::as_str).unwrap_or_default().to_string(),
+            Some("text") => item
+                .get("text")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
             Some("image") => format!(
                 "[image: {}]",
-                item.get("mimeType").and_then(Value::as_str).unwrap_or("unknown type")
+                item.get("mimeType")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown type")
             ),
             _ => item.to_string(),
         })
@@ -153,8 +165,9 @@ pub struct ToolFilterContext {
     pub server_name: String,
 }
 
-type DynamicFilter =
-    Arc<dyn Fn(ToolFilterContext, McpTool) -> Pin<Box<dyn Future<Output = bool> + Send>> + Send + Sync>;
+type DynamicFilter = Arc<
+    dyn Fn(ToolFilterContext, McpTool) -> Pin<Box<dyn Future<Output = bool> + Send>> + Send + Sync,
+>;
 
 /// Which of a server's tools the agent may use (Python: `ToolFilter`).
 #[derive(Clone)]
@@ -298,7 +311,7 @@ pub trait McpServer: std::fmt::Debug + Send + Sync {
     }
 }
 
-/// An MCP server reached over a [`Transport`] (Python: `MCPServerStdio`,
+/// An MCP server reached over a private `Transport` (Python: `MCPServerStdio`,
 /// `MCPServerStreamableHttp`).
 pub struct McpClient {
     name: String,
@@ -462,9 +475,16 @@ impl McpClient {
         self.retry_backoff_max.map_or(wait, |max| wait.min(max))
     }
 
-    async fn request_once(&self, method: &str, params: Option<Value>) -> Result<Value, AgentsError> {
+    async fn request_once(
+        &self,
+        method: &str,
+        params: Option<Value>,
+    ) -> Result<Value, AgentsError> {
         let transport = self.transport().await?;
-        match transport.request(method, params, self.request_timeout).await {
+        match transport
+            .request(method, params, self.request_timeout)
+            .await
+        {
             Ok(value) => Ok(value),
             Err(error) => {
                 // A dead connection is dropped so the next call starts a fresh one.
@@ -497,8 +517,14 @@ impl McpClient {
                     .flatten()
                     .filter_map(McpTool::parse),
             );
-            match page.get("nextCursor").and_then(Value::as_str).filter(|c| !c.is_empty()) {
-                Some(next) if seen_cursors.insert(next.to_string()) => cursor = Some(next.to_string()),
+            match page
+                .get("nextCursor")
+                .and_then(Value::as_str)
+                .filter(|c| !c.is_empty())
+            {
+                Some(next) if seen_cursors.insert(next.to_string()) => {
+                    cursor = Some(next.to_string())
+                }
                 _ => break,
             }
         }
@@ -586,7 +612,10 @@ impl McpServer for McpClient {
 
 /// A tool call must provide every property the schema marks as required (Python:
 /// `_validate_required_parameters`), which gives the model a clearer error than the server's.
-fn check_required_arguments(tool: &McpTool, arguments: &serde_json::Map<String, Value>) -> Result<(), AgentsError> {
+fn check_required_arguments(
+    tool: &McpTool,
+    arguments: &serde_json::Map<String, Value>,
+) -> Result<(), AgentsError> {
     let missing: Vec<&str> = tool
         .input_schema
         .get("required")
@@ -609,7 +638,11 @@ fn check_required_arguments(tool: &McpTool, arguments: &serde_json::Map<String, 
 }
 
 /// Make a function tool that calls `tool` on `server` (Python: `MCPUtil.to_function_tool`).
-fn to_function_tool(server: &Arc<dyn McpServer>, tool: McpTool, config: &McpConfig) -> FunctionTool {
+fn to_function_tool(
+    server: &Arc<dyn McpServer>,
+    tool: McpTool,
+    config: &McpConfig,
+) -> FunctionTool {
     let mut schema = tool.input_schema.clone();
     if schema.get("properties").is_none() {
         // MCP does not require `properties`, but model APIs do.
@@ -655,7 +688,10 @@ fn to_function_tool(server: &Arc<dyn McpServer>, tool: McpTool, config: &McpConf
                 };
                 check_required_arguments(&tool, object)?;
                 let result = server.call_tool(&tool.name, Some(parsed)).await?;
-                Ok(Value::String(render_tool_result(&result, server.use_structured_content())))
+                Ok(Value::String(render_tool_result(
+                    &result,
+                    server.use_structured_content(),
+                )))
             }
         }
     };
@@ -727,7 +763,10 @@ mod tests {
             params: Option<Value>,
             _timeout: Duration,
         ) -> Result<Value, McpError> {
-            self.requests.lock().unwrap().push((method.to_string(), params.clone()));
+            self.requests
+                .lock()
+                .unwrap()
+                .push((method.to_string(), params.clone()));
             if self.die_once.swap(false, Ordering::SeqCst)
                 || self
                     .deaths
@@ -744,7 +783,11 @@ mod tests {
                         .and_then(Value::as_str)
                         .map(|c| c.parse::<usize>().unwrap())
                         .unwrap_or(0);
-                    Ok(self.pages.get(index).cloned().unwrap_or_else(|| json!({"tools": []})))
+                    Ok(self
+                        .pages
+                        .get(index)
+                        .cloned()
+                        .unwrap_or_else(|| json!({"tools": []})))
                 }
                 "tools/call" => Ok(json!({
                     "content": [{"type": "text", "text": params.unwrap()["arguments"].to_string()}],
@@ -780,13 +823,29 @@ mod tests {
     }
 
     fn fake(pages: Vec<Value>) -> (McpClient, Arc<FakeTransport>, Arc<FakeConnector>) {
-        let transport = Arc::new(FakeTransport { pages, ..Default::default() });
-        let connector = Arc::new(FakeConnector { transport: transport.clone(), connects: AtomicUsize::new(0) });
-        (McpClient::with_connector("fake".into(), connector.clone()), transport, connector)
+        let transport = Arc::new(FakeTransport {
+            pages,
+            ..Default::default()
+        });
+        let connector = Arc::new(FakeConnector {
+            transport: transport.clone(),
+            connects: AtomicUsize::new(0),
+        });
+        (
+            McpClient::with_connector("fake".into(), connector.clone()),
+            transport,
+            connector,
+        )
     }
 
     fn listed(transport: &FakeTransport) -> usize {
-        transport.requests.lock().unwrap().iter().filter(|(m, _)| m == "tools/list").count()
+        transport
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(m, _)| m == "tools/list")
+            .count()
     }
 
     async fn names(server: &dyn McpServer) -> Vec<String> {
@@ -831,15 +890,25 @@ mod tests {
     async fn filters_select_tools() {
         let page = || vec![json!({"tools": [tool_json("a"), tool_json("b"), tool_json("c")]})];
         let (client, ..) = fake(page());
-        assert_eq!(names(&client.tool_filter(ToolFilter::allow(["a", "c"]))).await, ["a", "c"]);
+        assert_eq!(
+            names(&client.tool_filter(ToolFilter::allow(["a", "c"]))).await,
+            ["a", "c"]
+        );
         let (client, ..) = fake(page());
-        assert_eq!(names(&client.tool_filter(ToolFilter::block(["b"]))).await, ["a", "c"]);
+        assert_eq!(
+            names(&client.tool_filter(ToolFilter::block(["b"]))).await,
+            ["a", "c"]
+        );
         let (client, ..) = fake(page());
         let both = ToolFilter::Static {
             allowed: Some(vec!["a".into(), "b".into()]),
             blocked: Some(vec!["b".into()]),
         };
-        assert_eq!(names(&client.tool_filter(both)).await, ["a"], "allowed first, then blocked");
+        assert_eq!(
+            names(&client.tool_filter(both)).await,
+            ["a"],
+            "allowed first, then blocked"
+        );
         let (client, ..) = fake(page());
         let dynamic = ToolFilter::dynamic(|ctx, tool| async move {
             ctx.server_name == "fake" && ctx.agent.name == "a" && tool.name != "a"
@@ -854,7 +923,11 @@ mod tests {
         transport.die_once.store(true, Ordering::SeqCst);
         assert!(client.call_tool("a", None).await.is_err());
         assert!(client.call_tool("a", Some(json!({"x": 1}))).await.is_ok());
-        assert_eq!(connector.connects.load(Ordering::SeqCst), 2, "reconnected once");
+        assert_eq!(
+            connector.connects.load(Ordering::SeqCst),
+            2,
+            "reconnected once"
+        );
         client.cleanup().await.unwrap();
         client.connect().await.unwrap();
         assert_eq!(connector.connects.load(Ordering::SeqCst), 3);
@@ -871,13 +944,25 @@ mod tests {
     async fn failed_requests_are_retried_with_backoff() {
         let ms = Duration::from_millis;
         let (client, transport, connector) = fake(vec![json!({"tools": [tool_json("a")]})]);
-        let client = client.max_retry_attempts(2).retry_backoff(ms(1), Some(ms(2)));
+        let client = client
+            .max_retry_attempts(2)
+            .retry_backoff(ms(1), Some(ms(2)));
         transport.die_times(2);
-        assert!(client.call_tool("a", None).await.is_ok(), "two failures fit in two retries");
-        assert_eq!(connector.connects.load(Ordering::SeqCst), 3, "each retry reconnected");
+        assert!(
+            client.call_tool("a", None).await.is_ok(),
+            "two failures fit in two retries"
+        );
+        assert_eq!(
+            connector.connects.load(Ordering::SeqCst),
+            3,
+            "each retry reconnected"
+        );
 
         transport.die_times(3);
-        assert!(client.call_tool("a", None).await.is_err(), "a third failure is reported");
+        assert!(
+            client.call_tool("a", None).await.is_err(),
+            "a third failure is reported"
+        );
 
         // The default is no retry, and -1 never gives up.
         let (client, transport, _) = fake(vec![json!({"tools": [tool_json("a")]})]);
@@ -891,7 +976,11 @@ mod tests {
         let client = client.retry_backoff(Duration::from_secs(1), Some(Duration::from_secs(5)));
         let waits: Vec<_> = (0..5).map(|n| client.backoff_after(n).as_secs()).collect();
         assert_eq!(waits, [1, 2, 4, 5, 5]);
-        assert_eq!(client.backoff_after(i32::MAX), Duration::from_secs(5), "no overflow");
+        assert_eq!(
+            client.backoff_after(i32::MAX),
+            Duration::from_secs(5),
+            "no overflow"
+        );
     }
 
     #[test]
@@ -902,20 +991,42 @@ mod tests {
         };
         assert!(!check(&RequireApproval::Never, "a"));
         assert!(check(&RequireApproval::Always, "a"));
-        let per_tool = RequireApproval::PerTool { always: vec!["rm".into()], never: vec!["ls".into()] };
+        let per_tool = RequireApproval::PerTool {
+            always: vec!["rm".into()],
+            never: vec!["ls".into()],
+        };
         assert!(check(&per_tool, "rm"));
         assert!(!check(&per_tool, "ls"));
-        assert!(!check(&per_tool, "other"), "unlisted tools need no approval");
+        assert!(
+            !check(&per_tool, "other"),
+            "unlisted tools need no approval"
+        );
     }
 
     async fn invoke(tool: &FunctionTool, arguments: &str) -> Result<Value, AgentsError> {
-        let context = ToolContext::new(tool.name.clone(), "c1", arguments, RunContextWrapper::new(None));
-        (tool.on_invoke_tool)(context, arguments.to_string()).await.map(|r| r.output.unwrap())
+        let context = ToolContext::new(
+            tool.name.clone(),
+            "c1",
+            arguments,
+            RunContextWrapper::new(None),
+        );
+        (tool.on_invoke_tool)(context, arguments.to_string())
+            .await
+            .map(|r| r.output.unwrap())
     }
 
-    async fn convert(client: McpClient, config: McpConfig) -> Result<Vec<FunctionTool>, AgentsError> {
+    async fn convert(
+        client: McpClient,
+        config: McpConfig,
+    ) -> Result<Vec<FunctionTool>, AgentsError> {
         let server: Arc<dyn McpServer> = client.shared();
-        mcp_function_tools(&[server], &config, &RunContextWrapper::new(None), &Agent::new("a")).await
+        mcp_function_tools(
+            &[server],
+            &config,
+            &RunContextWrapper::new(None),
+            &Agent::new("a"),
+        )
+        .await
     }
 
     #[tokio::test]
@@ -929,23 +1040,47 @@ mod tests {
         let (a, bare) = (&tools[0], &tools[1]);
         assert_eq!(a.description, "a tool");
         assert_eq!(bare.description, "Bare title", "falls back to the title");
-        assert_eq!(bare.params_json_schema["properties"], json!({}), "`properties` is added");
+        assert_eq!(
+            bare.params_json_schema["properties"],
+            json!({}),
+            "`properties` is added"
+        );
         assert!(matches!(a.needs_approval, NeedsApproval::Fixed(true)));
 
         assert_eq!(invoke(a, r#"{"x": 1}"#).await.unwrap(), json!("{\"x\":1}"));
         let missing = invoke(a, "{}").await.unwrap_err();
-        assert!(missing.to_string().contains("missing required parameters: x"), "{missing}");
+        assert!(
+            missing
+                .to_string()
+                .contains("missing required parameters: x"),
+            "{missing}"
+        );
         assert!(invoke(a, "not json").await.is_err());
-        assert!(invoke(a, "[1]").await.is_err(), "arguments must be an object");
-        assert_eq!(invoke(bare, "").await.unwrap(), json!("{}"), "empty input means no arguments");
-        let calls = transport.requests.lock().unwrap().iter().filter(|(m, _)| m == "tools/call").count();
+        assert!(
+            invoke(a, "[1]").await.is_err(),
+            "arguments must be an object"
+        );
+        assert_eq!(
+            invoke(bare, "").await.unwrap(),
+            json!("{}"),
+            "empty input means no arguments"
+        );
+        let calls = transport
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(m, _)| m == "tools/call")
+            .count();
         assert_eq!(calls, 2, "invalid calls never reach the server");
     }
 
     #[tokio::test]
     async fn strict_conversion_is_opt_in() {
         let page = || vec![json!({"tools": [tool_json("a")]})];
-        let strict = McpConfig { convert_schemas_to_strict: true };
+        let strict = McpConfig {
+            convert_schemas_to_strict: true,
+        };
         let tools = convert(fake(page()).0, strict).await.unwrap();
         assert!(tools[0].strict_json_schema);
         assert_eq!(tools[0].params_json_schema["additionalProperties"], false);
@@ -955,7 +1090,10 @@ mod tests {
 
     #[tokio::test]
     async fn duplicate_names_across_servers_are_rejected() {
-        let one: Arc<dyn McpServer> = fake(vec![json!({"tools": [tool_json("dup"), tool_json("x")]})]).0.shared();
+        let one: Arc<dyn McpServer> =
+            fake(vec![json!({"tools": [tool_json("dup"), tool_json("x")]})])
+                .0
+                .shared();
         let two: Arc<dyn McpServer> = fake(vec![json!({"tools": [tool_json("dup")]})]).0.shared();
         let error = mcp_function_tools(
             &[one, two],
@@ -966,7 +1104,9 @@ mod tests {
         .await
         .unwrap_err();
         assert!(
-            error.to_string().contains("Duplicate tool names found across MCP servers: \"dup\""),
+            error
+                .to_string()
+                .contains("Duplicate tool names found across MCP servers: \"dup\""),
             "{error}"
         );
     }
@@ -988,7 +1128,13 @@ mod tests {
             "one\n[image: image/png]\n{\"type\":\"resource_link\",\"uri\":\"file:///x\"}\ntwo"
         );
         assert_eq!(render_tool_result(&result, true), "{\"n\":1}");
-        let failed = McpCallToolResult { is_error: true, ..result };
-        assert!(render_tool_result(&failed, true).starts_with("one"), "errors keep their content");
+        let failed = McpCallToolResult {
+            is_error: true,
+            ..result
+        };
+        assert!(
+            render_tool_result(&failed, true).starts_with("one"),
+            "errors keep their content"
+        );
     }
 }

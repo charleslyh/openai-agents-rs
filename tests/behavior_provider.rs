@@ -4,14 +4,17 @@ use std::sync::Arc;
 
 use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
 use openai_agents::{
-    Agent, AgentsError, ModelRef, ModelProvider, MultiProvider, RunOptions, Runner, UserError,
+    Agent, AgentsError, ModelProvider, ModelRef, MultiProvider, RunOptions, Runner, UserError,
 };
 
 /// A test provider that always returns a scripted model.
 struct ScriptedProvider;
 
 impl ModelProvider for ScriptedProvider {
-    fn get_model(&self, model_name: Option<&str>) -> Result<Arc<dyn openai_agents::Model>, UserError> {
+    fn get_model(
+        &self,
+        model_name: Option<&str>,
+    ) -> Result<Arc<dyn openai_agents::Model>, UserError> {
         let _ = model_name;
         Ok(Arc::new(ScriptedModel::new([ModelStep::from(
             ItemHelpers::text_message("from provider"),
@@ -63,7 +66,7 @@ async fn unresolved_model_reports_actionable_error() {
     let agent = Agent::new("no-model");
     let err = Runner::run(&agent, "go", RunOptions::default())
         .await
-        .err().expect("must fail");
+        .expect_err("must fail");
     assert!(matches!(err, AgentsError::User(_)), "{err}");
     assert!(err.to_string().contains("model_name"), "{err}");
 }
@@ -83,7 +86,8 @@ async fn multi_provider_routes_registered_prefix() {
     assert!(router.get_model(Some("test/x")).is_ok());
     let err = router
         .get_model(Some("unknown/x"))
-        .err().expect("unregistered prefix must fail");
+        .err()
+        .expect("unregistered prefix must fail");
     assert!(err.to_string().contains("Unknown model provider"), "{err}");
 }
 
@@ -99,6 +103,9 @@ fn provider_without_name_is_an_error() {
 #[test]
 fn missing_provider_is_actionable() {
     let provider = openai_agents::MissingProvider;
-    let err = provider.get_model(Some("openai/gpt-x")).err().expect("must fail");
+    let err = provider
+        .get_model(Some("openai/gpt-x"))
+        .err()
+        .expect("must fail");
     assert!(err.to_string().contains("No ModelProvider"), "{err}");
 }

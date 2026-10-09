@@ -92,8 +92,9 @@ impl AgentOutputSchema {
             });
         }
 
-        let raw = serde_json::to_value(crate::schemars::schema_for!(T))
-            .map_err(|e| UserError::new(format!("could not build a JSON schema for `{name}`: {e}")))?;
+        let raw = serde_json::to_value(crate::schemars::schema_for!(T)).map_err(|e| {
+            UserError::new(format!("could not build a JSON schema for `{name}`: {e}"))
+        })?;
 
         let is_object = raw.get("type") == Some(&Value::String("object".into()));
         let (schema, wrapped) = if is_object {
@@ -147,7 +148,10 @@ impl AgentOutputSchemaBase for AgentOutputSchema {
 
     fn json_schema(&self) -> Result<&Value, AgentsError> {
         if self.plain_text {
-            return Err(UserError::new("Output type is plain text, so no JSON schema is available").into());
+            return Err(UserError::new(
+                "Output type is plain text, so no JSON schema is available",
+            )
+            .into());
         }
         Ok(&self.schema)
     }
@@ -161,7 +165,9 @@ impl AgentOutputSchemaBase for AgentOutputSchema {
             return Ok(Value::String(json_str.to_string()));
         }
         let parsed: Value = serde_json::from_str(json_str).map_err(|e| {
-            ModelError::Behavior(format!("Model returned invalid JSON for the output type: {e}"))
+            ModelError::Behavior(format!(
+                "Model returned invalid JSON for the output type: {e}"
+            ))
         })?;
 
         if self.wrapped {
@@ -242,7 +248,9 @@ impl AgentOutputSchemaBase for CustomOutputSchema {
 
     fn validate_json(&self, json_str: &str) -> Result<Value, ModelError> {
         serde_json::from_str::<Value>(json_str).map_err(|e| {
-            ModelError::Behavior(format!("Model returned invalid JSON for the output type: {e}"))
+            ModelError::Behavior(format!(
+                "Model returned invalid JSON for the output type: {e}"
+            ))
         })
     }
 }

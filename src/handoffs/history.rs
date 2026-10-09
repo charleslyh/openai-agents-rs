@@ -22,7 +22,11 @@ const LEGACY_PREAMBLE: &str = "For context, here is the conversation so far:";
 const SUMMARY_ONLY_TYPES: [&str; 3] = ["function_call", "function_call_output", "reasoning"];
 
 /// SDK-only keys removed before an item is summarized or replayed.
-const INTERNAL_KEYS: [&str; 3] = ["_agents_tool_description", "_agents_tool_title", "created_by"];
+const INTERNAL_KEYS: [&str; 3] = [
+    "_agents_tool_description",
+    "_agents_tool_title",
+    "created_by",
+];
 
 static WRAPPERS: Mutex<Option<(String, String)>> = Mutex::new(None);
 

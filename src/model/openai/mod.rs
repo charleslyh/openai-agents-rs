@@ -1,7 +1,7 @@
 //! OpenAI model adapters built on `async-openai` config + HTTP.
 
-pub mod chat_convert;
 mod chat_completions;
+pub mod chat_convert;
 mod responses;
 
 pub use chat_completions::OpenAIChatCompletionsModel;
@@ -64,7 +64,9 @@ impl OpenAIProvider {
     /// gateway endpoints need no key, and no `Authorization` header is sent for an empty one.
     /// Secrets are only read from the environment or passed explicitly; they are never logged.
     pub fn from_env() -> Result<Self, UserError> {
-        let base_url = std::env::var("OPENAI_BASE_URL").ok().filter(|v| !v.trim().is_empty());
+        let base_url = std::env::var("OPENAI_BASE_URL")
+            .ok()
+            .filter(|v| !v.trim().is_empty());
         let api_key = std::env::var("OPENAI_API_KEY").unwrap_or_default();
         if api_key.trim().is_empty() && base_url.is_none() {
             return Err(UserError::new(
@@ -93,7 +95,9 @@ impl OpenAIProvider {
     /// The API a model gets (D-I): the provider's own choice, else `set_default_openai_api`,
     /// else Chat Completions.
     fn resolve_api(&self) -> crate::run::DefaultOpenAiApi {
-        self.api.or_else(crate::run::explicit_default_openai_api).unwrap_or_default()
+        self.api
+            .or_else(crate::run::explicit_default_openai_api)
+            .unwrap_or_default()
     }
 }
 
@@ -595,13 +599,28 @@ mod tests {
     /// whatever the host. (These cases never touch the process-global setting.)
     #[test]
     fn api_defaults_to_chat_completions() {
-        for base in [None, Some("https://api.openai.com/v1"), Some("http://localhost:8000/v1")] {
-            assert_eq!(OpenAIProvider::new("k", base, None).resolve_api(), ChatCompletions, "{base:?}");
+        for base in [
+            None,
+            Some("https://api.openai.com/v1"),
+            Some("http://localhost:8000/v1"),
+        ] {
+            assert_eq!(
+                OpenAIProvider::new("k", base, None).resolve_api(),
+                ChatCompletions,
+                "{base:?}"
+            );
         }
         assert_eq!(
-            OpenAIProvider::new("k", None, None).api(Responses).resolve_api(),
+            OpenAIProvider::new("k", None, None)
+                .api(Responses)
+                .resolve_api(),
             Responses
         );
-        assert_eq!(OpenAIProvider::new("k", None, None).always_chat_completions().resolve_api(), ChatCompletions);
+        assert_eq!(
+            OpenAIProvider::new("k", None, None)
+                .always_chat_completions()
+                .resolve_api(),
+            ChatCompletions
+        );
     }
 }

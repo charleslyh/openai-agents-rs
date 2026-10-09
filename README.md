@@ -98,20 +98,26 @@ bash scripts/sync_vendor.sh --check
 
 (Network note: preferred `git submodule` may fail behind restricted GitHub access; the sync script can download the release tarball.)
 
-## Verification (three layers)
+## Verification
 
 | Layer | Command |
 |-------|---------|
+| 0. Format, lints, docs, vendor pin | `cargo fmt --all -- --check` · `cargo clippy --all-features --all-targets -- -D warnings` · `RUSTDOCFLAGS=-D warnings cargo doc --no-deps --all-features` · `bash scripts/sync_vendor.sh --check` |
 | 1. ScriptedModel behavior | `cargo test --no-default-features` |
+| 1.5 Property tests (generated inputs) | `cargo test --test property_core` |
 | 2. OpenAI HTTP contracts (wiremock) | `cargo test` (default features; needs `openai`) |
 | SQLite sessions | `cargo test --features sqlite` |
 | MCP interoperability (real Python MCP server) | `cargo test --test mcp_interop` (needs the venv, skips without it) |
-| 3. Python oracle parity | `.venv/bin/python scripts/run_parity.py --write-golden` then `cargo test --test parity_scenarios` |
+| 3. Python oracle parity | `.venv/bin/python scripts/run_parity.py --check` then `cargo test --test parity_scenarios` |
 
 Shared scenarios live in [`tests/parity/scenarios/`](./tests/parity/scenarios/). A scenario only
 needs `expect` to run; the `.golden.json` produced by the Python oracle is optional and compared
-when present. Regenerate it with `.venv/bin/python scripts/run_parity.py --write-golden` on a
-machine that has `openai-agents==0.23.1` installed.
+when present. `--check` fails on drift and never overwrites; regenerate deliberately with
+`.venv/bin/python scripts/run_parity.py --write-golden` on a machine that has
+`openai-agents==0.23.1` installed.
+
+CI runs every layer on Linux and macOS — see `.github/workflows/ci.yml` and
+[`docs/CONTRIBUTING.md`](./docs/CONTRIBUTING.md#layers).
 
 ## MCP tools
 
@@ -173,6 +179,8 @@ let session = CompactingSession::new(
 
 - [`docs/COMPAT.md`](./docs/COMPAT.md) — support matrix
 - [`docs/DEVIATIONS.md`](./docs/DEVIATIONS.md) — intentional differences from Python (must stay current)
+- [`docs/READINESS.md`](./docs/READINESS.md) — capability assessment per agent use case, and improvement backlog
+- [`docs/MIGRATION-FROM-PYTHON.md`](./docs/MIGRATION-FROM-PYTHON.md) — Python → Rust API mapping and what to write yourself
 - [`docs/CONTRIBUTING.md`](./docs/CONTRIBUTING.md) — commit message format and verification
 
 HITL is supported: `needs_approval` (fixed or dynamic), `RunState` approve/reject, sticky

@@ -6,12 +6,14 @@ use tokio::sync::mpsc;
 
 use crate::agent::Agent;
 use crate::error::AgentsError;
-use crate::tool_guardrails::{ToolInputGuardrailResult, ToolOutputGuardrailResult};
 use crate::guardrail::{InputGuardrailResult, OutputGuardrailResult};
-use crate::items::{ItemHelpers, InputLike, ModelResponse, ResponseInputItem, RunItem, ToolApprovalItem};
+use crate::items::{
+    InputLike, ItemHelpers, ModelResponse, ResponseInputItem, RunItem, ToolApprovalItem,
+};
 use crate::model_settings::ModelSettings;
 use crate::run_state::{ApprovalStore, RunState};
 use crate::stream_events::StreamEvent;
+use crate::tool_guardrails::{ToolInputGuardrailResult, ToolOutputGuardrailResult};
 use crate::usage::Usage;
 
 /// Result of a completed or interrupted `Runner::run` (Python: `RunResult`).
@@ -65,7 +67,7 @@ pub(crate) struct InterruptSnapshot {
     /// Whether the run's input is already in the session.
     pub session_input_saved: bool,
     /// Input guardrail results gathered before the pause.
-    pub input_guardrail_results: Vec<crate::guardrail::InputGuardrailResult>
+    pub input_guardrail_results: Vec<crate::guardrail::InputGuardrailResult>,
 }
 
 impl RunResult {
@@ -140,7 +142,7 @@ impl RunResult {
             generated_items: self.new_items.clone(),
             raw_responses: self.raw_responses.clone(),
             usage: self.usage.clone(),
-            max_turns: self.max_turns.unwrap_or(crate::run::DEFAULT_MAX_TURNS),
+            max_turns: self.max_turns,
             turn: snap.turn,
             previous_response_id: snap.previous_response_id.clone(),
             model_settings: snap.model_settings.clone(),
@@ -276,7 +278,11 @@ impl RunResultStreaming {
 
     /// Current agent name.
     pub fn current_agent_name(&self) -> String {
-        self.snapshot.lock().expect("snapshot").current_agent_name.clone()
+        self.snapshot
+            .lock()
+            .expect("snapshot")
+            .current_agent_name
+            .clone()
     }
 
     /// Final output once available.

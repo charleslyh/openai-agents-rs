@@ -20,12 +20,10 @@ async fn mixed_batch_executes_unapproved_tools_before_pausing() {
         ]),
         ModelStep::from(ItemHelpers::text_message("resumed")),
     ]));
-    let agent = Agent::new("assistant")
-        .model(model)
-        .tools(vec![
-            FunctionTool::constant("safe_read", "read", "read-ok"),
-            FunctionTool::constant("delete_file", "delete", "deleted").with_needs_approval(true),
-        ]);
+    let agent = Agent::new("assistant").model(model).tools(vec![
+        FunctionTool::constant("safe_read", "read", "read-ok"),
+        FunctionTool::constant("delete_file", "delete", "deleted").with_needs_approval(true),
+    ]);
 
     let result = Runner::run(&agent, "go", RunOptions::default())
         .await
@@ -44,7 +42,10 @@ async fn mixed_batch_executes_unapproved_tools_before_pausing() {
 /// RunState schema v2 is current, and v1 payloads remain readable.
 #[tokio::test]
 async fn run_state_json_accepts_previous_schema_version() {
-    assert_eq!(SUPPORTED_RUN_STATE_SCHEMAS.last().copied(), Some(RUN_STATE_SCHEMA_VERSION));
+    assert_eq!(
+        SUPPORTED_RUN_STATE_SCHEMAS.last().copied(),
+        Some(RUN_STATE_SCHEMA_VERSION)
+    );
 
     let model = Arc::new(ScriptedModel::new([
         ModelStep::from(ItemHelpers::function_tool_call("delete_file", "{}", "c1")),
@@ -52,9 +53,12 @@ async fn run_state_json_accepts_previous_schema_version() {
     ]));
     let agent = Agent::new("assistant")
         .model(model)
-        .tools(vec![
-            FunctionTool::constant("delete_file", "delete", "deleted").with_needs_approval(true),
-        ]);
+        .tools(vec![FunctionTool::constant(
+            "delete_file",
+            "delete",
+            "deleted",
+        )
+        .with_needs_approval(true)]);
     let result = Runner::run(&agent, "go", RunOptions::default())
         .await
         .expect("run");
@@ -73,7 +77,52 @@ async fn run_state_json_accepts_previous_schema_version() {
     assert_eq!(restored.interruptions.len(), 1);
 
     value["$schemaVersion"] = serde_json::json!("openai-agents-rs/99");
-    assert!(RunState::from_json("assistant", value).is_err());
+    assert!(RunState::from_json("assistant", value.clone()).is_err());
+
+    // A `/2` payload is the previous shape and stays loadable.
+    value["$schemaVersion"] = serde_json::json!("openai-agents-rs/2");
+    let restored = RunState::from_json("assistant", value).expect("v2 payload must still load");
+    assert_eq!(restored.interruptions.len(), 1);
+}
+
+/// D-042: an unlimited run pauses as `max_turns: null` and resumes unlimited. A `/2` snapshot
+/// always carried a number, which loads as `Some(n)`.
+#[tokio::test]
+async fn unlimited_run_state_round_trip_keeps_max_turns_null() {
+    let model = Arc::new(ScriptedModel::new([
+        ModelStep::from(ItemHelpers::function_tool_call("delete_file", "{}", "c1")),
+        ModelStep::from(ItemHelpers::text_message("done")),
+    ]));
+    let agent = Agent::new("assistant")
+        .model(model)
+        .tools(vec![FunctionTool::constant(
+            "delete_file",
+            "delete",
+            "deleted",
+        )
+        .with_needs_approval(true)]);
+    let mut opts = RunOptions::default();
+    opts.max_turns = None;
+    let paused = Runner::run(&agent, "go", opts).await.expect("run");
+    assert!(paused.is_interrupted());
+
+    let json = paused.to_state().expect("to_state").to_json();
+    assert_eq!(json["$schemaVersion"], RUN_STATE_SCHEMA_VERSION);
+    assert!(
+        json["max_turns"].is_null(),
+        "max_turns: {:?}",
+        json["max_turns"]
+    );
+
+    let restored = RunState::from_json("assistant", json).expect("restore");
+    assert_eq!(restored.max_turns, None);
+
+    // A `/2`-era number still means "that many turns".
+    let mut legacy = paused.to_state().expect("to_state").to_json();
+    legacy["$schemaVersion"] = serde_json::json!("openai-agents-rs/2");
+    legacy["max_turns"] = serde_json::json!(4);
+    let restored = RunState::from_json("assistant", legacy).expect("restore");
+    assert_eq!(restored.max_turns, Some(4));
 }
 
 #[tokio::test]
@@ -239,10 +288,7 @@ async fn custom_rejection_message() {
     let _ = Runner::run_state(&agent, state, RunOptions::default())
         .await
         .expect("resume");
-    assert!(model.calls()[1]
-        .input
-        .to_string()
-        .contains("User denied"));
+    assert!(model.calls()[1].input.to_string().contains("User denied"));
 }
 
 #[tokio::test]
@@ -370,8 +416,8 @@ async fn agent_as_tool_nested_approval_bubbles_to_outer() {
     assert_eq!(nested_invokes.load(Ordering::SeqCst), 0);
 
     let state = result.to_state().expect("state");
-    let mut state = openai_agents::RunState::from_string(&outer.name, &state.to_string())
-        .expect("from_string");
+    let mut state =
+        openai_agents::RunState::from_string(&outer.name, &state.to_string()).expect("from_string");
     state.approve(&result.interruptions[0], false);
 
     let result = Runner::run_state(&outer, state, RunOptions::default())
@@ -394,7 +440,13 @@ async fn paused_run_saves_each_item_once_across_resume() {
     let kinds = |items: Vec<serde_json::Value>| -> Vec<String> {
         items
             .iter()
-            .map(|i| i["type"].as_str().or(i["role"].as_str()).unwrap().to_string())
+            .map(|i| {
+                i["type"]
+                    .as_str()
+                    .or(i["role"].as_str())
+                    .unwrap()
+                    .to_string()
+            })
             .collect()
     };
     let model = Arc::new(ScriptedModel::new([
@@ -425,11 +477,20 @@ async fn paused_run_saves_each_item_once_across_resume() {
     let json = paused.to_state().expect("state").to_json();
     let mut state = openai_agents::RunState::from_json("a", json).expect("from_json");
     state.approve(&paused.interruptions[0], false);
-    let resumed = Runner::run_state(&agent, state, options()).await.expect("resume");
+    let resumed = Runner::run_state(&agent, state, options())
+        .await
+        .expect("resume");
     assert_eq!(resumed.final_output_as_str(), Some("ok"));
     assert_eq!(
         kinds(session.get_items(None).await.unwrap()),
-        ["user", "function_call", "function_call_output", "function_call", "function_call_output", "message"]
+        [
+            "user",
+            "function_call",
+            "function_call_output",
+            "function_call",
+            "function_call_output",
+            "message"
+        ]
     );
 }
 
@@ -458,19 +519,33 @@ async fn guardrail_results_survive_a_pause_and_resume() {
             FunctionTool::constant("del", "d", "deleted").with_needs_approval(true),
         ]);
 
-    let paused = Runner::run(&agent, "go", RunOptions::default()).await.expect("run");
+    let paused = Runner::run(&agent, "go", RunOptions::default())
+        .await
+        .expect("run");
     assert!(paused.is_interrupted());
-    assert_eq!(paused.input_guardrail_results.len(), 1, "available on the paused result too");
+    assert_eq!(
+        paused.input_guardrail_results.len(),
+        1,
+        "available on the paused result too"
+    );
     assert_eq!(paused.tool_output_guardrail_results.len(), 1);
 
     let json = paused.to_state().expect("state").to_json();
     let mut state = openai_agents::RunState::from_json("a", json).expect("from_json");
     state.approve(&paused.interruptions[0], false);
-    let resumed = Runner::run_state(&agent, state, RunOptions::default()).await.expect("resume");
+    let resumed = Runner::run_state(&agent, state, RunOptions::default())
+        .await
+        .expect("resume");
     assert_eq!(resumed.input_guardrail_results.len(), 1);
-    assert_eq!(resumed.input_guardrail_results[0].output.output_info, serde_json::json!("clean"));
+    assert_eq!(
+        resumed.input_guardrail_results[0].output.output_info,
+        serde_json::json!("clean")
+    );
     assert_eq!(resumed.tool_output_guardrail_results.len(), 1);
-    assert_eq!(resumed.tool_output_guardrail_results[0].guardrail_name, "seen");
+    assert_eq!(
+        resumed.tool_output_guardrail_results[0].guardrail_name,
+        "seen"
+    );
     assert_eq!(
         resumed.tool_output_guardrail_results[0].output.output_info,
         serde_json::json!({"ok": true})

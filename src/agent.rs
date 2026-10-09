@@ -8,8 +8,8 @@ use crate::agent_output::AgentOutputSchemaBase;
 use crate::error::AgentsError;
 use crate::guardrail::{InputGuardrail, OutputGuardrail};
 use crate::handoffs::Handoff;
-use crate::mcp::{McpConfig, McpServer};
 use crate::lifecycle::AgentHooks;
+use crate::mcp::{McpConfig, McpServer};
 use crate::model::Model;
 use crate::model_settings::{get_default_model_settings, ModelSettings};
 use crate::run_context::RunContextWrapper;
@@ -77,24 +77,32 @@ pub struct ToolsToFinalOutputResult {
 impl ToolsToFinalOutputResult {
     /// Keep going: feed the tool results back to the model.
     pub fn run_llm_again() -> Self {
-        Self { is_final_output: false, final_output: None }
+        Self {
+            is_final_output: false,
+            final_output: None,
+        }
     }
 
     /// End the run with `output`.
     pub fn final_output(output: serde_json::Value) -> Self {
-        Self { is_final_output: true, final_output: Some(output) }
+        Self {
+            is_final_output: true,
+            final_output: Some(output),
+        }
     }
 }
 
 /// Custom rule deciding whether tool results are final
 /// (Python: `ToolsToFinalOutputFunction`, synchronous form).
-pub type ToolsToFinalOutputFn =
-    Arc<dyn Fn(&RunContextWrapper, &[FunctionToolResult]) -> ToolsToFinalOutputResult + Send + Sync>;
+pub type ToolsToFinalOutputFn = Arc<
+    dyn Fn(&RunContextWrapper, &[FunctionToolResult]) -> ToolsToFinalOutputResult + Send + Sync,
+>;
 
 /// How tool results affect the run loop (Python: `tool_use_behavior`).
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub enum ToolUseBehavior {
     /// Feed tool results back to the LLM (default).
+    #[default]
     RunLlmAgain,
     /// Stop after the first tool and use its output as final_output.
     StopOnFirstTool,
@@ -121,13 +129,10 @@ impl std::fmt::Debug for ToolUseBehavior {
     }
 }
 
-impl Default for ToolUseBehavior {
-    fn default() -> Self {
-        Self::RunLlmAgain
-    }
-}
-
 /// Options for [`Agent::as_tool`] (Python: `Agent.as_tool` kwargs subset).
+///
+/// The Python keyword list is much longer (D-043), so fields will be added here: build one with
+/// `AsToolConfig { field, ..Default::default() }` and the tail keeps you compiling.
 #[derive(Debug, Clone, Default)]
 pub struct AsToolConfig {
     /// Override tool name (default: sanitized agent name).

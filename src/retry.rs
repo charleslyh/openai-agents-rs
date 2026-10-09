@@ -627,9 +627,11 @@ fn httpdate_to_unix(value: &str) -> Option<f64> {
         return None;
     }
     let day: i64 = parts[1].parse().ok()?;
-    let month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-        .iter()
-        .position(|m| *m == parts[2])? as i64
+    let month = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ]
+    .iter()
+    .position(|m| *m == parts[2])? as i64
         + 1;
     let year: i64 = parts[3].parse().ok()?;
     let mut time = parts[4].split(':');
@@ -694,7 +696,7 @@ fn is_conversation_locked(error: &ModelError) -> bool {
 
 /// Python keeps replaying `conversation_locked` unless the caller sets `max_retries = 0`.
 fn preserves_conversation_locked_compat(settings: Option<&ModelRetrySettings>) -> bool {
-    settings.map_or(true, |s| s.max_retries.map_or(true, |n| n > 0))
+    settings.is_none_or(|s| s.max_retries.is_none_or(|n| n > 0))
 }
 
 /// Everything the retry loop needs to know about one model call.
@@ -781,11 +783,13 @@ async fn evaluate_retry(
     }
 
     let delay = decision.delay.unwrap_or_else(|| {
-        normalized.retry_after.unwrap_or_else(|| {
-            default_retry_delay(attempt, call.settings.and_then(|s| s.backoff))
-        })
+        normalized
+            .retry_after
+            .unwrap_or_else(|| default_retry_delay(attempt, call.settings.and_then(|s| s.backoff)))
     });
-    RetryDecision::yes().with_delay(delay).with_reason_opt(reason)
+    RetryDecision::yes()
+        .with_delay(delay)
+        .with_reason_opt(reason)
 }
 
 impl RetryDecision {
@@ -804,7 +808,10 @@ async fn sleep_for_retry(seconds: f64) {
 }
 
 /// Run one attempt under the per-attempt timeout (Python: `_await_model_attempt`).
-async fn await_model_attempt<Fut>(attempt: Fut, timeout: Option<f32>) -> Result<ModelResponse, ModelError>
+async fn await_model_attempt<Fut>(
+    attempt: Fut,
+    timeout: Option<f32>,
+) -> Result<ModelResponse, ModelError>
 where
     Fut: Future<Output = Result<ModelResponse, ModelError>>,
 {
@@ -918,7 +925,11 @@ pub(crate) fn openai_retry_advice(request: &ModelRetryAdviceRequest) -> Option<M
     let reason = Some(error.to_string());
 
     if let ModelError::Status(e) = error {
-        match e.header("x-should-retry").map(|h| h.trim().to_lowercase()).as_deref() {
+        match e
+            .header("x-should-retry")
+            .map(|h| h.trim().to_lowercase())
+            .as_deref()
+        {
             Some("true") => {
                 return Some(ModelRetryAdvice {
                     suggested: Some(true),

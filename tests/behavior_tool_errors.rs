@@ -239,7 +239,9 @@ async fn custom_tool_use_behavior_can_finalize() {
         .tool_use_behavior(ToolUseBehavior::Custom(Arc::new(|_ctx, results| {
             ToolsToFinalOutputResult::final_output(json!(format!("got {}", results[0].tool_name)))
         })));
-    let result = Runner::run(&agent, "go", RunOptions::default()).await.expect("run");
+    let result = Runner::run(&agent, "go", RunOptions::default())
+        .await
+        .expect("run");
     assert_eq!(result.final_output_as_str(), Some("got echo"));
 }
 
@@ -247,26 +249,39 @@ async fn custom_tool_use_behavior_can_finalize() {
 #[tokio::test]
 async fn call_model_input_filter_edits_input_and_instructions() {
     use openai_agents::{ModelInputData, RunConfig};
-    let model = Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::text_message("ok"))]));
-    let agent = Agent::new("a").model(model.clone()).instructions("original");
+    let model = Arc::new(ScriptedModel::new([ModelStep::from(
+        ItemHelpers::text_message("ok"),
+    )]));
+    let agent = Agent::new("a")
+        .model(model.clone())
+        .instructions("original");
     let mut options = RunOptions::default();
     options.run_config = RunConfig::default().with_call_model_input_filter(|data| async move {
         let mut input = data.model_data.input;
         input.push(json!({"role": "user", "content": "extra"}));
-        Ok(ModelInputData { input, instructions: Some("filtered".into()) })
+        Ok(ModelInputData {
+            input,
+            instructions: Some("filtered".into()),
+        })
     });
     let result = Runner::run(&agent, "hi", options).await.expect("run");
     let call = &model.calls()[0];
     assert_eq!(call.system_instructions.as_deref(), Some("filtered"));
     assert_eq!(call.input.as_array().map(Vec::len), Some(2));
-    assert_eq!(result.to_input_list().len(), 2, "history keeps only input + output");
+    assert_eq!(
+        result.to_input_list().len(),
+        2,
+        "history keeps only input + output"
+    );
 }
 
 /// D-003: `Handoff.input_filter` rewrites the history the next agent sees.
 #[tokio::test]
 async fn handoff_input_filter_rewrites_next_agent_input() {
     use openai_agents::handoff_input_filter;
-    let b_model = Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::text_message("b"))]));
+    let b_model = Arc::new(ScriptedModel::new([ModelStep::from(
+        ItemHelpers::text_message("b"),
+    )]));
     let b = Agent::new("B").model(b_model.clone());
     let filter = handoff_input_filter(|mut data| async move {
         // Drop the handoff turn entirely and keep only the original input.
@@ -280,7 +295,9 @@ async fn handoff_input_filter_rewrites_next_agent_input() {
     let a = Agent::new("A")
         .model(a_model)
         .handoffs(vec![handoff(b).with_input_filter(filter)]);
-    Runner::run(&a, "hello", RunOptions::default()).await.expect("run");
+    Runner::run(&a, "hello", RunOptions::default())
+        .await
+        .expect("run");
     let input = b_model.calls()[0].input.clone();
     assert_eq!(input.as_array().map(Vec::len), Some(1), "{input}");
 }
@@ -291,8 +308,9 @@ async fn handoff_input_filter_rewrites_next_agent_input() {
 async fn run_level_handoff_filter_and_server_managed_conversation() {
     use openai_agents::{handoff_input_filter, RunConfig};
     let build = || {
-        let b = Agent::new("B")
-            .model(Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::text_message("b"))])));
+        let b = Agent::new("B").model(Arc::new(ScriptedModel::new([ModelStep::from(
+            ItemHelpers::text_message("b"),
+        )])));
         Agent::new("A")
             .model(Arc::new(ScriptedModel::new([ModelStep::from(
                 ItemHelpers::function_tool_call(Handoff::default_tool_name("B"), "{}", "h1"),
@@ -304,7 +322,9 @@ async fn run_level_handoff_filter_and_server_managed_conversation() {
         handoff_input_filter: Some(handoff_input_filter(|data| async move { Ok(data) })),
         ..RunConfig::default()
     };
-    Runner::run(&build(), "hi", options.clone()).await.expect("run");
+    Runner::run(&build(), "hi", options.clone())
+        .await
+        .expect("run");
 
     options.conversation_id = Some("conv".into());
     let err = Runner::run(&build(), "hi", options).await.unwrap_err();
@@ -338,7 +358,9 @@ async fn on_handoff_receives_parsed_input_and_schema_is_advertised() {
         ItemHelpers::function_tool_call(tool_name, r#"{"reason":"billing"}"#, "h1"),
     )]));
     let a = Agent::new("A").model(a_model.clone()).handoffs(vec![h]);
-    Runner::run(&a, "hi", RunOptions::default()).await.expect("run");
+    Runner::run(&a, "hi", RunOptions::default())
+        .await
+        .expect("run");
     assert_eq!(*seen.lock().unwrap(), Some(json!({"reason": "billing"})));
 }
 
@@ -358,25 +380,35 @@ async fn on_handoff_without_input_runs_and_bad_json_is_behavior_error() {
     });
     let name = h.tool_name.clone();
     let a = Agent::new("A")
-        .model(Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::function_tool_call(
-            name, "{}", "h1",
-        ))])))
+        .model(Arc::new(ScriptedModel::new([ModelStep::from(
+            ItemHelpers::function_tool_call(name, "{}", "h1"),
+        )])))
         .handoffs(vec![h]);
-    Runner::run(&a, "hi", RunOptions::default()).await.expect("run");
+    Runner::run(&a, "hi", RunOptions::default())
+        .await
+        .expect("run");
     assert_eq!(called.load(Ordering::SeqCst), 1);
 
     let b2 = Agent::new("B2").model(Arc::new(ScriptedModel::new([])));
     let h2 = handoff(b2)
-        .with_on_handoff_input(json!({"type": "object", "properties": {}}), |_c, _i| async { Ok(()) })
+        .with_on_handoff_input(
+            json!({"type": "object", "properties": {}}),
+            |_c, _i| async { Ok(()) },
+        )
         .unwrap();
     let name2 = h2.tool_name.clone();
     let a2 = Agent::new("A2")
-        .model(Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::function_tool_call(
-            name2, "not json", "h1",
-        ))])))
+        .model(Arc::new(ScriptedModel::new([ModelStep::from(
+            ItemHelpers::function_tool_call(name2, "not json", "h1"),
+        )])))
         .handoffs(vec![h2]);
-    let err = Runner::run(&a2, "hi", RunOptions::default()).await.unwrap_err();
-    assert!(matches!(err, AgentsError::Model(ModelError::Behavior(_))), "{err}");
+    let err = Runner::run(&a2, "hi", RunOptions::default())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, AgentsError::Model(ModelError::Behavior(_))),
+        "{err}"
+    );
 }
 
 /// D-029: `is_enabled` can be decided per turn from the run context; disabled tools and
@@ -386,9 +418,11 @@ async fn dynamic_is_enabled_hides_tools_and_handoffs() {
     use openai_agents::{RunContextWrapper, ToolEnabled};
     let b = Agent::new("B").model(Arc::new(ScriptedModel::new([])));
     let hidden_handoff = handoff(b).with_is_enabled(false);
-    let flagged = FunctionTool::constant("flagged", "f", "x").with_is_enabled(ToolEnabled::dynamic(
-        |ctx: RunContextWrapper, _agent| async move { ctx.context::<bool>().copied().unwrap_or(false) },
-    ));
+    let flagged = FunctionTool::constant("flagged", "f", "x").with_is_enabled(
+        ToolEnabled::dynamic(|ctx: RunContextWrapper, _agent| async move {
+            ctx.context::<bool>().copied().unwrap_or(false)
+        }),
+    );
     let model = Arc::new(ScriptedModel::new([
         ModelStep::from(ItemHelpers::text_message("one")),
         ModelStep::from(ItemHelpers::text_message("two")),
@@ -398,7 +432,9 @@ async fn dynamic_is_enabled_hides_tools_and_handoffs() {
         .tools(vec![flagged, FunctionTool::constant("always", "a", "y")])
         .handoffs(vec![hidden_handoff]);
 
-    Runner::run(&agent, "hi", RunOptions::default()).await.expect("run");
+    Runner::run(&agent, "hi", RunOptions::default())
+        .await
+        .expect("run");
     let mut options = RunOptions::default();
     options.context = Some(Arc::new(true));
     Runner::run(&agent, "hi", options).await.expect("run");
@@ -406,7 +442,10 @@ async fn dynamic_is_enabled_hides_tools_and_handoffs() {
     let calls = model.calls();
     assert_eq!(calls[0].tool_names, vec!["always"]);
     assert!(calls[1].tool_names.contains(&"flagged".to_string()));
-    assert!(!calls[1].tool_names.iter().any(|n| n.starts_with("transfer_to")));
+    assert!(!calls[1]
+        .tool_names
+        .iter()
+        .any(|n| n.starts_with("transfer_to")));
 }
 
 /// D-031: `cancel(AfterTurn)` finishes the turn and stops; `cancel(Immediate)` closes the stream.
@@ -432,7 +471,9 @@ async fn streaming_cancel_after_turn_stops_before_next_turn() {
 #[tokio::test]
 async fn streaming_cancel_immediate_closes_stream() {
     use openai_agents::CancelMode;
-    let model = Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::text_message("hi"))]));
+    let model = Arc::new(ScriptedModel::new([ModelStep::from(
+        ItemHelpers::text_message("hi"),
+    )]));
     let agent = Agent::new("a").model(model);
     let mut streamed = Runner::run_streamed(agent, "go", RunOptions::default());
     streamed.cancel(CancelMode::Immediate);
@@ -463,7 +504,11 @@ async fn session_carries_history_between_runs() {
     let result = Runner::run(&agent, "two", options()).await.expect("run 2");
     assert_eq!(result.final_output_as_str(), Some("second answer"));
     let second_input = model.calls()[1].input.clone();
-    assert_eq!(second_input.as_array().map(Vec::len), Some(3), "{second_input}");
+    assert_eq!(
+        second_input.as_array().map(Vec::len),
+        Some(3),
+        "{second_input}"
+    );
     assert_eq!(session.get_items(None).await.unwrap().len(), 4);
     assert_eq!(session.get_items(Some(1)).await.unwrap().len(), 1);
     assert!(session.pop_item().await.unwrap().is_some());
@@ -480,13 +525,22 @@ async fn session_keeps_the_turns_a_failed_run_completed() {
     let kinds = |items: Vec<Value>| -> Vec<String> {
         items
             .iter()
-            .map(|i| i["type"].as_str().or(i["role"].as_str()).unwrap().to_string())
+            .map(|i| {
+                i["type"]
+                    .as_str()
+                    .or(i["role"].as_str())
+                    .unwrap()
+                    .to_string()
+            })
             .collect()
     };
     let echo = || FunctionTool::constant("echo", "e", "x");
-    let call = |name: &str, id: &str| ModelStep::from(ItemHelpers::function_tool_call(name, "{}", id));
+    let call =
+        |name: &str, id: &str| ModelStep::from(ItemHelpers::function_tool_call(name, "{}", id));
     let run = |steps: Vec<ModelStep>, max_turns: Option<usize>| async move {
-        let agent = Agent::new("a").model(Arc::new(ScriptedModel::new(steps))).tools(vec![echo()]);
+        let agent = Agent::new("a")
+            .model(Arc::new(ScriptedModel::new(steps)))
+            .tools(vec![echo()]);
         let session = InMemorySession::shared("conv");
         let mut options = RunOptions::default();
         options.session = Some(session.clone());
@@ -502,7 +556,13 @@ async fn session_keeps_the_turns_a_failed_run_completed() {
     );
     assert_eq!(
         kinds(run(vec![call("echo", "c1"), call("echo", "c2")], Some(2)).await),
-        ["user", "function_call", "function_call_output", "function_call", "function_call_output"]
+        [
+            "user",
+            "function_call",
+            "function_call_output",
+            "function_call",
+            "function_call_output"
+        ]
     );
 }
 
@@ -518,13 +578,21 @@ fn usage_add_tracks_details_and_entries() {
         "output_tokens_details": {"reasoning_tokens": 1}}));
     one.request_usage_entries.clear();
     total.add(&one);
-    total.add(&Usage { requests: 1, ..Usage::default() });
+    total.add(&Usage {
+        requests: 1,
+        ..Usage::default()
+    });
     assert_eq!(total.requests, 2);
     assert_eq!(total.input_tokens_details.cached_tokens, 4);
-    assert_eq!(total.request_usage_entries.len(), 1, "empty request adds no entry");
+    assert_eq!(
+        total.request_usage_entries.len(),
+        1,
+        "empty request adds no entry"
+    );
 
     let legacy: Usage = serde_json::from_value(json!({
-        "requests": 1, "input_tokens": 1, "output_tokens": 1, "total_tokens": 2})).unwrap();
+        "requests": 1, "input_tokens": 1, "output_tokens": 1, "total_tokens": 2}))
+    .unwrap();
     assert_eq!(legacy.input_tokens_details.cached_tokens, 0);
 }
 
@@ -552,10 +620,14 @@ async fn tool_error_formatter_rewrites_default_messages() {
         let agent = Agent::new("a").model(model).tools(vec![dangerous()]);
         let mut options = RunOptions::default();
         options.run_config = formatter_config();
-        let first = Runner::run(&agent, "go", options.clone()).await.expect("run");
+        let first = Runner::run(&agent, "go", options.clone())
+            .await
+            .expect("run");
         let mut state = first.to_state().expect("state");
         state.reject(&first.interruptions[0], false, message);
-        let result = Runner::run_state(&agent, state, options).await.expect("resume");
+        let result = Runner::run_state(&agent, state, options)
+            .await
+            .expect("resume");
         tool_output_texts(&result.new_items)
     };
     assert_eq!(run_rejected(None).await, vec!["denied danger"]);
@@ -569,7 +641,10 @@ async fn tool_error_formatter_rewrites_default_messages() {
     let mut options = RunOptions::default();
     options.run_config = formatter_config();
     let result = Runner::run(&agent, "go", options).await.expect("run");
-    assert_eq!(tool_output_texts(&result.new_items), vec!["Tool 'nope' not found."]);
+    assert_eq!(
+        tool_output_texts(&result.new_items),
+        vec!["Tool 'nope' not found."]
+    );
 }
 
 /// D-032: a handoff beats a same-named tool; `Error` rejects the configuration up front.
@@ -580,21 +655,39 @@ async fn tool_name_collision_policy() {
         let b = Agent::new("B").model(Arc::new(ScriptedModel::new([])));
         let h = handoff(b);
         let clash = FunctionTool::constant(h.tool_name.clone(), "clashes with the handoff", "x");
-        Agent::new("A").model(model).tools(vec![clash]).handoffs(vec![h])
+        Agent::new("A")
+            .model(model)
+            .tools(vec![clash])
+            .handoffs(vec![h])
     };
 
-    let model = Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::text_message("ok"))]));
-    Runner::run(&build(model.clone()), "hi", RunOptions::default()).await.expect("warn");
+    let model = Arc::new(ScriptedModel::new([ModelStep::from(
+        ItemHelpers::text_message("ok"),
+    )]));
+    Runner::run(&build(model.clone()), "hi", RunOptions::default())
+        .await
+        .expect("warn");
     let names = &model.calls()[0].tool_names;
-    assert_eq!(names.iter().filter(|n| n.starts_with("transfer_to_b")).count(), 1, "{names:?}");
+    assert_eq!(
+        names
+            .iter()
+            .filter(|n| n.starts_with("transfer_to_b"))
+            .count(),
+        1,
+        "{names:?}"
+    );
 
-    let model = Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::text_message("ok"))]));
+    let model = Arc::new(ScriptedModel::new([ModelStep::from(
+        ItemHelpers::text_message("ok"),
+    )]));
     let mut options = RunOptions::default();
     options.run_config = RunConfig {
         tool_name_collision_policy: ToolNameCollisionPolicy::Error,
         ..RunConfig::default()
     };
-    let err = Runner::run(&build(model.clone()), "hi", options).await.unwrap_err();
+    let err = Runner::run(&build(model.clone()), "hi", options)
+        .await
+        .unwrap_err();
     assert!(matches!(err, AgentsError::User(_)), "{err}");
     assert!(model.calls().is_empty(), "the model must not be called");
 }
@@ -619,10 +712,15 @@ async fn max_turns_error_handler_produces_final_output() {
         assert_eq!(input.run_data.output.len(), 4, "two calls and two outputs");
         Ok(Some(RunErrorHandlerResult::new("gave up")))
     });
-    let result = Runner::run(&looping(), "go", options.clone()).await.expect("handled");
+    let result = Runner::run(&looping(), "go", options.clone())
+        .await
+        .expect("handled");
     assert_eq!(result.final_output_as_str(), Some("gave up"));
     let last = result.new_items.last().expect("items");
-    assert!(matches!(last, RunItem::Message(_)), "synthesized message is recorded");
+    assert!(
+        matches!(last, RunItem::Message(_)),
+        "synthesized message is recorded"
+    );
 
     options.error_handlers = RunErrorHandlers::default().on_max_turns(|_| async { Ok(None) });
     let err = Runner::run(&looping(), "go", options).await.unwrap_err();
@@ -655,13 +753,18 @@ async fn max_turns_handler_output_is_validated_against_the_schema() {
         });
         Runner::run(&build(), "go", options).await
     };
-    assert_eq!(run_with(json!({"n": 3})).await.expect("valid").final_output, json!({"n": 3}));
+    assert_eq!(
+        run_with(json!({"n": 3})).await.expect("valid").final_output,
+        json!({"n": 3})
+    );
     let err = run_with(json!({"n": "x"})).await.unwrap_err();
     assert!(matches!(err, AgentsError::User(_)), "{err}");
 }
 
 fn nesting_agents(a_steps: Vec<ModelStep>) -> (Agent, Arc<ScriptedModel>) {
-    let b_model = Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::text_message("ok"))]));
+    let b_model = Arc::new(ScriptedModel::new([ModelStep::from(
+        ItemHelpers::text_message("ok"),
+    )]));
     let b = Agent::new("B").model(b_model.clone());
     let a = Agent::new("A")
         .model(Arc::new(ScriptedModel::new(a_steps)))
@@ -680,7 +783,10 @@ async fn nest_handoff_history_summarizes_the_transcript() {
         ModelStep::from(ItemHelpers::function_tool_call("transfer_to_b", "{}", "h1")),
     ]);
     let mut options = RunOptions::default();
-    options.run_config = RunConfig { nest_handoff_history: true, ..RunConfig::default() };
+    options.run_config = RunConfig {
+        nest_handoff_history: true,
+        ..RunConfig::default()
+    };
     Runner::run(&a, "hello", options).await.expect("run");
     let input = b_model.calls()[0].input.clone();
     let items = input.as_array().expect("items");
@@ -703,27 +809,60 @@ async fn nest_handoff_history_summarizes_the_transcript() {
 #[tokio::test]
 async fn nest_handoff_history_defaults_and_overrides() {
     use openai_agents::RunConfig;
-    let steps = || vec![ModelStep::from(ItemHelpers::function_tool_call("transfer_to_b", "{}", "h1"))];
+    let steps = || {
+        vec![ModelStep::from(ItemHelpers::function_tool_call(
+            "transfer_to_b",
+            "{}",
+            "h1",
+        ))]
+    };
 
     let (a, b_model) = nesting_agents(steps());
-    Runner::run(&a, "hi", RunOptions::default()).await.expect("run");
-    assert_eq!(b_model.calls()[0].input.as_array().map(Vec::len), Some(3), "raw history by default");
-
-    let (mut a, b_model) = nesting_agents(steps());
-    a.handoffs = a.handoffs.into_iter().map(|h| h.with_nest_handoff_history(true)).collect();
-    Runner::run(&a, "hi", RunOptions::default()).await.expect("run");
-    assert_eq!(b_model.calls()[0].input.as_array().map(Vec::len), Some(1), "per-handoff opt-in");
+    Runner::run(&a, "hi", RunOptions::default())
+        .await
+        .expect("run");
+    assert_eq!(
+        b_model.calls()[0].input.as_array().map(Vec::len),
+        Some(3),
+        "raw history by default"
+    );
 
     let (mut a, b_model) = nesting_agents(steps());
     a.handoffs = a
         .handoffs
         .into_iter()
-        .map(|h| h.with_input_filter(openai_agents::handoff_input_filter(|d| async move { Ok(d) })))
+        .map(|h| h.with_nest_handoff_history(true))
+        .collect();
+    Runner::run(&a, "hi", RunOptions::default())
+        .await
+        .expect("run");
+    assert_eq!(
+        b_model.calls()[0].input.as_array().map(Vec::len),
+        Some(1),
+        "per-handoff opt-in"
+    );
+
+    let (mut a, b_model) = nesting_agents(steps());
+    a.handoffs = a
+        .handoffs
+        .into_iter()
+        .map(|h| {
+            h.with_input_filter(openai_agents::handoff_input_filter(
+                |d| async move { Ok(d) },
+            ))
+        })
         .collect();
     let mut options = RunOptions::default();
-    options.run_config = RunConfig { nest_handoff_history: true, ..RunConfig::default() };
+    options.run_config = RunConfig {
+        nest_handoff_history: true,
+        ..RunConfig::default()
+    };
     Runner::run(&a, "hi", options).await.expect("run");
-    assert_eq!(b_model.calls()[0].input.as_array().map(Vec::len), Some(3), "filter replaces nesting");
+    assert_eq!(
+        b_model.calls()[0].input.as_array().map(Vec::len),
+        Some(3),
+        "filter replaces nesting"
+    );
 }
 
 /// A mapper receives the flattened transcript and returns the exact history; a second handoff
@@ -731,9 +870,11 @@ async fn nest_handoff_history_defaults_and_overrides() {
 #[tokio::test]
 async fn nest_handoff_history_mapper_and_flattening() {
     use openai_agents::{nest_handoff_history, HandoffInputData, RunConfig, RunContextWrapper};
-    let (a, b_model) = nesting_agents(vec![ModelStep::from(
-        ItemHelpers::function_tool_call("transfer_to_b", "{}", "h1"),
-    )]);
+    let (a, b_model) = nesting_agents(vec![ModelStep::from(ItemHelpers::function_tool_call(
+        "transfer_to_b",
+        "{}",
+        "h1",
+    ))]);
     let mut options = RunOptions::default();
     options.run_config = RunConfig {
         nest_handoff_history: true,
@@ -743,7 +884,10 @@ async fn nest_handoff_history_mapper_and_flattening() {
         ..RunConfig::default()
     };
     Runner::run(&a, "hi", options).await.expect("run");
-    assert_eq!(b_model.calls()[0].input, json!([{"role": "user", "content": "3 items"}]));
+    assert_eq!(
+        b_model.calls()[0].input,
+        json!([{"role": "user", "content": "3 items"}])
+    );
 
     let data = |history: Vec<Value>| HandoffInputData {
         input_history: history,
@@ -753,7 +897,10 @@ async fn nest_handoff_history_mapper_and_flattening() {
     };
     let first = nest_handoff_history(data(vec![json!({"role": "user", "content": "hi"})]), None);
     let second = nest_handoff_history(data(first.input_history), None);
-    let text = second.input_history[0]["content"].as_str().unwrap().to_string();
+    let text = second.input_history[0]["content"]
+        .as_str()
+        .unwrap()
+        .to_string();
     assert_eq!(text.matches("<CONVERSATION HISTORY>").count(), 1, "{text}");
     assert!(text.contains("1. user: hi"), "{text}");
 }
@@ -797,7 +944,9 @@ async fn max_function_tool_concurrency_limits_parallelism() {
             .tools(vec![slow("a"), slow("b"), slow("c")]);
         let mut options = RunOptions::default();
         options.run_config = RunConfig {
-            tool_execution: Some(ToolExecutionConfig { max_function_tool_concurrency: limit }),
+            tool_execution: Some(ToolExecutionConfig {
+                max_function_tool_concurrency: limit,
+            }),
             ..RunConfig::default()
         };
         async move { Runner::run(&agent, "go", options).await }
@@ -810,9 +959,16 @@ async fn max_function_tool_concurrency_limits_parallelism() {
     peak.store(0, Ordering::SeqCst);
     let result = run(Some(2)).await.expect("limited");
     assert_eq!(peak.load(Ordering::SeqCst), 2);
-    assert_eq!(tool_output_texts(&result.new_items), vec!["a", "b", "c"], "call order kept");
+    assert_eq!(
+        tool_output_texts(&result.new_items),
+        vec!["a", "b", "c"],
+        "call order kept"
+    );
 
-    assert!(matches!(run(Some(0)).await.unwrap_err(), AgentsError::User(_)));
+    assert!(matches!(
+        run(Some(0)).await.unwrap_err(),
+        AgentsError::User(_)
+    ));
 }
 
 /// D-029: per-tool timeouts. The default reports a model-visible message, a formatter can
@@ -837,11 +993,19 @@ async fn tool_timeout_behaviors() {
             ModelStep::from(ItemHelpers::function_tool_call("sleepy", "{}", "c1")),
             ModelStep::from(ItemHelpers::text_message("after")),
         ]));
-        Runner::run(&Agent::new("a").model(model).tools(vec![tool]), "go", RunOptions::default()).await
+        Runner::run(
+            &Agent::new("a").model(model).tools(vec![tool]),
+            "go",
+            RunOptions::default(),
+        )
+        .await
     };
 
     let result = run(sleepy()).await.expect("error as result");
-    assert_eq!(tool_output_texts(&result.new_items), vec!["Tool 'sleepy' timed out after 0.05 seconds."]);
+    assert_eq!(
+        tool_output_texts(&result.new_items),
+        vec!["Tool 'sleepy' timed out after 0.05 seconds."]
+    );
 
     let formatted = sleepy().with_timeout_error_function(|_ctx, e| format!("custom: {e}"));
     let result = run(formatted).await.expect("formatted");
@@ -885,25 +1049,41 @@ async fn session_settings_limit_and_input_callback() {
 
     // limit: only the newest 2 stored items reach the model.
     let session = seeded().await;
-    let model = Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::text_message("ok"))]));
+    let model = Arc::new(ScriptedModel::new([ModelStep::from(
+        ItemHelpers::text_message("ok"),
+    )]));
     let mut options = RunOptions::default();
     options.session = Some(session.clone());
     options.run_config = RunConfig {
         session_settings: Some(SessionSettings { limit: Some(2) }),
         ..RunConfig::default()
     };
-    Runner::run(&Agent::new("a").model(model.clone()), "new", options).await.expect("run");
+    Runner::run(&Agent::new("a").model(model.clone()), "new", options)
+        .await
+        .expect("run");
     let input = model.calls()[0].input.clone();
     assert_eq!(
-        input.as_array().unwrap().iter().map(|i| i["content"].clone()).take(3).collect::<Vec<_>>(),
+        input
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| i["content"].clone())
+            .take(3)
+            .collect::<Vec<_>>(),
         vec![json!("old-2"), json!("old-3"), json!("new")]
     );
-    assert_eq!(session.get_items(None).await.unwrap().len(), 3 + 2, "saves the new input and output");
+    assert_eq!(
+        session.get_items(None).await.unwrap().len(),
+        3 + 2,
+        "saves the new input and output"
+    );
 
     // callback: keep only the last history item and add a note; the note is saved, history is not
     // duplicated.
     let session = seeded().await;
-    let model = Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::text_message("ok"))]));
+    let model = Arc::new(ScriptedModel::new([ModelStep::from(
+        ItemHelpers::text_message("ok"),
+    )]));
     let mut options = RunOptions::default();
     options.session = Some(session.clone());
     options.run_config = RunConfig {
@@ -917,7 +1097,9 @@ async fn session_settings_limit_and_input_callback() {
         })),
         ..RunConfig::default()
     };
-    Runner::run(&Agent::new("a").model(model.clone()), "new", options).await.expect("run");
+    Runner::run(&Agent::new("a").model(model.clone()), "new", options)
+        .await
+        .expect("run");
     let contents: Vec<Value> = model.calls()[0]
         .input
         .as_array()
@@ -968,7 +1150,9 @@ async fn tool_input_guardrails_allow_reject_and_raise() {
     };
 
     let result = Runner::run(
-        &build(guard(|| ToolGuardrailFunctionOutput::allow(json!({"ok": true})))),
+        &build(guard(|| {
+            ToolGuardrailFunctionOutput::allow(json!({"ok": true}))
+        })),
         "go",
         RunOptions::default(),
     )
@@ -978,28 +1162,45 @@ async fn tool_input_guardrails_allow_reject_and_raise() {
     assert_eq!(tool_output_texts(&result.new_items), vec!["body"]);
     assert_eq!(result.tool_input_guardrail_results.len(), 1);
     assert_eq!(result.tool_input_guardrail_results[0].guardrail_name, "g");
-    assert_eq!(result.tool_input_guardrail_results[0].output.behavior, ToolGuardrailBehavior::Allow);
+    assert_eq!(
+        result.tool_input_guardrail_results[0].output.behavior,
+        ToolGuardrailBehavior::Allow
+    );
 
     body_runs.store(0, Ordering::SeqCst);
     let result = Runner::run(
-        &build(guard(|| ToolGuardrailFunctionOutput::reject_content("blocked", json!(null)))),
+        &build(guard(|| {
+            ToolGuardrailFunctionOutput::reject_content("blocked", json!(null))
+        })),
         "go",
         RunOptions::default(),
     )
     .await
     .expect("reject");
-    assert_eq!(body_runs.load(Ordering::SeqCst), 0, "the tool body must not run");
+    assert_eq!(
+        body_runs.load(Ordering::SeqCst),
+        0,
+        "the tool body must not run"
+    );
     assert_eq!(tool_output_texts(&result.new_items), vec!["blocked"]);
-    assert!(result.tool_output_guardrail_results.is_empty(), "output guardrails are skipped");
+    assert!(
+        result.tool_output_guardrail_results.is_empty(),
+        "output guardrails are skipped"
+    );
 
     let err = Runner::run(
-        &build(guard(|| ToolGuardrailFunctionOutput::raise_exception(json!(null)))),
+        &build(guard(|| {
+            ToolGuardrailFunctionOutput::raise_exception(json!(null))
+        })),
         "go",
         RunOptions::default(),
     )
     .await
     .unwrap_err();
-    assert!(matches!(err, AgentsError::ToolInputGuardrailTripwire(ref t) if t.guardrail_name == "g"), "{err}");
+    assert!(
+        matches!(err, AgentsError::ToolInputGuardrailTripwire(ref t) if t.guardrail_name == "g"),
+        "{err}"
+    );
     assert_eq!(body_runs.load(Ordering::SeqCst), 0);
 }
 
@@ -1012,9 +1213,10 @@ async fn tool_output_guardrails_replace_or_raise() {
             ModelStep::from(ItemHelpers::function_tool_call("t", "{}", "c1")),
             ModelStep::from(ItemHelpers::text_message("done")),
         ]));
-        Agent::new("a").model(model).tools(vec![
-            FunctionTool::constant("t", "t", "secret-123").with_tool_output_guardrails(vec![guardrail]),
-        ])
+        Agent::new("a")
+            .model(model)
+            .tools(vec![FunctionTool::constant("t", "t", "secret-123")
+                .with_tool_output_guardrails(vec![guardrail])])
     };
 
     let redact = ToolOutputGuardrail::new("redact", |data| async move {
@@ -1024,15 +1226,25 @@ async fn tool_output_guardrails_replace_or_raise() {
             ToolGuardrailFunctionOutput::allow(json!(null))
         }
     });
-    let result = Runner::run(&build(redact), "go", RunOptions::default()).await.expect("run");
+    let result = Runner::run(&build(redact), "go", RunOptions::default())
+        .await
+        .expect("run");
     assert_eq!(tool_output_texts(&result.new_items), vec!["[redacted]"]);
-    assert_eq!(result.tool_output_guardrail_results[0].output.output_info, json!({"matched": true}));
+    assert_eq!(
+        result.tool_output_guardrail_results[0].output.output_info,
+        json!({"matched": true})
+    );
 
     let stop = ToolOutputGuardrail::new("stop", |_| async {
         ToolGuardrailFunctionOutput::raise_exception(json!(null))
     });
-    let err = Runner::run(&build(stop), "go", RunOptions::default()).await.unwrap_err();
-    assert!(matches!(err, AgentsError::ToolOutputGuardrailTripwire(_)), "{err}");
+    let err = Runner::run(&build(stop), "go", RunOptions::default())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, AgentsError::ToolOutputGuardrailTripwire(_)),
+        "{err}"
+    );
 }
 
 /// D-026: `reasoning_item_id_policy = Omit` strips reasoning ids from the next turn's input and
@@ -1043,14 +1255,20 @@ async fn reasoning_item_id_policy_omit_strips_reasoning_ids() {
     let reasoning = json!({"id": "rs_1", "type": "reasoning", "summary": []});
     let run = |policy: Option<ReasoningItemIdPolicy>| {
         let model = Arc::new(ScriptedModel::new([
-            ModelStep::output([reasoning.clone(), ItemHelpers::function_tool_call("echo", "{}", "c1")]),
+            ModelStep::output([
+                reasoning.clone(),
+                ItemHelpers::function_tool_call("echo", "{}", "c1"),
+            ]),
             ModelStep::from(ItemHelpers::text_message("done")),
         ]));
         let agent = Agent::new("a")
             .model(model.clone())
             .tools(vec![FunctionTool::constant("echo", "e", "x")]);
         let mut options = RunOptions::default();
-        options.run_config = RunConfig { reasoning_item_id_policy: policy, ..RunConfig::default() };
+        options.run_config = RunConfig {
+            reasoning_item_id_policy: policy,
+            ..RunConfig::default()
+        };
         async move {
             let result = Runner::run(&agent, "go", options).await.expect("run");
             (model.calls()[1].input.clone(), result.to_input_list())
@@ -1059,12 +1277,29 @@ async fn reasoning_item_id_policy_omit_strips_reasoning_ids() {
 
     let (input, list) = run(Some(ReasoningItemIdPolicy::Omit)).await;
     let reasoning_of = |items: &Value| {
-        items.as_array().unwrap().iter().find(|i| i["type"] == "reasoning").unwrap().clone()
+        items
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|i| i["type"] == "reasoning")
+            .unwrap()
+            .clone()
     };
     assert!(reasoning_of(&input).get("id").is_none(), "{input}");
     assert!(reasoning_of(&json!(list)).get("id").is_none());
-    assert!(input.as_array().unwrap().iter().any(|i| i["call_id"] == "c1" && i["type"] == "function_call"));
-    assert!(input.as_array().unwrap().iter().filter(|i| i["type"] != "reasoning").all(|i| i.get("id").is_some() || i["type"] == "function_call_output" || i.get("role").is_some()));
+    assert!(input
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|i| i["call_id"] == "c1" && i["type"] == "function_call"));
+    assert!(input
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|i| i["type"] != "reasoning")
+        .all(|i| i.get("id").is_some()
+            || i["type"] == "function_call_output"
+            || i.get("role").is_some()));
 
     let (input, list) = run(None).await;
     assert_eq!(reasoning_of(&input)["id"], "rs_1");
@@ -1092,7 +1327,11 @@ async fn output_guardrail_blocked_message_replaces_tool_output() {
         };
         let agent = Agent::new("a")
             .model(Arc::new(ScriptedModel::new([step])))
-            .tools(vec![FunctionTool::constant("secret", "s", "TOP-SECRET-DATA")])
+            .tools(vec![FunctionTool::constant(
+                "secret",
+                "s",
+                "TOP-SECRET-DATA",
+            )])
             .tool_use_behavior(ToolUseBehavior::StopOnFirstTool)
             .output_guardrails(vec![trip()]);
         let mut options = RunOptions::default();
@@ -1102,18 +1341,36 @@ async fn output_guardrail_blocked_message_replaces_tool_output() {
             other => panic!("expected a tripwire, got {other:?}"),
         }
     };
-    let with = |message| RunConfig { output_guardrail_blocked_message: message, ..RunConfig::default() };
+    let with = |message| RunConfig {
+        output_guardrail_blocked_message: message,
+        ..RunConfig::default()
+    };
 
     let r = tripped(RunConfig::default(), true).await;
     assert_eq!(r.agent_output, json!(OUTPUT_GUARDRAIL_BLOCKED_TOOL_OUTPUT));
-    assert_eq!(r.output.output_info, Value::Null, "the guardrail's own details are dropped too");
+    assert_eq!(
+        r.output.output_info,
+        Value::Null,
+        "the guardrail's own details are dropped too"
+    );
 
-    let r = tripped(with(Some(OutputGuardrailBlockedMessage::Text("[blocked]".into()))), true).await;
+    let r = tripped(
+        with(Some(OutputGuardrailBlockedMessage::Text(
+            "[blocked]".into(),
+        ))),
+        true,
+    )
+    .await;
     assert_eq!(r.agent_output, json!("[blocked]"));
 
     let r = tripped(
         with(Some(OutputGuardrailBlockedMessage::formatter(|args| {
-            Some(format!("{} by {} on {}", args.default_message.len(), args.guardrail_name, args.agent.name))
+            Some(format!(
+                "{} by {} on {}",
+                args.default_message.len(),
+                args.guardrail_name,
+                args.agent.name
+            ))
         }))),
         true,
     )
@@ -1129,8 +1386,18 @@ async fn output_guardrail_blocked_message_replaces_tool_output() {
         assert_eq!(r.agent_output, json!(OUTPUT_GUARDRAIL_BLOCKED_TOOL_OUTPUT));
     }
 
-    let r = tripped(with(Some(OutputGuardrailBlockedMessage::Text("[blocked]".into()))), false).await;
-    assert_eq!(r.agent_output, json!("PLAIN-MODEL-TEXT"), "model text is not withheld");
+    let r = tripped(
+        with(Some(OutputGuardrailBlockedMessage::Text(
+            "[blocked]".into(),
+        ))),
+        false,
+    )
+    .await;
+    assert_eq!(
+        r.agent_output,
+        json!("PLAIN-MODEL-TEXT"),
+        "model text is not withheld"
+    );
     assert_eq!(r.output.output_info, json!("details"));
 
     let mut options = RunOptions::default();
@@ -1153,9 +1420,13 @@ fn refusal_message(text: &str) -> Value {
 async fn model_refusal_raises_or_is_handled() {
     use openai_agents::{RunErrorHandlerResult, RunErrorHandlers, RunHandledError};
     let build = || {
-        Agent::new("a").model(Arc::new(ScriptedModel::new([ModelStep::from(refusal_message("no can do"))])))
+        Agent::new("a").model(Arc::new(ScriptedModel::new([ModelStep::from(
+            refusal_message("no can do"),
+        )])))
     };
-    let err = Runner::run(&build(), "hi", RunOptions::default()).await.unwrap_err();
+    let err = Runner::run(&build(), "hi", RunOptions::default())
+        .await
+        .unwrap_err();
     match err {
         AgentsError::ModelRefusal(e) => assert_eq!(e.refusal, "no can do"),
         other => panic!("expected a refusal error, got {other}"),
@@ -1163,19 +1434,32 @@ async fn model_refusal_raises_or_is_handled() {
 
     let mut options = RunOptions::default();
     options.error_handlers = RunErrorHandlers::default().on_model_refusal(|input| async move {
-        assert!(matches!(input.error, RunHandledError::ModelRefusal(ref e) if e.refusal == "no can do"));
+        assert!(
+            matches!(input.error, RunHandledError::ModelRefusal(ref e) if e.refusal == "no can do")
+        );
         assert_eq!(input.run_data.raw_responses.len(), 1);
         assert_eq!(input.run_data.new_items.len(), 1);
         Ok(Some(RunErrorHandlerResult::new("REFUSED")))
     });
-    let result = Runner::run(&build(), "hi", options.clone()).await.expect("handled");
+    let result = Runner::run(&build(), "hi", options.clone())
+        .await
+        .expect("handled");
     assert_eq!(result.final_output_as_str(), Some("REFUSED"));
-    assert_eq!(result.new_items.len(), 2, "refusal message plus the synthesized one");
+    assert_eq!(
+        result.new_items.len(),
+        2,
+        "refusal message plus the synthesized one"
+    );
 
     options.error_handlers = RunErrorHandlers::default().on_model_refusal(|_| async {
-        Ok(Some(RunErrorHandlerResult { final_output: json!("R"), include_in_history: false }))
+        Ok(Some(RunErrorHandlerResult {
+            final_output: json!("R"),
+            include_in_history: false,
+        }))
     });
-    let result = Runner::run(&build(), "hi", options.clone()).await.expect("handled");
+    let result = Runner::run(&build(), "hi", options.clone())
+        .await
+        .expect("handled");
     assert_eq!(result.new_items.len(), 1);
 
     options.error_handlers = RunErrorHandlers::default().on_model_refusal(|_| async { Ok(None) });
@@ -1189,7 +1473,9 @@ async fn model_refusal_raises_or_is_handled() {
 /// handler an unparsable answer raises and an empty one asks the model again, as in Python.
 #[tokio::test]
 async fn invalid_final_output_is_handled_or_retried() {
-    use openai_agents::{AgentOutputSchema, RunErrorHandlerResult, RunErrorHandlers, RunHandledError};
+    use openai_agents::{
+        AgentOutputSchema, RunErrorHandlerResult, RunErrorHandlers, RunHandledError,
+    };
     #[derive(serde::Deserialize, openai_agents::schemars::JsonSchema)]
     #[allow(dead_code)]
     struct Out {
@@ -1198,34 +1484,51 @@ async fn invalid_final_output_is_handled_or_retried() {
     let build = |steps: Vec<&str>| {
         Agent::new("a")
             .model(Arc::new(ScriptedModel::new(
-                steps.into_iter().map(|t| ModelStep::from(ItemHelpers::text_message(t))),
+                steps
+                    .into_iter()
+                    .map(|t| ModelStep::from(ItemHelpers::text_message(t))),
             )))
             .output_type(Arc::new(AgentOutputSchema::of::<Out>().expect("schema")))
     };
     let handled = |value: Value| {
         let mut options = RunOptions::default();
-        options.error_handlers = RunErrorHandlers::default().on_invalid_final_output(move |input| {
-            let value = value.clone();
-            async move {
-                assert!(matches!(input.error, RunHandledError::InvalidFinalOutput(_)));
-                assert_eq!(input.run_data.raw_responses.len(), 1);
-                Ok(Some(RunErrorHandlerResult::new(value)))
-            }
-        });
+        options.error_handlers =
+            RunErrorHandlers::default().on_invalid_final_output(move |input| {
+                let value = value.clone();
+                async move {
+                    assert!(matches!(
+                        input.error,
+                        RunHandledError::InvalidFinalOutput(_)
+                    ));
+                    assert_eq!(input.run_data.raw_responses.len(), 1);
+                    Ok(Some(RunErrorHandlerResult::new(value)))
+                }
+            });
         options
     };
 
-    let err = Runner::run(&build(vec!["nope"]), "hi", RunOptions::default()).await.unwrap_err();
-    assert!(matches!(err, AgentsError::Model(ModelError::Behavior(_))), "{err}");
+    let err = Runner::run(&build(vec!["nope"]), "hi", RunOptions::default())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, AgentsError::Model(ModelError::Behavior(_))),
+        "{err}"
+    );
 
-    let result = Runner::run(&build(vec!["nope"]), "hi", handled(json!({"a": 7}))).await.expect("handled");
+    let result = Runner::run(&build(vec!["nope"]), "hi", handled(json!({"a": 7})))
+        .await
+        .expect("handled");
     assert_eq!(result.final_output, json!({"a": 7}));
     assert_eq!(result.new_items.len(), 2);
 
-    let err = Runner::run(&build(vec!["nope"]), "hi", handled(json!({"a": "x"}))).await.unwrap_err();
+    let err = Runner::run(&build(vec!["nope"]), "hi", handled(json!({"a": "x"})))
+        .await
+        .unwrap_err();
     assert!(matches!(err, AgentsError::User(_)), "{err}");
 
-    let result = Runner::run(&build(vec![""]), "hi", handled(json!({"a": 7}))).await.expect("handled");
+    let result = Runner::run(&build(vec![""]), "hi", handled(json!({"a": 7})))
+        .await
+        .expect("handled");
     assert_eq!(result.final_output, json!({"a": 7}));
 
     let result = Runner::run(&build(vec!["", r#"{"a":1}"#]), "hi", RunOptions::default())
@@ -1241,9 +1544,18 @@ async fn invalid_final_output_is_handled_or_retried() {
 async fn in_memory_session_replace_items() {
     use openai_agents::{InMemorySession, Session};
     let session = InMemorySession::shared("s");
-    session.add_items(vec![json!({"role": "user", "content": "a"})]).await.unwrap();
-    session.replace_items(vec![json!({"role": "user", "content": "b"})]).await.unwrap();
-    assert_eq!(session.get_items(None).await.unwrap(), vec![json!({"role": "user", "content": "b"})]);
+    session
+        .add_items(vec![json!({"role": "user", "content": "a"})])
+        .await
+        .unwrap();
+    session
+        .replace_items(vec![json!({"role": "user", "content": "b"})])
+        .await
+        .unwrap();
+    assert_eq!(
+        session.get_items(None).await.unwrap(),
+        vec![json!({"role": "user", "content": "b"})]
+    );
 }
 
 /// Sets a flag when dropped, to observe that a spawned future was torn down.
@@ -1257,12 +1569,15 @@ impl Drop for DropFlag {
 
 /// A streamed run that is stuck waiting on a slow parallel input guardrail, and the flag that
 /// shows whether the guardrail future was dropped.
-async fn streamed_run_with_slow_guardrail() -> (openai_agents::RunResultStreaming, Arc<AtomicBool>) {
+async fn streamed_run_with_slow_guardrail() -> (openai_agents::RunResultStreaming, Arc<AtomicBool>)
+{
     use openai_agents::{GuardrailFunctionOutput, InputGuardrail};
     let dropped = Arc::new(AtomicBool::new(false));
     let flag = dropped.clone();
     let agent = Agent::new("a")
-        .model(Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::text_message("hi"))])))
+        .model(Arc::new(ScriptedModel::new([ModelStep::from(
+            ItemHelpers::text_message("hi"),
+        )])))
         .input_guardrails(vec![InputGuardrail::new("slow", move |_c, _a, _i| {
             let guard = DropFlag(flag.clone());
             async move {
@@ -1281,10 +1596,16 @@ async fn streamed_run_with_slow_guardrail() -> (openai_agents::RunResultStreamin
 async fn immediate_cancel_aborts_parallel_input_guardrails() {
     use openai_agents::CancelMode;
     let (mut streamed, dropped) = streamed_run_with_slow_guardrail().await;
-    assert!(!dropped.load(Ordering::SeqCst), "the guardrail is still running");
+    assert!(
+        !dropped.load(Ordering::SeqCst),
+        "the guardrail is still running"
+    );
     streamed.cancel(CancelMode::Immediate);
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-    assert!(dropped.load(Ordering::SeqCst), "the guardrail task must be aborted with the run");
+    assert!(
+        dropped.load(Ordering::SeqCst),
+        "the guardrail task must be aborted with the run"
+    );
 }
 
 /// D-031: `cancel_on_drop` turns a dropped stream into an immediate cancel; the default keeps
@@ -1294,12 +1615,18 @@ async fn cancel_on_drop_is_opt_in() {
     let (streamed, dropped) = streamed_run_with_slow_guardrail().await;
     drop(streamed);
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-    assert!(!dropped.load(Ordering::SeqCst), "default: the run outlives its handle");
+    assert!(
+        !dropped.load(Ordering::SeqCst),
+        "default: the run outlives its handle"
+    );
 
     let (streamed, dropped) = streamed_run_with_slow_guardrail().await;
     drop(streamed.cancel_on_drop(true));
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-    assert!(dropped.load(Ordering::SeqCst), "opt-in: dropping the handle stops the run");
+    assert!(
+        dropped.load(Ordering::SeqCst),
+        "opt-in: dropping the handle stops the run"
+    );
 }
 
 /// D-036: when an output guardrail withholds a tool-derived final output, the session gets the
@@ -1309,13 +1636,15 @@ async fn cancel_on_drop_is_opt_in() {
 #[tokio::test]
 async fn blocked_tool_output_is_withheld_from_the_session_too() {
     use openai_agents::{
-        GuardrailFunctionOutput, InMemorySession, OutputGuardrail, RunConfig, Session, ToolUseBehavior,
-        OUTPUT_GUARDRAIL_BLOCKED_TOOL_OUTPUT as WITHHELD,
+        GuardrailFunctionOutput, InMemorySession, OutputGuardrail, RunConfig, Session,
+        ToolUseBehavior, OUTPUT_GUARDRAIL_BLOCKED_TOOL_OUTPUT as WITHHELD,
     };
     let reasoning = json!({"id": "rs1", "type": "reasoning", "summary": []});
     let call = |name: &str, id: &str| ItemHelpers::function_tool_call(name, "{}", id);
     let run = |steps: Vec<ModelStep>, behavior: ToolUseBehavior, config: RunConfig| async move {
-        let trip = OutputGuardrail::new("g", |_c, _a, _o| async { GuardrailFunctionOutput::trip(json!("x")) });
+        let trip = OutputGuardrail::new("g", |_c, _a, _o| async {
+            GuardrailFunctionOutput::trip(json!("x"))
+        });
         let agent = Agent::new("a")
             .model(Arc::new(ScriptedModel::new(steps)))
             .tools(vec![
@@ -1338,41 +1667,82 @@ async fn blocked_tool_output_is_withheld_from_the_session_too() {
             .unwrap()
             .into_iter()
             .map(|i| {
-                let kind = i["type"].as_str().or(i["role"].as_str()).unwrap().to_string();
-                let detail = i["output"].as_str().or(i["call_id"].as_str()).unwrap_or("").to_string();
+                let kind = i["type"]
+                    .as_str()
+                    .or(i["role"].as_str())
+                    .unwrap()
+                    .to_string();
+                let detail = i["output"]
+                    .as_str()
+                    .or(i["call_id"].as_str())
+                    .unwrap_or("")
+                    .to_string();
                 (kind, detail)
             })
             .collect::<Vec<_>>()
     };
     let first = ToolUseBehavior::StopOnFirstTool;
     let pair = |kind: &str, detail: &str| (kind.to_string(), detail.to_string());
-    let withheld = |id: &str| pair("function_call_output", if id.is_empty() { WITHHELD } else { id });
+    let withheld = |id: &str| {
+        pair(
+            "function_call_output",
+            if id.is_empty() { WITHHELD } else { id },
+        )
+    };
 
-    let items = run(vec![ModelStep::from(call("secret", "c1"))], first.clone(), RunConfig::default()).await;
-    assert_eq!(items, [pair("user", ""), pair("function_call", "c1"), withheld("")]);
+    let items = run(
+        vec![ModelStep::from(call("secret", "c1"))],
+        first.clone(),
+        RunConfig::default(),
+    )
+    .await;
+    assert_eq!(
+        items,
+        [pair("user", ""), pair("function_call", "c1"), withheld("")]
+    );
 
     let two = ModelStep::output([call("echo", "c1"), call("secret", "c2")]);
     let items = run(vec![two], first.clone(), RunConfig::default()).await;
     assert_eq!(
         items,
-        [pair("user", ""), pair("function_call", "c1"), pair("function_call", "c2"), withheld(""), withheld("")],
+        [
+            pair("user", ""),
+            pair("function_call", "c1"),
+            pair("function_call", "c2"),
+            withheld(""),
+            withheld("")
+        ],
         "every output of the turn is withheld, not only the final one"
     );
 
     let custom = RunConfig {
-        output_guardrail_blocked_message: Some(openai_agents::OutputGuardrailBlockedMessage::Text("[blocked]".into())),
+        output_guardrail_blocked_message: Some(openai_agents::OutputGuardrailBlockedMessage::Text(
+            "[blocked]".into(),
+        )),
         ..RunConfig::default()
     };
-    let items = run(vec![ModelStep::from(call("secret", "c1"))], first.clone(), custom).await;
+    let items = run(
+        vec![ModelStep::from(call("secret", "c1"))],
+        first.clone(),
+        custom,
+    )
+    .await;
     assert_eq!(items[2], pair("function_call_output", "[blocked]"));
 
     let items = run(
-        vec![ModelStep::output([ItemHelpers::text_message("thinking aloud"), call("secret", "c1")])],
+        vec![ModelStep::output([
+            ItemHelpers::text_message("thinking aloud"),
+            call("secret", "c1"),
+        ])],
         first.clone(),
         RunConfig::default(),
     )
     .await;
-    assert_eq!(items, [pair("user", ""), pair("function_call", "c1"), withheld("")], "the model's text is dropped");
+    assert_eq!(
+        items,
+        [pair("user", ""), pair("function_call", "c1"), withheld("")],
+        "the model's text is dropped"
+    );
 
     let items = run(
         vec![ModelStep::output([reasoning.clone(), call("secret", "c1")])],
@@ -1380,11 +1750,20 @@ async fn blocked_tool_output_is_withheld_from_the_session_too() {
         RunConfig::default(),
     )
     .await;
-    assert_eq!(items, [pair("user", "")], "a turn with reasoning is not saved");
+    assert_eq!(
+        items,
+        [pair("user", "")],
+        "a turn with reasoning is not saved"
+    );
 
     let items = run(
-        vec![ModelStep::from(call("echo", "c0")), ModelStep::from(call("secret", "c1"))],
-        ToolUseBehavior::StopAtTools { stop_at_tool_names: vec!["secret".into()] },
+        vec![
+            ModelStep::from(call("echo", "c0")),
+            ModelStep::from(call("secret", "c1")),
+        ],
+        ToolUseBehavior::StopAtTools {
+            stop_at_tool_names: vec!["secret".into()],
+        },
         RunConfig::default(),
     )
     .await;

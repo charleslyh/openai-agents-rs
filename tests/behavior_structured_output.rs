@@ -30,7 +30,10 @@ fn schema_is_strict_and_named() {
     let required = json["required"].as_array().expect("required");
     assert!(required.iter().any(|r| r == "text"));
     assert!(required.iter().any(|r| r == "confidence"));
-    assert_eq!(json["properties"]["text"]["description"], "Short answer text.");
+    assert_eq!(
+        json["properties"]["text"]["description"],
+        "Short answer text."
+    );
 }
 
 /// `String` mirrors Python's `output_type=str` and stays plain text.
@@ -98,12 +101,14 @@ async fn empty_structured_output_asks_the_model_again() {
     // `invalid_final_output` handler is set, so the model is called a second time.
     let model = Arc::new(ScriptedModel::new([
         ModelStep::from(ItemHelpers::text_message("")),
-        ModelStep::from(ItemHelpers::text_message(&answer_json())),
+        ModelStep::from(ItemHelpers::text_message(answer_json())),
     ]));
     let agent = Agent::new("structured")
         .model(model.clone())
         .output_type(Arc::new(AgentOutputSchema::of::<Answer>().expect("schema")));
-    let result = Runner::run(&agent, "?", RunOptions::default()).await.expect("retried");
+    let result = Runner::run(&agent, "?", RunOptions::default())
+        .await
+        .expect("retried");
     assert_eq!(model.calls().len(), 2);
     assert_eq!(result.final_output["text"], "42");
 }
@@ -117,9 +122,7 @@ async fn stop_on_first_tool_stringifies_without_output_type() {
     let agent = Agent::new("counter")
         .model(model)
         .tools(vec![openai_agents::FunctionTool::constant(
-            "count",
-            "count",
-            "7",
+            "count", "count", "7",
         )])
         .tool_use_behavior(openai_agents::ToolUseBehavior::StopOnFirstTool);
     let result = Runner::run(&agent, "count", RunOptions::default())

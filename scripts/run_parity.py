@@ -88,6 +88,15 @@ def _canonical_json(text):
         return text
 
 
+def _canonical_golden(golden: dict):
+    """Golden payloads compare by content, never by key order."""
+    return json.dumps(golden, sort_keys=True, ensure_ascii=False)
+
+
+def _golden_path(path: Path) -> Path:
+    return path.with_suffix(".golden.json")
+
+
 def _build_agent(spec: dict, model, handoffs=None):
     from agents import Agent
 
@@ -189,6 +198,14 @@ async def main() -> int:
         action="store_true",
         help="Write tests/parity/scenarios/<name>.golden.json",
     )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help=(
+            "Compare each scenario against its committed golden file and fail on drift. "
+            "Never overwrites: regenerating is a separate, deliberate --write-golden step."
+        ),
+    )
     parser.add_argument("scenarios", nargs="*", help="Optional scenario paths")
     args = parser.parse_args()
 
@@ -203,15 +220,38 @@ async def main() -> int:
     for path in paths:
         try:
             golden = await run_scenario(path)
-            outcome = golden.get("final_output", golden.get("error"))
-            print(f"OK  {path.name}: {outcome!r}")
-            if args.write_golden:
-                out = path.with_suffix(".golden.json")
-                out.write_text(json.dumps(golden, indent=2) + "\n", encoding="utf-8")
-                print(f"    wrote {out.relative_to(ROOT)}")
         except Exception as exc:  # noqa: BLE001
             all_ok = False
             print(f"FAIL {path.name}: {exc}", file=sys.stderr)
+            continue
+        outcome = golden.get("final_output", golden.get("error"))
+        out = _golden_path(path)
+
+        if args.check:
+            if not out.exists():
+                all_ok = False
+                print(
+                    f"FAIL {path.name}: no golden file at {out.relative_to(ROOT)}; "
+                    "generate it with --write-golden",
+                    file=sys.stderr,
+                )
+                continue
+            committed = json.loads(out.read_text(encoding="utf-8"))
+            if _canonical_golden(committed) != _canonical_golden(golden):
+                all_ok = False
+                print(f"FAIL {path.name}: golden drift", file=sys.stderr)
+                for key in sorted(set(committed) | set(golden)):
+                    before, after = committed.get(key), golden.get(key)
+                    if before != after:
+                        print(f"    {key}:\n      golden: {before!r}\n      python: {after!r}", file=sys.stderr)
+                continue
+            print(f"OK  {path.name}: {outcome!r} (golden unchanged)")
+            continue
+
+        print(f"OK  {path.name}: {outcome!r}")
+        if args.write_golden:
+            out.write_text(json.dumps(golden, indent=2) + "\n", encoding="utf-8")
+            print(f"    wrote {out.relative_to(ROOT)}")
     return 0 if all_ok else 1
 
 

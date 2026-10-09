@@ -1,8 +1,8 @@
 //! Agent handoffs (Python: `agents.handoffs` subset).
 
 use std::future::Future;
-use std::sync::Arc;
 use std::pin::Pin;
+use std::sync::Arc;
 
 use serde_json::Value;
 
@@ -36,7 +36,9 @@ pub struct HandoffInputData {
 
 /// Filters the conversation passed to the next agent (Python: `HandoffInputFilter`).
 pub type HandoffInputFilter = Arc<
-    dyn Fn(HandoffInputData) -> Pin<Box<dyn Future<Output = Result<HandoffInputData, AgentsError>> + Send>>
+    dyn Fn(
+            HandoffInputData,
+        ) -> Pin<Box<dyn Future<Output = Result<HandoffInputData, AgentsError>> + Send>>
         + Send
         + Sync,
 >;
@@ -46,7 +48,10 @@ pub type HandoffInputFilter = Arc<
 /// The second argument is the parsed tool-call arguments when the handoff declares an input
 /// schema, otherwise `None`.
 pub type OnHandoff = Arc<
-    dyn Fn(RunContextWrapper, Option<Value>) -> Pin<Box<dyn Future<Output = Result<(), AgentsError>> + Send>>
+    dyn Fn(
+            RunContextWrapper,
+            Option<Value>,
+        ) -> Pin<Box<dyn Future<Output = Result<(), AgentsError>> + Send>>
         + Send
         + Sync,
 >;

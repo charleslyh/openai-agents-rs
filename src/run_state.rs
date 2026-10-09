@@ -1,7 +1,7 @@
 //! Run state for HITL pause/resume (Python: `agents.run_state.RunState` subset).
 //!
 //! Supports in-memory sticky approvals and JSON round-trip (`to_json` / `from_json`).
-//! Schema id: `openai-agents-rs/2` (not the Python 1.18 wire format — see D-012).
+//! Schema id: `openai-agents-rs/3` (not the Python 1.18 wire format — see D-012).
 
 use std::collections::HashMap;
 
@@ -10,8 +10,8 @@ use serde_json::{json, Value};
 use crate::error::{AgentsError, UserError};
 use crate::guardrail::{GuardrailFunctionOutput, InputGuardrailResult};
 use crate::items::{
-    HandoffCallItem, HandoffOutputItem, InputLike, MessageOutputItem, ModelResponse,
-    ReasoningItem, ResponseInputItem, RunItem, ToolApprovalItem, ToolCallItem, ToolCallOutputItem,
+    HandoffCallItem, HandoffOutputItem, InputLike, MessageOutputItem, ModelResponse, ReasoningItem,
+    ResponseInputItem, RunItem, ToolApprovalItem, ToolCallItem, ToolCallOutputItem,
 };
 use crate::model_settings::ModelSettings;
 use crate::tool::DEFAULT_APPROVAL_REJECTION_MESSAGE;
@@ -22,16 +22,20 @@ use crate::tool_guardrails::{
 use crate::usage::Usage;
 
 /// Schema version embedded in [`RunState::to_json`].
-pub const RUN_STATE_SCHEMA_VERSION: &str = "openai-agents-rs/2";
+pub const RUN_STATE_SCHEMA_VERSION: &str = "openai-agents-rs/3";
 
 /// Older schema ids that [`RunState::from_json`] still accepts.
 ///
 /// The `openai-agents-rust/*` ids were emitted before the project was renamed to
 /// `openai-agents-rs`; snapshots persisted by earlier versions carry them and must stay
 /// loadable. They are accepted but never re-emitted by [`RunState::to_json`].
+///
+/// `openai-agents-rs/2` is the previous shape, where `max_turns` was always a number. It loads
+/// as `Some(n)`; only `/3` can carry `null` for an unlimited run (D-042).
 pub const SUPPORTED_RUN_STATE_SCHEMAS: &[&str] = &[
     "openai-agents-rust/1",
     "openai-agents-rust/2",
+    "openai-agents-rs/2",
     RUN_STATE_SCHEMA_VERSION,
 ];
 
@@ -93,13 +97,7 @@ impl ApprovalStore {
     }
 
     /// Record an approve decision.
-    pub fn approve(
-        &mut self,
-        agent_name: &str,
-        tool_name: &str,
-        call_id: &str,
-        always: bool,
-    ) {
+    pub fn approve(&mut self, agent_name: &str, tool_name: &str, call_id: &str, always: bool) {
         self.by_call
             .insert(call_id.to_string(), ApprovalDecision::Approved);
         if always {
@@ -153,7 +151,10 @@ impl ApprovalStore {
             .iter()
             .map(|(k, v)| {
                 let parts: Vec<&str> = k.split('\0').collect();
-                let (agent, tool) = (parts.first().copied().unwrap_or(""), parts.get(1).copied().unwrap_or(""));
+                let (agent, tool) = (
+                    parts.first().copied().unwrap_or(""),
+                    parts.get(1).copied().unwrap_or(""),
+                );
                 match v {
                     StickyDecision::AlwaysApprove => json!({
                         "agent": agent,
@@ -176,7 +177,10 @@ impl ApprovalStore {
         let mut store = Self::default();
         if let Some(map) = value.get("by_call").and_then(|v| v.as_object()) {
             for (call_id, entry) in map {
-                let approved = entry.get("approved").and_then(|v| v.as_bool()).unwrap_or(false);
+                let approved = entry
+                    .get("approved")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
                 if approved {
                     store
                         .by_call
@@ -187,10 +191,9 @@ impl ApprovalStore {
                         .and_then(|v| v.as_str())
                         .unwrap_or(DEFAULT_APPROVAL_REJECTION_MESSAGE)
                         .to_string();
-                    store.by_call.insert(
-                        call_id.clone(),
-                        ApprovalDecision::Rejected { message },
-                    );
+                    store
+                        .by_call
+                        .insert(call_id.clone(), ApprovalDecision::Rejected { message });
                 }
             }
         }
@@ -204,12 +207,14 @@ impl ApprovalStore {
                     .get("tool")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| UserError::new("sticky approval missing tool"))?;
-                let approved = entry.get("approved").and_then(|v| v.as_bool()).unwrap_or(false);
+                let approved = entry
+                    .get("approved")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
                 if approved {
-                    store.sticky.insert(
-                        Self::sticky_key(agent, tool),
-                        StickyDecision::AlwaysApprove,
-                    );
+                    store
+                        .sticky
+                        .insert(Self::sticky_key(agent, tool), StickyDecision::AlwaysApprove);
                 } else {
                     let message = entry
                         .get("message")
@@ -244,8 +249,8 @@ pub struct RunState {
     pub raw_responses: Vec<ModelResponse>,
     /// Aggregated usage.
     pub usage: Usage,
-    /// Max turns for the run.
-    pub max_turns: usize,
+    /// Max turns for the run; `None` disables the limit (Python: `RunOptions.max_turns = None`).
+    pub max_turns: Option<usize>,
     /// Turn index when interrupted (1-based, matches run loop).
     pub turn: usize,
     /// Previous Responses API response id, if any.
@@ -289,8 +294,12 @@ impl RunState {
             nested.approve(item, always_approve);
             return;
         }
-        self.approvals
-            .approve(&item.agent_name, &item.tool_name, &item.call_id, always_approve);
+        self.approvals.approve(
+            &item.agent_name,
+            &item.tool_name,
+            &item.call_id,
+            always_approve,
+        );
     }
 
     /// Reject a pending tool call (Python: `RunState.reject`).
@@ -405,6 +414,11 @@ impl RunState {
     }
 
     /// Serialize to a JSON string (Python: `to_string`).
+    ///
+    /// Deliberately an inherent method rather than `impl Display`: the name mirrors Python's
+    /// `RunState.to_string()` and a `Display` impl would also bring `ToString::to_string`, which
+    /// would make the two spellings mean different things.
+    #[allow(clippy::inherent_to_string)]
     pub fn to_string(&self) -> String {
         self.to_json().to_string()
     }
@@ -486,10 +500,12 @@ impl RunState {
                 .unwrap_or_default(),
             usage: serde_json::from_value(value.get("usage").cloned().unwrap_or(json!({})))
                 .unwrap_or_default(),
+            // `None` (schema `/3`) disables the limit; a schema `/2` payload always carries a
+            // number, which loads as `Some(n)` — that is the value a `/2` snapshot meant.
             max_turns: value
                 .get("max_turns")
                 .and_then(|v| v.as_u64())
-                .unwrap_or(10) as usize,
+                .map(|n| n as usize),
             turn: value.get("turn").and_then(|v| v.as_u64()).unwrap_or(1) as usize,
             previous_response_id: value
                 .get("previous_response_id")
@@ -514,9 +530,7 @@ impl RunState {
                     .get("pending_response")
                     .ok_or_else(|| UserError::new("RunState missing pending_response"))?,
             )?,
-            approvals: ApprovalStore::from_json(
-                value.get("approvals").unwrap_or(&json!({})),
-            )?,
+            approvals: ApprovalStore::from_json(value.get("approvals").unwrap_or(&json!({})))?,
             nested_agent_runs,
             // Absent in states written before turn-by-turn session saving: nothing was saved.
             session_saved_items: value
@@ -545,12 +559,15 @@ impl RunState {
                     output: deserialize_tool_guardrail_output(&output),
                 })
                 .collect(),
-            tool_output_guardrail_results: guardrail_results(&value, "tool_output_guardrail_results")
-                .map(|(guardrail_name, output)| ToolOutputGuardrailResult {
-                    guardrail_name,
-                    output: deserialize_tool_guardrail_output(&output),
-                })
-                .collect(),
+            tool_output_guardrail_results: guardrail_results(
+                &value,
+                "tool_output_guardrail_results",
+            )
+            .map(|(guardrail_name, output)| ToolOutputGuardrailResult {
+                guardrail_name,
+                output: deserialize_tool_guardrail_output(&output),
+            })
+            .collect(),
         })
     }
 

@@ -37,7 +37,11 @@ pub fn assistant_message_with_id(text: impl Into<String>, item_id: impl Into<Str
 /// Build one normalized function-tool call output item (Python: `function_call`).
 ///
 /// `arguments` may be a JSON string or any serializable value.
-pub fn function_call(name: impl Into<String>, arguments: Value, call_id: impl Into<String>) -> Value {
+pub fn function_call(
+    name: impl Into<String>,
+    arguments: Value,
+    call_id: impl Into<String>,
+) -> Value {
     let call_id = call_id.into();
     function_call_with_id(name, arguments, call_id.clone(), call_id)
 }

@@ -17,6 +17,10 @@ Legend: **X** = out of scope (OpenAI-hosted) · **S** = supported · **P** = par
 | `Agent.clone` | N | Use `Clone` on the struct (Rust idiom) |
 | `Runner::run` / `run_blocking` / `run_state` | S | D-001 naming for the sync entry |
 | `RunResultStreaming.cancel(mode)` | S | `CancelMode::Immediate` / `AfterTurn` (D-031) |
+| `RunOptions.max_turns = None` (unbounded run) | S | `None` disables the limit; `RunOptions::default()` keeps `Some(10)` (D-042) |
+| `Agent.as_tool` keywords beyond `name` / `description` / `needs_approval` / `max_turns` | N | No `run_config` / `hooks` / `session` / `custom_output_extractor` / `on_stream` / structured `parameters` (D-043) |
+| Tool output parts (`ToolOutputText` / `ToolOutputImage` / `ToolOutputFileContent`) | N | A tool result is one JSON value rendered as text (D-044) |
+| `RunOptions.auto_previous_response_id` | N | No server conversation tracker (D-045) |
 | `error_handlers={"max_turns": ...}` | S | `RunOptions.error_handlers` (D-033); other kinds N |
 | `Runner::run_streamed` / `RunResultStreaming` | S | Item + agent events plus raw Responses wire events on both OpenAI APIs (D-011) |
 | `FunctionTool` | S | Manual schema or `#[function_tool]` |
@@ -43,7 +47,7 @@ Legend: **X** = out of scope (OpenAI-hosted) · **S** = supported · **P** = par
 | OpenAI Responses API model | S | via `async-openai` config + raw HTTP; real SSE, events forwarded verbatim (D-011) |
 | OpenAI Chat Completions model | S | real SSE; chunks are synthesized into Responses wire events (D-011); converters checked against Python, tolerant of non-conforming servers (D-040) |
 | Third-party servers (base URL + key) | S | `stream_options` opt-in, DeepSeek reasoning replay, generated tool call ids, `finish_reason` handling (D-040) |
-| Default API = Chat Completions (Python: Responses) | S | `set_default_openai_api`; D-I |
+| Default API = Responses | S | `set_default_openai_api` |
 | `ModelProvider` / `MultiProvider` | S | `prefix/model` routing, default prefix `openai` |
 | `OpenAIProvider` | S | Reads `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL` (the key is optional with a base URL); caches per name; API per provider, global or by host (D-I) |
 | `CompatibleProvider` | S | Provider-neutral entry: base URL, optional key, Chat Completions by default (D-013) |
@@ -83,14 +87,16 @@ them like any other provider event, and it reads the response id out of them whe
 
 ## Model settings
 
-`ModelSettings` covers 19 fields: `temperature`, `top_p`, `frequency_penalty`,
+`ModelSettings` covers 22 fields: `temperature`, `top_p`, `frequency_penalty`,
 `presence_penalty`, `tool_choice` (typed enum), `parallel_tool_calls`, `truncation`, `max_tokens`,
 `reasoning`, `verbosity`, `metadata`, `store`, `top_logprobs`, `include_usage`,
-`response_include`, `extra_body`, `extra_headers`, `extra_args`, `timeout`. `resolve()` overlays
-non-`None` values and merges dictionaries, matching Python.
+`response_include`, `extra_body`, `extra_headers`, `extra_query`, `preserve_raw_usage`,
+`extra_args`, `timeout`, `retry`. `resolve()` overlays non-`None` values and merges dictionaries,
+matching Python; `retry` is merged field by field (D-034).
 
-Not ported: `extra_query`, `prompt_cache_retention`, `context_management`, `prompt_cache_options`,
-`preserve_raw_usage`.
+Not ported: `prompt_cache_retention`, `context_management`, `prompt_cache_options` — three
+OpenAI-hosted server features (D-017); reach them with `extra_body` / `extra_args` when a server
+does support them.
 
 Request-body precedence, highest first (matching Python):
 
@@ -133,9 +139,10 @@ dictionaries are merged (`model_settings.py:273`).
 | `needs_approval` (fixed or dynamic) | S | |
 | `interruptions`, `RunState` approve/reject | S | |
 | Sticky `always_approve` / `always_reject` | S | |
-| `to_json` / `from_json` | S | Schema `openai-agents-rs/2` (D-012); older `openai-agents-rust/1` and `openai-agents-rust/2` payloads still load |
+| `to_json` / `from_json` | S | Schema `openai-agents-rs/3` (D-012); `openai-agents-rs/2`, `openai-agents-rust/1` and `openai-agents-rust/2` payloads still load |
 | `Agent.as_tool` nested approvals | S | Bubbles to the outer `RunState` |
-| Custom output extractor / `on_stream` | N | |
+| `Agent.as_tool` config beyond `needs_approval` / `max_turns` | N | No `run_config`, `hooks`, `session`, `failure_error_function`, `is_enabled`, `parameters` / `input_builder` (D-043) |
+| Custom output extractor / `on_stream` | N | D-043 |
 
 ## MCP
 
@@ -185,8 +192,10 @@ dictionaries are merged (`model_settings.py:273`).
 | Processor start events | S | `InMemoryProcessor::started_spans` / `started_traces` |
 | `flush_traces` | S | Calls `TracingProcessor::force_flush` |
 | `task_span` / `turn_span`, `RunConfig.tracing` (`TracingConfig`) | S | Span tree checked against Python (D-037); no `api_key` (cloud export is out of scope) |
+| `Span.started_at` / `ended_at` / `SpanError` | S | Set on drop; a failing tool and an exhausted turn budget record an error |
 | speech / transcription spans | N | |
 | OpenAI cloud export | N | D-004, not planned |
+| `SpanData` payloads (`input` / `output` / `tools`) | N | Only names and usage are recorded |
 
 ## Testing
 
@@ -196,7 +205,7 @@ tests, which drive `wiremock` directly rather than through a shipped mock layer.
 | Capability | Status | Notes |
 |------------|--------|-------|
 | `ScriptedModel` (`new`, `enqueue`, `extend`, `calls`, `assert_complete`) | S | |
-| `ModelStep` (`output`, `raise_error`) | S | `responder` / `stream_events` / `retry_advice` not ported |
+| `ModelStep` (`output`, `raise_error`, `raise_model_error`, `with_retry_advice`) | S | `responder` / `stream_events` not ported (D-020) |
 | `ModelCall` (incl. `streamed`, `output_schema_name`) | S | `output_schema` / `handoffs` / `prompt` recorded only by name, if at all |
 | `remaining_steps`, `first_call`, `last_call` | S | |
 | `set_default_usage` | S | |
@@ -208,6 +217,10 @@ tests, which drive `wiremock` directly rather than through a shipped mock layer.
 
 ## Verification layers
 
+0. `cargo fmt --all -- --check`, `cargo clippy --all-features --all-targets -- -D warnings`,
+   `RUSTDOCFLAGS=-D warnings cargo doc --no-deps --all-features`, `scripts/sync_vendor.sh --check`
 1. `cargo test --no-default-features` — ScriptedModel behavior
-2. `cargo test` — OpenAI HTTP contracts via wiremock (requires the `openai` feature)
-3. `.venv/bin/python scripts/run_parity.py --write-golden` then `cargo test --test parity_scenarios`
+2. `cargo test --all-features` — OpenAI HTTP contracts via wiremock, SQLite sessions
+2.5 `cargo test --test property_core` — invariants over generated inputs (proptest)
+3. `.venv/bin/python scripts/run_parity.py --check` then `cargo test --test parity_scenarios`;
+   `cargo test --test mcp_interop` and `--test chat_convert_parity` need the venv

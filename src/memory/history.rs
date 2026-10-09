@@ -77,8 +77,10 @@ pub(crate) fn drop_orphan_function_calls(
         if dropped.contains(&index) || item_type(&items[index]) != Some("reasoning") {
             continue;
         }
-        for next in index + 1..items.len() {
-            if dangling.contains(&next) || item_type(&items[next]) == Some("reasoning") {
+        // The next non-reasoning item after `index`, which is what the reasoning item belongs to.
+        for (offset, item) in items[index + 1..].iter().enumerate() {
+            let next = index + 1 + offset;
+            if dangling.contains(&next) || item_type(item) == Some("reasoning") {
                 continue;
             }
             if triggers.contains(&next) {
@@ -123,7 +125,9 @@ pub(crate) fn deduplicate_input_items_preferring_latest(items: Vec<Value>) -> Ve
     let mut latest: HashMap<String, usize> = HashMap::new();
     let mut anchor: HashMap<String, usize> = HashMap::new();
     for (index, item) in items.iter().enumerate() {
-        let Some(key) = dedupe_key(item) else { continue };
+        let Some(key) = dedupe_key(item) else {
+            continue;
+        };
         latest.insert(key.clone(), index);
         let anchors_first = matches!(item_type(item), Some(CALL | "reasoning"));
         if !anchor.contains_key(&key) || !anchors_first {
@@ -163,19 +167,42 @@ mod tests {
 
     #[test]
     fn orphan_calls_and_their_reasoning_are_dropped_from_history_only() {
-        let items = vec![user("a"), reasoning("r1"), call("c1"), reasoning("r2"), call("c2"), out("c2"), call("c3")];
+        let items = vec![
+            user("a"),
+            reasoning("r1"),
+            call("c1"),
+            reasoning("r2"),
+            call("c2"),
+            out("c2"),
+            call("c3"),
+        ];
         let history = [true, true, true, true, true, true, false];
         let kept = drop_orphan_function_calls(items.clone(), &history, false);
-        assert_eq!(kept, vec![user("a"), reasoning("r2"), call("c2"), out("c2"), call("c3")]);
+        assert_eq!(
+            kept,
+            vec![
+                user("a"),
+                reasoning("r2"),
+                call("c2"),
+                out("c2"),
+                call("c3")
+            ]
+        );
         // Nothing is prunable: everything stays.
-        assert_eq!(drop_orphan_function_calls(items.clone(), &[false; 7], false), items);
+        assert_eq!(
+            drop_orphan_function_calls(items.clone(), &[false; 7], false),
+            items
+        );
     }
 
     #[test]
     fn outputs_whose_call_was_cut_off_are_dropped_when_asked() {
         let items = vec![out("c1"), user("a"), call("c2"), out("c2")];
         let all = [true; 4];
-        assert_eq!(drop_orphan_function_calls(items.clone(), &all, false), items);
+        assert_eq!(
+            drop_orphan_function_calls(items.clone(), &all, false),
+            items
+        );
         assert_eq!(
             drop_orphan_function_calls(items, &all, true),
             vec![user("a"), call("c2"), out("c2")]
@@ -186,7 +213,14 @@ mod tests {
     fn duplicates_keep_one_item_with_the_latest_content() {
         let mut newer = out("c1");
         newer["output"] = json!("newer");
-        let items = vec![user("hi"), call("c1"), out("c1"), user("hi"), call("c1"), newer.clone()];
+        let items = vec![
+            user("hi"),
+            call("c1"),
+            out("c1"),
+            user("hi"),
+            call("c1"),
+            newer.clone(),
+        ];
         assert_eq!(
             deduplicate_input_items_preferring_latest(items),
             vec![user("hi"), call("c1"), user("hi"), newer],

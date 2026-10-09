@@ -83,8 +83,7 @@ pub fn model() -> Result<Arc<dyn Model>, Box<dyn std::error::Error>> {
 fn openai_env(
     api: ExampleApi,
 ) -> Result<(String, String, Option<String>), Box<dyn std::error::Error>> {
-    let api_key =
-        std::env::var("OPENAI_API_KEY").map_err(|_| "OPENAI_API_KEY is required")?;
+    let api_key = std::env::var("OPENAI_API_KEY").map_err(|_| "OPENAI_API_KEY is required")?;
     let model_name = std::env::var("OPENAI_MODEL")
         .map_err(|_| "OPENAI_MODEL is required (e.g. deepseek-v4-pro)")?;
     let base_url = std::env::var("OPENAI_BASE_URL").ok();

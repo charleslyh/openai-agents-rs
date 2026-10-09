@@ -214,7 +214,10 @@ impl ModelSettings {
     }
 }
 
-fn merge_maps(base: Option<&Map<String, Value>>, overlay: Option<&Map<String, Value>>) -> Option<Map<String, Value>> {
+fn merge_maps(
+    base: Option<&Map<String, Value>>,
+    overlay: Option<&Map<String, Value>>,
+) -> Option<Map<String, Value>> {
     match (base, overlay) {
         (None, None) => None,
         (Some(b), None) => Some(b.clone()),
@@ -321,6 +324,9 @@ mod tests {
             serde_json::json!({"type": "function", "function": {"name": "x"}})
         );
         assert_eq!(ToolChoice::from("none"), ToolChoice::None);
-        assert_eq!(ToolChoice::from("other"), ToolChoice::Function("other".into()));
+        assert_eq!(
+            ToolChoice::from("other"),
+            ToolChoice::Function("other".into())
+        );
     }
 }

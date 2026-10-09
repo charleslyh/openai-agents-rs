@@ -86,8 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "content": "Please produce the final concatenated response for the user now."
     }));
 
-    let synthesizer_result =
-        Runner::run(&synthesizer, synth_input, RunOptions::default()).await?;
+    let synthesizer_result = Runner::run(&synthesizer, synth_input, RunOptions::default()).await?;
 
     println!(
         "\n\nFinal response:\n{}",

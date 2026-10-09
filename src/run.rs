@@ -16,19 +16,18 @@ use crate::error::{
     OutputGuardrailTripwireTriggered, ToolTimeoutError, UserError,
 };
 use crate::guardrail::{InputGuardrail, InputGuardrailResult, OutputGuardrail};
-use crate::items::{apply_reasoning_item_id_policy, ReasoningItemIdPolicy};
 use crate::handoffs::{
     nest_handoff_history, Handoff, HandoffHistoryMapper, HandoffInputData, HandoffInputFilter,
 };
+use crate::items::{apply_reasoning_item_id_policy, ReasoningItemIdPolicy};
 use crate::items::{
     extract_message_text, is_function_call, is_reasoning, required_function_call_parts,
     HandoffCallItem, HandoffOutputItem, InputLike, ItemHelpers, MessageOutputItem, ModelResponse,
     ReasoningItem, ResponseOutputItem, RunItem, ToolApprovalItem, ToolCallItem, ToolCallOutputItem,
 };
 use crate::lifecycle::RunHooks;
-use crate::memory::{
-    prepare_input_with_session, Session, SessionInputCallback, SessionSettings,
-};
+use crate::memory::{prepare_input_with_session, Session, SessionInputCallback, SessionSettings};
+use crate::model::wire_events::FAKE_RESPONSES_ID;
 use crate::model::{
     default_model_provider, Model, ModelInput, ModelProvider, ModelRef, ModelRequest, ModelTracing,
 };
@@ -49,7 +48,6 @@ use crate::tracing::{
     agent_span, function_span, generation_span, handoff_span, task_span, turn_span, SpanGuard,
     TracingConfig,
 };
-use crate::model::wire_events::FAKE_RESPONSES_ID;
 use crate::usage::Usage;
 
 tokio::task_local! {
@@ -301,7 +299,10 @@ pub type RunErrorHandler = Arc<
     dyn Fn(
             RunErrorHandlerInput,
         ) -> std::pin::Pin<
-            Box<dyn std::future::Future<Output = Result<Option<RunErrorHandlerResult>, AgentsError>> + Send>,
+            Box<
+                dyn std::future::Future<Output = Result<Option<RunErrorHandlerResult>, AgentsError>>
+                    + Send,
+            >,
         > + Send
         + Sync,
 >;
@@ -463,6 +464,9 @@ pub enum ToolNotFoundBehavior {
 }
 
 /// Run configuration subset (Python: `RunConfig`).
+///
+/// Build one with `RunConfig { field, ..Default::default() }`; the `..Default::default()` tail is
+/// what keeps a caller compiling when a field is added, so always include it.
 #[derive(Clone)]
 pub struct RunConfig {
     /// Override model for the whole run: an instance, or a name resolved by
@@ -596,6 +600,9 @@ impl std::fmt::Debug for RunConfig {
 }
 
 /// Per-call options for [`Runner::run`] / [`Runner::run_streamed`].
+///
+/// [`RunOptions::default()`] supplies the default turn limit and workflow name, so prefer
+/// `RunOptions { field, ..Default::default() }` over a full literal.
 #[derive(Clone)]
 pub struct RunOptions {
     /// Max turns before [`MaxTurnsExceeded`].
@@ -701,7 +708,9 @@ impl Runner {
         }
         run_loop(
             starting_agent.clone(),
-            LoopStart::Resume { state },
+            LoopStart::Resume {
+                state: Box::new(state),
+            },
             options,
             None,
             None,
@@ -726,7 +735,10 @@ impl Runner {
         let task = tokio::spawn(async move {
             let result = run_loop(
                 starting_agent,
-                LoopStart::Fresh { input, prepared: None },
+                LoopStart::Fresh {
+                    input,
+                    prepared: None,
+                },
                 options,
                 Some(tx.clone()),
                 Some(Arc::clone(&snap)),
@@ -858,12 +870,14 @@ where
         Some(current) if current.runtime_flavor() == RuntimeFlavor::MultiThread => {
             Ok(tokio::task::block_in_place(|| target.block_on(make())))
         }
-        Some(_) => std::thread::scope(|scope| {
-            match scope.spawn(|| target.block_on(make())).join() {
-                Ok(value) => Ok(value),
-                Err(panic) => std::panic::resume_unwind(panic),
-            }
-        }),
+        Some(_) => {
+            std::thread::scope(
+                |scope| match scope.spawn(|| target.block_on(make())).join() {
+                    Ok(value) => Ok(value),
+                    Err(panic) => std::panic::resume_unwind(panic),
+                },
+            )
+        }
     }
 }
 
@@ -899,7 +913,9 @@ enum LoopStart {
         input: InputLike,
         prepared: Option<Vec<Value>>,
     },
-    Resume { state: RunState },
+    /// Boxed: a `RunState` carries the whole paused transcript, and `Fresh` is tiny, so the
+    /// unboxed variant made every `LoopStart` as large as a run snapshot.
+    Resume { state: Box<RunState> },
 }
 
 async fn emit(tx: &Option<EventTx>, event: StreamEvent) {
@@ -917,11 +933,12 @@ fn resolve_tool_name_collisions(
     policy: ToolNameCollisionPolicy,
 ) -> Result<(Vec<FunctionTool>, Vec<Handoff>), AgentsError> {
     let mut owners: Vec<(String, Vec<(bool, usize)>)> = Vec::new();
-    let mut add = |name: &str, is_handoff: bool, index: usize| {
-        match owners.iter_mut().find(|(n, _)| n == name) {
-            Some((_, entries)) => entries.push((is_handoff, index)),
-            None => owners.push((name.to_string(), vec![(is_handoff, index)])),
-        }
+    let mut add = |name: &str, is_handoff: bool, index: usize| match owners
+        .iter_mut()
+        .find(|(n, _)| n == name)
+    {
+        Some((_, entries)) => entries.push((is_handoff, index)),
+        None => owners.push((name.to_string(), vec![(is_handoff, index)])),
     };
     for (i, t) in tools.iter().enumerate() {
         add(&t.name, false, i);
@@ -991,14 +1008,12 @@ fn resolve_tool_name_collisions(
 /// Python (`_validate_function_tool_timeout_config`): finite and greater than zero.
 fn validate_tool_timeout(tool: &FunctionTool) -> Result<(), AgentsError> {
     match tool.timeout_seconds {
-        Some(seconds) if !seconds.is_finite() => Err(UserError::new(
-            "FunctionTool timeout_seconds must be a finite number.",
-        )
-        .into()),
-        Some(seconds) if seconds <= 0.0 => Err(UserError::new(
-            "FunctionTool timeout_seconds must be greater than 0.",
-        )
-        .into()),
+        Some(seconds) if !seconds.is_finite() => {
+            Err(UserError::new("FunctionTool timeout_seconds must be a finite number.").into())
+        }
+        Some(seconds) if seconds <= 0.0 => {
+            Err(UserError::new("FunctionTool timeout_seconds must be greater than 0.").into())
+        }
         _ => Ok(()),
     }
 }
@@ -1040,7 +1055,9 @@ async fn run_loop(
     let session = options.session.clone();
     let reasoning_policy = options.run_config.reasoning_item_id_policy;
     // Python (`prepare_input_with_session`): stored history comes before the new input.
-    let mut writer = session.clone().map(|s| SessionWriter::new(s, reasoning_policy));
+    let mut writer = session
+        .clone()
+        .map(|s| SessionWriter::new(s, reasoning_policy));
     let start = match (start, &session) {
         (LoopStart::Fresh { input, .. }, Some(session)) => {
             let (prepared, to_save) = prepare_input_with_session(
@@ -1140,7 +1157,11 @@ impl SessionWriter {
     /// with the placeholder, and leaves out the model's own messages. A turn that holds a
     /// reasoning item is not saved at all, because reasoning cannot be replayed without the
     /// items it led up to. Earlier turns were saved when they ended.
-    async fn save_blocked_turn(&mut self, items: &[RunItem], placeholder: &str) -> Result<(), AgentsError> {
+    async fn save_blocked_turn(
+        &mut self,
+        items: &[RunItem],
+        placeholder: &str,
+    ) -> Result<(), AgentsError> {
         let mut out = self.pending_input.take().unwrap_or_default();
         let turn = &items[self.saved_items.min(items.len())..];
         if !turn.iter().any(|i| matches!(i, RunItem::Reasoning(_))) {
@@ -1190,7 +1211,11 @@ async fn run_loop_inner(
     tool_guardrail_log: SharedToolGuardrailLog,
     mut session_writer: Option<&mut SessionWriter>,
 ) -> Result<RunResult, AgentsError> {
-    let max_turns = options.max_turns.unwrap_or(DEFAULT_MAX_TURNS);
+    // Python (`run_config.py:591-592`): `max_turns` is `int | None` and `None` disables the
+    // limit; `run.py:1507` only compares when it is not `None`. `RunOptions::default()` keeps the
+    // Python default of `Some(DEFAULT_MAX_TURNS)` (D-008), but an explicit `None` must mean
+    // "run until the agent stops" (D-042), not "fall back to 10".
+    let max_turns: Option<usize> = options.max_turns;
     // Python raises `ValueError` when the config is built; Rust has no constructor to hook, so
     // the run reports it as a `UserError` before doing any work.
     let max_tool_concurrency = options
@@ -1274,6 +1299,7 @@ async fn run_loop_inner(
             original_input_len = current_input_items.len();
         }
         LoopStart::Resume { state } => {
+            let state = *state;
             input = state.input.clone();
             original_input_len = ItemHelpers::input_to_new_input_list(&input).len();
             current_agent = resolve_agent_by_name(&current_agent, &state.current_agent_name)?;
@@ -1333,8 +1359,7 @@ async fn run_loop_inner(
     // ones finish first, then the parallel ones are spawned alongside the model call.
     let mut parallel_guardrails = Some(parallel_guardrails);
     let mut blocking_guardrails = Some(blocking_guardrails);
-    let mut pending_input_guardrails: Option<AbortOnDrop<Vec<InputGuardrailResult>>> =
-        None;
+    let mut pending_input_guardrails: Option<AbortOnDrop<Vec<InputGuardrailResult>>> = None;
 
     // `on_agent_start` is called once per agent, including after each handoff.
     if let Some(h) = &options.hooks {
@@ -1376,8 +1401,22 @@ async fn run_loop_inner(
                 ));
             }
         }
-        if turn > max_turns {
-            let error = MaxTurnsExceeded { max_turns };
+        // Python (`run.py:1506-1507`): `current_turn += 1` first, then `if max_turns is not
+        // None and current_turn > max_turns`. With no limit the comparison is skipped entirely.
+        let exceeded = match max_turns {
+            Some(limit) if turn > limit => Some(limit),
+            _ => None,
+        };
+        if let Some(limit) = exceeded {
+            let error = MaxTurnsExceeded { max_turns: limit };
+            // Python (`run.py:1508`): `SpanError(message="Max turns exceeded", data={"max_turns": n})`
+            // on the current span, so a run that ran out of turns shows up on the timeline.
+            if let Some(guard) = task_guard.as_mut() {
+                guard.set_error(crate::tracing::SpanError {
+                    message: "Max turns exceeded".to_string(),
+                    data: Some(json!({ "max_turns": limit })),
+                });
+            }
             // Python (`finalize_max_turns_handler_output`): validate the handler's output,
             // record it as an assistant message, then run the end hooks and output guardrails.
             let run_data = build_run_error_data(
@@ -1397,7 +1436,8 @@ async fn run_loop_inner(
             else {
                 return Err(error.into());
             };
-            let final_output = accept_handler_output(&current_agent, handled, &mut generated_items)?;
+            let final_output =
+                accept_handler_output(&current_agent, handled, &mut generated_items)?;
             return finalize_run(
                 input,
                 generated_items,
@@ -1623,7 +1663,10 @@ async fn run_loop_inner(
                 previous_response_id = Some(id.clone());
             }
             usage.add(&response.usage);
-            for guard in [task_guard.as_mut(), turn_guard.as_mut()].into_iter().flatten() {
+            for guard in [task_guard.as_mut(), turn_guard.as_mut()]
+                .into_iter()
+                .flatten()
+            {
                 guard.add_usage(&response.usage);
             }
             context.add_usage(&response.usage);
@@ -1741,7 +1784,7 @@ async fn run_loop_inner(
                 .find(|m| m.get("type").and_then(Value::as_str) == Some("message"));
             let final_text = messages
                 .iter()
-                .filter_map(|m| extract_message_text(m))
+                .filter_map(extract_message_text)
                 .collect::<Vec<_>>()
                 .join("");
             // Only this response is reported to `model_refusal` / `invalid_final_output`
@@ -1795,8 +1838,8 @@ async fn run_loop_inner(
                                         &options.run_config.output_guardrails,
                                         input_guardrail_results,
                                         None,
-                session_writer.as_deref_mut(),
-            )
+                                        session_writer.as_deref_mut(),
+                                    )
                                     .await;
                                 }
                                 Err(error) => error,
@@ -1810,9 +1853,11 @@ async fn run_loop_inner(
                         )
                         .await?;
                         match handled {
-                            Some(handled) => {
-                                accept_handler_output(&current_agent, handled, &mut generated_items)?
-                            }
+                            Some(handled) => accept_handler_output(
+                                &current_agent,
+                                handled,
+                                &mut generated_items,
+                            )?,
                             // Python: an empty structured answer that no handler fixes asks the
                             // model again; an unparsable one raises.
                             None if final_text.is_empty() => {
@@ -1934,7 +1979,7 @@ async fn run_loop_inner(
                             nested_agent_runs,
                             session_saved_items: 0,
                             session_input_saved: false,
-                input_guardrail_results: input_guardrail_results.clone(),
+                            input_guardrail_results: input_guardrail_results.clone(),
                         },
                     ));
                 }
@@ -1961,7 +2006,7 @@ async fn run_loop_inner(
                     nested_agent_runs,
                     session_saved_items: 0,
                     session_input_saved: false,
-                input_guardrail_results: input_guardrail_results.clone(),
+                    input_guardrail_results: input_guardrail_results.clone(),
                 },
             ));
         }
@@ -2003,7 +2048,7 @@ async fn run_loop_inner(
                     nested_agent_runs,
                     session_saved_items: 0,
                     session_input_saved: false,
-                input_guardrail_results: input_guardrail_results.clone(),
+                    input_guardrail_results: input_guardrail_results.clone(),
                 },
             ));
         }
@@ -2208,8 +2253,8 @@ async fn run_loop_inner(
                         &options.run_config.output_guardrails,
                         input_guardrail_results,
                         Some(&options.run_config),
-                session_writer.as_deref_mut(),
-            )
+                        session_writer.as_deref_mut(),
+                    )
                     .await;
                 }
             }
@@ -2229,8 +2274,8 @@ async fn run_loop_inner(
                             &options.run_config.output_guardrails,
                             input_guardrail_results,
                             Some(&options.run_config),
-                session_writer.as_deref_mut(),
-            )
+                            session_writer.as_deref_mut(),
+                        )
                         .await;
                     }
                 }
@@ -2260,8 +2305,8 @@ async fn run_loop_inner(
                         &options.run_config.output_guardrails,
                         input_guardrail_results,
                         Some(&options.run_config),
-                session_writer.as_deref_mut(),
-            )
+                        session_writer.as_deref_mut(),
+                    )
                     .await;
                 }
             }
@@ -2306,7 +2351,7 @@ async fn finalize_run(
     raw_responses: Vec<ModelResponse>,
     final_output: Value,
     agent: &Agent,
-    max_turns: usize,
+    max_turns: Option<usize>,
     usage: Usage,
     context: &RunContextWrapper,
     hooks: Option<&Arc<dyn RunHooks>>,
@@ -2350,12 +2395,8 @@ async fn finalize_run(
             // the error carries a data-free placeholder instead of the tool's output, and so
             // does the session.
             if let Some(run_config) = tool_origin {
-                let placeholder = resolve_blocked_message(
-                    run_config,
-                    &result.guardrail_name,
-                    &agent,
-                    context,
-                );
+                let placeholder =
+                    resolve_blocked_message(run_config, &result.guardrail_name, &agent, context);
                 if let Some(writer) = session_writer {
                     writer.save_blocked_turn(&new_items, &placeholder).await?;
                 }
@@ -2455,7 +2496,8 @@ fn validate_handler_final_output(
     agent: &Agent,
     output: Value,
 ) -> Result<(Value, String), AgentsError> {
-    let invalid = || UserError::new("Invalid run error handler final_output for structured output.");
+    let invalid =
+        || UserError::new("Invalid run error handler final_output for structured output.");
     let Some(schema) = agent.output_type.as_deref().filter(|s| !s.is_plain_text()) else {
         let text = value_to_tool_string(&output);
         return Ok((output, text));
@@ -2622,129 +2664,139 @@ async fn execute_planned_tools(
     let resume_map = nested_resume.clone();
     let hooks = hooks.cloned();
     let agent_hooks = agent.hooks.clone();
-    let invoke_futs: Vec<_> = plan.to_invoke.iter().map(|(tool, arguments, call_id)| {
-        let tool = tool.clone();
-        let arguments = arguments.clone();
-        let call_id = call_id.clone();
-        let resume_map = resume_map.clone();
-        let agent = agent.clone();
-        let guardrail_log = Arc::clone(guardrail_log);
-        let context = context.clone();
-        let hooks = hooks.clone();
-        let agent_hooks = agent_hooks.clone();
-        async move {
-            let _fs = function_span(&tool.name);
-            let ctx = ToolContext::new(
-                tool.name.clone(),
-                call_id.clone(),
-                arguments.clone(),
-                context.clone(),
-            );
-            let hook_ctx = ctx.clone();
-            // Python: input guardrails run before the start hooks; a rejection replaces the
-            // call, so neither the hooks, the body nor the output guardrails run.
-            let guardrail_agent = Arc::new(agent.clone());
-            let mut input_results = Vec::new();
-            let rejection = run_tool_input_guardrails(
-                &tool.tool_input_guardrails,
-                &ctx,
-                &guardrail_agent,
-                &mut input_results,
-            )
-            .await;
-            guardrail_log
-                .lock()
-                .expect("tool guardrail log")
-                .input
-                .extend(input_results);
-            if let Some(message) = rejection? {
-                return Ok::<_, AgentsError>((
-                    tool,
-                    call_id,
-                    ToolResult::output(Value::String(message)),
-                ));
-            }
-            if let Some(h) = &hooks {
-                h.on_tool_start(hook_ctx.clone(), &agent, &tool).await;
-            }
-            if let Some(ah) = &agent_hooks {
-                ah.on_tool_start(hook_ctx.clone(), &agent, &tool).await;
-            }
-            // Python (`failure_error_function`): a failing tool is reported to the model so it
-            // can retry, instead of aborting the run.
-            // A run the tool starts (an agent used as a tool) nests under this function span.
-            let span_id = _fs.span().span_id.clone();
-            let call = crate::tracing::with_current_span(
-                &span_id,
-                NESTED_RESUME_STATES.scope(RefCell::new(resume_map), async {
-                    (tool.on_invoke_tool)(ctx, arguments).await
-                }),
-            );
-            // Python applies the timeout outside the failure handler, so `RaiseException`
-            // fails the run instead of being reported to the model.
-            let outcome = match tool.timeout_seconds {
-                None => call.await,
-                Some(seconds) => {
-                    match tokio::time::timeout(Duration::from_secs_f64(seconds), call).await {
-                        Ok(outcome) => outcome,
-                        Err(_) => {
-                            let timeout = ToolTimeoutError {
-                                tool_name: tool.name.clone(),
-                                timeout_seconds: seconds,
-                            };
-                            if tool.timeout_behavior == ToolTimeoutBehavior::RaiseException {
-                                return Err(timeout.into());
-                            }
-                            let message = match &tool.timeout_error_function {
-                                Some(format) => format(&context, &AgentsError::from(timeout)),
-                                None => default_tool_timeout_error_message(&tool.name, seconds),
-                            };
-                            Ok(ToolResult::output(Value::String(message)))
-                        }
-                    }
-                }
-            };
-            // Python (`failure_error_function`): a failing tool is reported to the model so it
-            // can retry, instead of aborting the run.
-            let result = match outcome {
-                Ok(result) => result,
-                Err(error) => {
-                    let message = tool.failure_error_function.handle(&context, error)?;
-                    ToolResult::output(Value::String(message))
-                }
-            };
-            let mut result = result;
-            // Python: output guardrails see the result (including an error message) unless the
-            // call paused for a nested approval.
-            if result.interruptions.is_empty() {
-                let mut output_results = Vec::new();
-                let guarded = run_tool_output_guardrails(
-                    &tool.tool_output_guardrails,
-                    &hook_ctx,
+    let invoke_futs: Vec<_> = plan
+        .to_invoke
+        .iter()
+        .map(|(tool, arguments, call_id)| {
+            let tool = tool.clone();
+            let arguments = arguments.clone();
+            let call_id = call_id.clone();
+            let resume_map = resume_map.clone();
+            let agent = agent.clone();
+            let guardrail_log = Arc::clone(guardrail_log);
+            let context = context.clone();
+            let hooks = hooks.clone();
+            let agent_hooks = agent_hooks.clone();
+            async move {
+                let mut _fs = function_span(&tool.name);
+                let ctx = ToolContext::new(
+                    tool.name.clone(),
+                    call_id.clone(),
+                    arguments.clone(),
+                    context.clone(),
+                );
+                let hook_ctx = ctx.clone();
+                // Python: input guardrails run before the start hooks; a rejection replaces the
+                // call, so neither the hooks, the body nor the output guardrails run.
+                let guardrail_agent = Arc::new(agent.clone());
+                let mut input_results = Vec::new();
+                let rejection = run_tool_input_guardrails(
+                    &tool.tool_input_guardrails,
+                    &ctx,
                     &guardrail_agent,
-                    result.output.clone().unwrap_or(Value::Null),
-                    &mut output_results,
+                    &mut input_results,
                 )
                 .await;
                 guardrail_log
                     .lock()
                     .expect("tool guardrail log")
-                    .output
-                    .extend(output_results);
-                result.output = Some(guarded?);
-            }
-            let output = result.output.clone().unwrap_or(Value::Null);
-            if let Some(h) = &hooks {
-                h.on_tool_end(hook_ctx.clone(), &agent, &tool, &output)
+                    .input
+                    .extend(input_results);
+                if let Some(message) = rejection? {
+                    return Ok::<_, AgentsError>((
+                        tool,
+                        call_id,
+                        ToolResult::output(Value::String(message)),
+                    ));
+                }
+                if let Some(h) = &hooks {
+                    h.on_tool_start(hook_ctx.clone(), &agent, &tool).await;
+                }
+                if let Some(ah) = &agent_hooks {
+                    ah.on_tool_start(hook_ctx.clone(), &agent, &tool).await;
+                }
+                // Python (`failure_error_function`): a failing tool is reported to the model so it
+                // can retry, instead of aborting the run.
+                // A run the tool starts (an agent used as a tool) nests under this function span.
+                let span_id = _fs.span().span_id.clone();
+                let call = crate::tracing::with_current_span(
+                    &span_id,
+                    NESTED_RESUME_STATES.scope(RefCell::new(resume_map), async {
+                        (tool.on_invoke_tool)(ctx, arguments).await
+                    }),
+                );
+                // Python applies the timeout outside the failure handler, so `RaiseException`
+                // fails the run instead of being reported to the model.
+                let outcome = match tool.timeout_seconds {
+                    None => call.await,
+                    Some(seconds) => {
+                        match tokio::time::timeout(Duration::from_secs_f64(seconds), call).await {
+                            Ok(outcome) => outcome,
+                            Err(_) => {
+                                let timeout = ToolTimeoutError {
+                                    tool_name: tool.name.clone(),
+                                    timeout_seconds: seconds,
+                                };
+                                if tool.timeout_behavior == ToolTimeoutBehavior::RaiseException {
+                                    return Err(timeout.into());
+                                }
+                                let message = match &tool.timeout_error_function {
+                                    Some(format) => format(&context, &AgentsError::from(timeout)),
+                                    None => default_tool_timeout_error_message(&tool.name, seconds),
+                                };
+                                Ok(ToolResult::output(Value::String(message)))
+                            }
+                        }
+                    }
+                };
+                // Python (`failure_error_function`): a failing tool is reported to the model so it
+                // can retry, instead of aborting the run.
+                let result = match outcome {
+                    Ok(result) => result,
+                    Err(error) => {
+                        // Python (`_build_handled_function_tool_error_handler`): `SpanError(message=
+                        // "Error running tool")`. Only the tool name goes into `data`: the error text
+                        // can hold user data and the sensitivity flag does not reach this scope.
+                        _fs.set_error(crate::tracing::SpanError {
+                            message: "Error running tool".to_string(),
+                            data: Some(json!({ "tool_name": tool.name })),
+                        });
+                        let message = tool.failure_error_function.handle(&context, error)?;
+                        ToolResult::output(Value::String(message))
+                    }
+                };
+                let mut result = result;
+                // Python: output guardrails see the result (including an error message) unless the
+                // call paused for a nested approval.
+                if result.interruptions.is_empty() {
+                    let mut output_results = Vec::new();
+                    let guarded = run_tool_output_guardrails(
+                        &tool.tool_output_guardrails,
+                        &hook_ctx,
+                        &guardrail_agent,
+                        result.output.clone().unwrap_or(Value::Null),
+                        &mut output_results,
+                    )
                     .await;
+                    guardrail_log
+                        .lock()
+                        .expect("tool guardrail log")
+                        .output
+                        .extend(output_results);
+                    result.output = Some(guarded?);
+                }
+                let output = result.output.clone().unwrap_or(Value::Null);
+                if let Some(h) = &hooks {
+                    h.on_tool_end(hook_ctx.clone(), &agent, &tool, &output)
+                        .await;
+                }
+                if let Some(ah) = &agent_hooks {
+                    ah.on_tool_end(hook_ctx, &agent, &tool, &output).await;
+                }
+                Ok::<_, AgentsError>((tool, call_id, result))
             }
-            if let Some(ah) = &agent_hooks {
-                ah.on_tool_end(hook_ctx, &agent, &tool, &output).await;
-            }
-            Ok::<_, AgentsError>((tool, call_id, result))
-        }
-    })
-    .collect();
+        })
+        .collect();
     // Python starts every call of the turn unless `max_function_tool_concurrency` is set; a slot
     // frees as soon as a call finishes, and the first failure cancels the rest.
     // The window is driven by hand over concrete futures: boxing them would need a `Send` proof
@@ -2815,7 +2867,7 @@ fn finished_result(
     raw_responses: Vec<ModelResponse>,
     final_output: Value,
     last_agent: Arc<Agent>,
-    max_turns: usize,
+    max_turns: Option<usize>,
     usage: Usage,
 ) -> RunResult {
     RunResult {
@@ -2825,7 +2877,7 @@ fn finished_result(
         final_output,
         last_agent_name: last_agent.name.clone(),
         last_agent,
-        max_turns: Some(max_turns),
+        max_turns,
         usage,
         interruptions: Vec::new(),
         input_guardrail_results: Vec::new(),
@@ -2843,7 +2895,7 @@ fn interrupted_result(
     new_items: Vec<RunItem>,
     raw_responses: Vec<ModelResponse>,
     last_agent: Arc<Agent>,
-    max_turns: usize,
+    max_turns: Option<usize>,
     usage: Usage,
     interruptions: Vec<ToolApprovalItem>,
     interrupt_state: InterruptSnapshot,
@@ -2855,7 +2907,7 @@ fn interrupted_result(
         final_output: Value::Null,
         last_agent_name: last_agent.name.clone(),
         last_agent,
-        max_turns: Some(max_turns),
+        max_turns,
         usage,
         interruptions,
         input_guardrail_results: interrupt_state.input_guardrail_results.clone(),

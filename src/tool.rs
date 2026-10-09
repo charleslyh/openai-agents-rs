@@ -186,7 +186,10 @@ impl NeedsApproval {
 
 /// Dynamic enablement policy: `(context, agent) -> enabled`.
 pub type IsEnabledFn = Arc<
-    dyn Fn(RunContextWrapper, Arc<crate::agent::Agent>) -> Pin<Box<dyn Future<Output = bool> + Send>>
+    dyn Fn(
+            RunContextWrapper,
+            Arc<crate::agent::Agent>,
+        ) -> Pin<Box<dyn Future<Output = bool> + Send>>
         + Send
         + Sync,
 >;

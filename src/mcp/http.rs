@@ -109,7 +109,10 @@ impl HttpTransport {
                 HeaderValue::from_str(value).map_err(|_| bad("header value for", name))?,
             );
         }
-        map.insert(ACCEPT, HeaderValue::from_static("application/json, text/event-stream"));
+        map.insert(
+            ACCEPT,
+            HeaderValue::from_static("application/json, text/event-stream"),
+        );
         map.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         if let Some(id) = self.session_id.lock().expect("session").as_deref() {
             map.insert(
@@ -135,17 +138,22 @@ impl HttpTransport {
             .send()
             .await
             .map_err(|e| McpError::Transport(format!("POST {} failed: {e}", self.url)))?;
-        if let Some(id) = response.headers().get(SESSION_HEADER).and_then(|v| v.to_str().ok()) {
+        if let Some(id) = response
+            .headers()
+            .get(SESSION_HEADER)
+            .and_then(|v| v.to_str().ok())
+        {
             *self.session_id.lock().expect("session") = Some(id.to_string());
         }
         let status = response.status();
         if !status.is_success() {
             let text = response.text().await.unwrap_or_default();
-            let hint = if status.as_u16() == 404 && self.session_id.lock().expect("session").is_some() {
-                " (the session may have expired)"
-            } else {
-                ""
-            };
+            let hint =
+                if status.as_u16() == 404 && self.session_id.lock().expect("session").is_some() {
+                    " (the session may have expired)"
+                } else {
+                    ""
+                };
             return Err(McpError::Transport(format!("HTTP {status}{hint}: {text}")));
         }
         Ok(response)
@@ -191,16 +199,21 @@ impl HttpTransport {
         let mut events = SseEvents::default();
         let mut bytes = response.bytes_stream();
         while let Some(chunk) = bytes.next().await {
-            let chunk = chunk.map_err(|e| McpError::Transport(format!("reading the stream failed: {e}")))?;
+            let chunk = chunk
+                .map_err(|e| McpError::Transport(format!("reading the stream failed: {e}")))?;
             events.feed(&chunk);
             while let Some(data) = events.next_data() {
-                let Ok(message) = serde_json::from_str::<Value>(&data) else { continue };
+                let Ok(message) = serde_json::from_str::<Value>(&data) else {
+                    continue;
+                };
                 if let Some(outcome) = self.scan(message, id).await {
                     return outcome;
                 }
             }
         }
-        Err(McpError::Closed("the event stream ended without a response".into()))
+        Err(McpError::Closed(
+            "the event stream ended without a response".into(),
+        ))
     }
 }
 
@@ -220,7 +233,9 @@ impl Transport for HttpTransport {
     }
 
     async fn notify(&self, method: &str, params: Option<Value>) -> Result<(), McpError> {
-        self.post(&notification_message(method, params)).await.map(|_| ())
+        self.post(&notification_message(method, params))
+            .await
+            .map(|_| ())
     }
 
     fn set_protocol_version(&self, version: &str) {
@@ -234,7 +249,10 @@ impl Transport for HttpTransport {
         }
         // Ending the session is polite and optional: a server may answer 405, which is fine.
         let mut headers = self.header_map().unwrap_or_default();
-        if let Some(id) = session.as_deref().and_then(|s| HeaderValue::from_str(s).ok()) {
+        if let Some(id) = session
+            .as_deref()
+            .and_then(|s| HeaderValue::from_str(s).ok())
+        {
             headers.insert(HeaderName::from_static(SESSION_HEADER), id);
         }
         let _ = self.client.delete(&self.url).headers(headers).send().await;
@@ -267,7 +285,14 @@ mod tests {
         assert!(events.next_data().is_none());
         events.feed(b"ta: {\"a\":1}\r\n\r\n: comment\n\ndata: x\ndata: y\n\n");
         assert_eq!(events.next_data().as_deref(), Some("{\"a\":1}"));
-        assert_eq!(events.next_data().as_deref(), Some("x\ny"), "multi-line data is joined");
-        assert!(events.next_data().is_none(), "comment-only events carry no data");
+        assert_eq!(
+            events.next_data().as_deref(),
+            Some("x\ny"),
+            "multi-line data is joined"
+        );
+        assert!(
+            events.next_data().is_none(),
+            "comment-only events carry no data"
+        );
     }
 }

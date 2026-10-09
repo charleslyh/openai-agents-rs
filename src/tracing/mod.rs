@@ -5,6 +5,7 @@
 use std::cell::RefCell;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::SystemTime;
 
 use serde_json::Value;
 use uuid::Uuid;
@@ -34,7 +35,9 @@ tokio::task_local! {
 }
 
 fn current_span() -> CurrentSpan {
-    CURRENT_SPAN.try_with(|c| c.borrow().clone()).unwrap_or_default()
+    CURRENT_SPAN
+        .try_with(|c| c.borrow().clone())
+        .unwrap_or_default()
 }
 
 fn set_current_span(span: CurrentSpan) {
@@ -77,18 +80,27 @@ pub fn tracing_disabled() -> bool {
 ///
 /// The future also inherits the span that is current *where this function is called*, so a
 /// task spawned from a run keeps its spans under the right parent.
-pub fn with_run_tracing_disabled<F>(disabled: bool, future: F) -> impl std::future::Future<Output = F::Output>
+pub fn with_run_tracing_disabled<F>(
+    disabled: bool,
+    future: F,
+) -> impl std::future::Future<Output = F::Output>
 where
     F: std::future::Future,
 {
     let inherited = current_span();
-    RUN_TRACING_DISABLED.scope(disabled, CURRENT_SPAN.scope(RefCell::new(inherited), future))
+    RUN_TRACING_DISABLED.scope(
+        disabled,
+        CURRENT_SPAN.scope(RefCell::new(inherited), future),
+    )
 }
 
 /// Run `future` with `span_id` as the current span, so spans created inside (for example a
 /// nested run started by a tool) become its children. Unlike a span guard this is scoped to
 /// the future, which makes it safe for futures that run concurrently.
-pub fn with_current_span<F>(span_id: &str, future: F) -> impl std::future::Future<Output = F::Output>
+pub fn with_current_span<F>(
+    span_id: &str,
+    future: F,
+) -> impl std::future::Future<Output = F::Output>
 where
     F: std::future::Future,
 {
@@ -235,7 +247,9 @@ pub struct TracingConfig {
 impl TracingConfig {
     /// Whether task and turn spans are created (Python: `include_task_and_turn_spans(config)`).
     pub fn includes_task_and_turn_spans(config: Option<&TracingConfig>) -> bool {
-        config.and_then(|c| c.include_task_and_turn_spans).unwrap_or(true)
+        config
+            .and_then(|c| c.include_task_and_turn_spans)
+            .unwrap_or(true)
     }
 }
 
@@ -348,6 +362,18 @@ pub enum SpanData {
     },
 }
 
+/// An error recorded on a span (Python: `SpanError`).
+///
+/// A span that ends without one completed. Exporters (OTLP, Langfuse, …) map this to their
+/// backend's error field, which is what makes a failed run visible on a timeline.
+#[derive(Debug, Clone)]
+pub struct SpanError {
+    /// Human-readable message.
+    pub message: String,
+    /// Structured detail; `None` when there is none.
+    pub data: Option<Value>,
+}
+
 /// A span within a trace (Python: `Span`).
 #[derive(Debug, Clone)]
 pub struct Span {
@@ -357,6 +383,12 @@ pub struct Span {
     pub parent_id: Option<String>,
     /// Span payload.
     pub data: SpanData,
+    /// When the span was opened.
+    pub started_at: SystemTime,
+    /// When the span ended; `None` while it is open (including in `on_span_start`).
+    pub ended_at: Option<SystemTime>,
+    /// Error attached to the span, if the work it covers failed.
+    pub error: Option<SpanError>,
 }
 
 /// Guard that ends the span on drop.
@@ -378,6 +410,11 @@ impl SpanGuard {
     /// (Python: `attach_usage_to_span`). Other span kinds ignore it.
     pub fn add_usage(&mut self, usage: &Usage) {
         self.usage.add(usage);
+    }
+
+    /// Record a failure on this span (Python: `attach_error_to_span`). The last error wins.
+    pub fn set_error(&mut self, error: SpanError) {
+        self.span.error = Some(error);
     }
 }
 
@@ -419,6 +456,7 @@ impl Drop for SpanGuard {
                     _ => {}
                 }
             }
+            self.span.ended_at = Some(SystemTime::now());
             if let Some(p) = processor_slot().lock().expect("lock").as_ref() {
                 p.on_span_end(&self.span);
             }
@@ -455,7 +493,9 @@ pub fn leave_turn_span() -> SpanScopeGuard {
         parent: None,
         is_turn: false,
     });
-    SpanScopeGuard { restore: Some(current) }
+    SpanScopeGuard {
+        restore: Some(current),
+    }
 }
 
 /// Start a root trace (Python: `trace(...)`).
@@ -472,12 +512,18 @@ pub fn trace_with_config(workflow_name: &str, config: TraceConfig) -> TraceGuard
         metadata: config.metadata,
     };
     if tracing_disabled() {
-        return TraceGuard { trace: t, active: false };
+        return TraceGuard {
+            trace: t,
+            active: false,
+        };
     }
     if let Some(p) = processor_slot().lock().expect("lock").as_ref() {
         p.on_trace_start(&t);
     }
-    TraceGuard { trace: t, active: true }
+    TraceGuard {
+        trace: t,
+        active: true,
+    }
 }
 
 /// Create a span under the current one. With `becomes_current` it also becomes the current span
@@ -489,9 +535,17 @@ fn start_span(data: SpanData, becomes_current: bool) -> SpanGuard {
         span_id: gen_span_id(),
         parent_id: parent.id.clone(),
         data,
+        started_at: SystemTime::now(),
+        ended_at: None,
+        error: None,
     };
     if tracing_disabled() {
-        return SpanGuard { span, active: false, restore: None, usage: Usage::default() };
+        return SpanGuard {
+            span,
+            active: false,
+            restore: None,
+            usage: Usage::default(),
+        };
     }
     if let Some(p) = processor_slot().lock().expect("lock").as_ref() {
         p.on_span_start(&span);
@@ -504,7 +558,12 @@ fn start_span(data: SpanData, becomes_current: bool) -> SpanGuard {
         });
         parent
     });
-    SpanGuard { span, active: true, restore, usage: Usage::default() }
+    SpanGuard {
+        span,
+        active: true,
+        restore,
+        usage: Usage::default(),
+    }
 }
 
 /// Agent span (Python: `agent_span`).
