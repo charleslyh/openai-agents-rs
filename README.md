@@ -106,9 +106,13 @@ bash scripts/sync_vendor.sh --check
 | 1. ScriptedModel behavior | `cargo test --no-default-features` |
 | 1.5 Property tests (generated inputs) | `cargo test --test property_core` |
 | 2. OpenAI HTTP contracts (wiremock) | `cargo test` (default features; needs `openai`) |
+| 2.5 Whole request bodies (insta snapshots) | `cargo test --test openai_wiremock` |
 | SQLite sessions | `cargo test --features sqlite` |
 | MCP interoperability (real Python MCP server) | `cargo test --test mcp_interop` (needs the venv, skips without it) |
 | 3. Python oracle parity | `.venv/bin/python scripts/run_parity.py --check` then `cargo test --test parity_scenarios` |
+| 4. Live endpoint smoke (nightly, non-blocking) | `.github/workflows/nightly.yml` |
+| 5. Latency benchmarks | `cargo bench` |
+| 6. Line coverage ratchet | `.github/workflows/coverage.yml` |
 
 Shared scenarios live in [`tests/parity/scenarios/`](./tests/parity/scenarios/). A scenario only
 needs `expect` to run; the `.golden.json` produced by the Python oracle is optional and compared

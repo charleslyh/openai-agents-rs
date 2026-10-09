@@ -280,6 +280,8 @@ async fn responses_request_shape() {
         .unwrap()
         .iter()
         .any(|t| t["name"] == "noop"));
+    // Layer 2.5: the whole body, so anything else that changes has to be reviewed too.
+    insta::assert_json_snapshot!("responses_request_body", body);
 }
 
 #[tokio::test]
@@ -332,6 +334,8 @@ async fn chat_completions_request_shape() {
         .unwrap()
         .iter()
         .any(|t| { t["type"] == "function" && t["function"]["name"] == "noop" }));
+    // Layer 2.5: the whole body, so anything else that changes has to be reviewed too.
+    insta::assert_json_snapshot!("chat_completions_request_body", body);
 }
 
 fn extra_args(
