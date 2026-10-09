@@ -11,7 +11,8 @@ use serde_json::Value;
 
 use crate::error::ModelError;
 use crate::items::{ModelResponse, ResponseOutputItem};
-use crate::model::wire_events::{emit_response_stream, response_object};
+use crate::model::wire_events::emit::emit_response_stream;
+use crate::model::wire_events::response_object;
 use crate::model::wire_events::{SCRIPTED_MODEL, SCRIPTED_RESPONSE_ID};
 use crate::model::{Model, ModelRequest};
 use crate::model_settings::ModelSettings;

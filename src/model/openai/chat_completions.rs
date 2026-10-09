@@ -5,9 +5,8 @@ use serde_json::{json, Value};
 
 use crate::error::ModelError;
 use crate::items::{ModelResponse, ResponseOutputItem};
-use crate::model::wire_events::{
-    emit_response_stream, now_seconds, response_object, WireEventEmitter, FAKE_RESPONSES_ID,
-};
+use crate::model::wire_events::emit::{emit_response_stream, WireEventEmitter};
+use crate::model::wire_events::{now_seconds, response_object, FAKE_RESPONSES_ID};
 use crate::model::{Model, ModelRequest};
 use crate::usage::Usage;
 
