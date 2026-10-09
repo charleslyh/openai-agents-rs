@@ -1,0 +1,32 @@
+---
+source: tests/openai_wiremock.rs
+expression: body
+---
+{
+  "model": "gpt-test",
+  "messages": [
+    {
+      "role": "system",
+      "content": "be brief"
+    },
+    {
+      "role": "user",
+      "content": "ping"
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "noop",
+        "description": "noop",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "strict": true
+      }
+    }
+  ]
+}

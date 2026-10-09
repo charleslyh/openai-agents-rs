@@ -1,0 +1,48 @@
+name: nightly
+
+# Real endpoints, not mocks. Everything in ci.yml is offline (ScriptedModel, wiremock, the
+# vendored Python SDK), which cannot tell us that a *provider* still accepts what we send:
+# a renamed field, a new required parameter or a stricter schema only shows up against a live
+# server. This workflow is the layer that catches that.
+#
+# It is deliberately separate from ci.yml and non-blocking: a provider being down, rate-limiting
+# or slow must not turn the main branch red. Watch this workflow's runs, not its badge.
+
+on:
+  schedule:
+    # 03:17 UTC, once a day.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  live-endpoint:
+    name: live smoke (${{ matrix.api }})
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [chat_completions, responses]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run the examples against the configured endpoint
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+          OPENAI_API: ${{ matrix.api }}
+        run: |
+          if [ -z "${OPENAI_API_KEY:-}" ] || [ -z "${OPENAI_MODEL:-}" ]; then
+            echo "::notice::No OPENAI_API_KEY / OPENAI_MODEL secret configured; skipping."
+            echo "Add them in Settings → Secrets to enable the live smoke test."
+            exit 0
+          fi
+          echo "::notice::endpoint=${OPENAI_BASE_URL:-api.openai.com} api=${OPENAI_API:-default}"
+          # 01 covers the plain loop, 02 the tool loop, 08 structured output, 09 guardrails.
+          cargo run --example 01_hello
+          cargo run --example 02_tools
+          cargo run --example 08_structured_output
+          cargo run --example 09_guardrails

@@ -65,9 +65,19 @@ reqwest = { version = "0.12", optional = true, default-features = false, feature
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util"] }
 # Verification layer 1.5: property / randomized tests. See docs/CONTRIBUTING.md.
 proptest = "1"
+# Verification layer 2.5: whole-request snapshots, so a change to any part of the wire body
+# has to be reviewed instead of slipping past assertions that only name some fields.
+insta = { version = "1", features = ["json"] }
+# Verification layer 5: latency benchmarks (`cargo bench`). Built only by `cargo bench`, so they
+# cost nothing on `cargo test`.
+criterion = "0.5"
 # Used by the HTTP-level contract tests (verification layer 2); not part of the public API.
 wiremock = "0.6"
 serde_json = { version = "1", features = ["preserve_order"] }
+
+[[bench]]
+name = "run_loop"
+harness = false
 
 [[example]]
 name = "01_hello"

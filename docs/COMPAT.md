@@ -221,6 +221,10 @@ tests, which drive `wiremock` directly rather than through a shipped mock layer.
    `RUSTDOCFLAGS=-D warnings cargo doc --no-deps --all-features`, `scripts/sync_vendor.sh --check`
 1. `cargo test --no-default-features` — ScriptedModel behavior
 2. `cargo test --all-features` — OpenAI HTTP contracts via wiremock, SQLite sessions
-2.5 `cargo test --test property_core` — invariants over generated inputs (proptest)
+2.5 `cargo test --test property_core` — invariants over generated inputs (proptest);
+   `cargo test --test openai_wiremock` — whole request bodies (insta snapshots)
 3. `.venv/bin/python scripts/run_parity.py --check` then `cargo test --test parity_scenarios`;
    `cargo test --test mcp_interop` and `--test chat_convert_parity` need the venv
+4. `.github/workflows/nightly.yml` — the examples against a live endpoint, both APIs
+5. `cargo bench` — per-turn latency
+6. `.github/workflows/coverage.yml` — line coverage ratchet

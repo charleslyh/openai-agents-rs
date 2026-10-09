@@ -56,9 +56,20 @@ Regenerating a golden is a deliberate act, never part of `check`:
 | 1 | `ScriptedModel` behavior, no HTTP client in the build | `cargo test --no-default-features` |
 | 1.5 | Invariants over generated inputs | `cargo test --test property_core` |
 | 2 | OpenAI HTTP contracts via wiremock | `cargo test` / `cargo test --all-features` |
+| 2.5 | The whole request body, so a drift in an unasserted field is still reviewed | `cargo test --test openai_wiremock` (`tests/snapshots/`, insta) |
 | 3 | Python oracle parity + MCP interop (two implementations over the wire) | `run_parity.py --check`, `cargo test --test parity_scenarios --test mcp_interop --test chat_convert_parity` |
+| 4 | A live provider still accepts what we send (nightly, non-blocking) | `.github/workflows/nightly.yml`, needs `OPENAI_API_KEY` / `OPENAI_MODEL` secrets |
+| 5 | Per-turn latency and session cost | `cargo bench` |
+| 6 | Line coverage does not drop | `.github/workflows/coverage.yml` (`--fail-under-lines`, a ratchet) |
 
-`.github/workflows/ci.yml` runs all of them on Linux and macOS.
+`.github/workflows/ci.yml` runs layers 0–3 on Linux and macOS.
+
+Regenerating an insta snapshot is deliberate, like a parity golden:
+
+```bash
+INSTA_UPDATE=always cargo test --test openai_wiremock   # writes tests/snapshots/*.snap
+# or: cargo insta review
+```
 
 ### The clippy backlog
 
