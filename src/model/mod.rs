@@ -73,7 +73,11 @@ pub fn default_model_provider() -> Arc<dyn ModelProvider> {
                     )
                     .register(
                         "openai_responses",
-                        Arc::new(provider.clone().api(crate::run::DefaultOpenAiApi::Responses)),
+                        Arc::new(
+                            provider
+                                .clone()
+                                .api(crate::run::DefaultOpenAiApi::Responses),
+                        ),
                     );
                 Arc::new(router)
             }

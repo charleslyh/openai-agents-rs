@@ -49,7 +49,11 @@ async fn authorization_headers(server: &MockServer) -> Vec<Option<String>> {
         .await
         .unwrap()
         .iter()
-        .map(|r| r.headers.get("authorization").map(|v| v.to_str().unwrap().to_string()))
+        .map(|r| {
+            r.headers
+                .get("authorization")
+                .map(|v| v.to_str().unwrap().to_string())
+        })
         .collect()
 }
 
@@ -64,7 +68,11 @@ async fn compatible_provider_speaks_chat_completions_without_a_key_by_default() 
         .await;
     let provider = CompatibleProvider::new(format!("{}/v1", server.uri()));
     assert_eq!(run_with(Arc::new(provider), "m").await, "via chat");
-    assert_eq!(authorization_headers(&server).await, vec![None], "no key, no Authorization");
+    assert_eq!(
+        authorization_headers(&server).await,
+        vec![None],
+        "no key, no Authorization"
+    );
 }
 
 #[tokio::test]
@@ -80,7 +88,10 @@ async fn compatible_provider_sends_the_key_and_can_choose_responses() {
         .api_key("secret")
         .api(DefaultOpenAiApi::Responses);
     assert_eq!(run_with(Arc::new(provider), "m").await, "via responses");
-    assert_eq!(authorization_headers(&server).await, vec![Some("Bearer secret".to_string())]);
+    assert_eq!(
+        authorization_headers(&server).await,
+        vec![Some("Bearer secret".to_string())]
+    );
 }
 
 #[tokio::test]
@@ -93,8 +104,10 @@ async fn compatible_provider_is_routed_by_prefix_and_has_a_default_model() {
         .mount(&server)
         .await;
     let base = format!("{}/v1", server.uri());
-    let router = MultiProvider::new()
-        .register("local", Arc::new(CompatibleProvider::new(&base).default_model("qwen")));
+    let router = MultiProvider::new().register(
+        "local",
+        Arc::new(CompatibleProvider::new(&base).default_model("qwen")),
+    );
     let router: Arc<dyn openai_agents::ModelProvider> = Arc::new(router);
     assert_eq!(run_with(router.clone(), "local/qwen2.5").await, "routed");
     let sent: serde_json::Value =

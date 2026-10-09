@@ -5,6 +5,10 @@ edition = "2021"
 description = "Proc-macros for openai-agents (function_tool)"
 license = "MIT"
 
+# Inherits the lint config (including the tracked clippy backlog) from `[workspace.lints]`.
+[lints]
+workspace = true
+
 [lib]
 proc-macro = true
 

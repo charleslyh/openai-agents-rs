@@ -40,10 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("interruptions={}", result.interruptions.len());
         let mut state = result.to_state()?;
         for item in result.interruptions.clone() {
-            println!(
-                "pending tool={} args={}",
-                item.tool_name, item.arguments
-            );
+            println!("pending tool={} args={}", item.tool_name, item.arguments);
             if common::confirm("approve (sticky for rest of run)?")? {
                 // Sticky: subsequent `pay` calls in this run won't pause again.
                 state.approve(&item, true);

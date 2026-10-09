@@ -4,17 +4,72 @@ on:
   push:
   pull_request:
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
-  test:
+  lint:
+    name: lint (fmt, clippy, doc)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Sync / verify vendor pin
-        run: |
-          bash scripts/sync_vendor.sh
-          bash scripts/sync_vendor.sh --check
-      - name: Behavior tests (no openai)
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Formatting
+        run: cargo fmt --all -- --check
+      - name: Clippy (all features, all targets)
+        # `-D warnings` blocks every lint that is not part of the tracked backlog declared in
+        # `[workspace.lints]` in Cargo.toml. That list must only ever shrink.
+        run: cargo clippy --all-features --all-targets -- -D warnings
+      - name: Docs (no broken intra-doc links)
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --no-deps --all-features
+
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Verify the vendored Python SDK pin
+        run: bash scripts/sync_vendor.sh --check
+      # Layer 1: ScriptedModel behavior, no HTTP client in the build.
+      - name: Behavior tests (no default features)
         run: cargo test --no-default-features
-      - name: OpenAI wiremock, mock framework, parity
-        run: cargo test --features testing
+      # Layer 2: OpenAI HTTP contracts through wiremock, plus MCP and the parity scenarios.
+      - name: Tests (default features)
+        run: cargo test
+      - name: Tests (all features, incl. SQLite sessions)
+        run: cargo test --all-features
+
+  parity:
+    name: python oracle (parity, MCP interop)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: Swatinem/rust-cache@v2
+      - name: Oracle venv
+        run: bash scripts/setup_venv.sh
+      # Layer 3a: fail if a committed golden no longer matches what the Python SDK does.
+      # Regenerating is a separate, deliberate step (--write-golden), never part of CI.
+      - name: Parity goldens match the Python SDK
+        run: .venv/bin/python scripts/run_parity.py --check
+      - name: Parity scenarios in Rust
+        run: cargo test --test parity_scenarios
+      # Layer 3b: two independent implementations over the wire (real Python MCP server).
+      - name: MCP interoperability
+        run: cargo test --test mcp_interop
+      - name: Chat Completions converter parity
+        run: cargo test --test chat_convert_parity

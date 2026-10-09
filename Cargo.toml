@@ -2,6 +2,23 @@
 members = [".", "macros"]
 resolver = "2"
 
+# Lints every member inherits with `[lints] workspace = true`.
+#
+# These three are a *known, tracked backlog*, not a preference: `-D warnings` in CI blocks every
+# other lint, and this list must only ever shrink. Counts as of the 2026-10 audit:
+#   result_large_err          126 — `AgentsError` is a big enum, so `Result<_, AgentsError>` is
+#                                   large on the stack. Fixing it means boxing the error variant
+#                                   (an API change) or shrinking `ModelStatusError`; both need a
+#                                   design pass.
+#   field_reassign_with_default 35 — mechanical (`Y { field, ..Default::default() }`), mostly in
+#                                   tests and examples.
+#   needless_question_mark       8 — emitted inside `#[function_tool]`-generated code, so it can
+#                                   only be fixed in the macro crate.
+[workspace.lints.clippy]
+result_large_err = "allow"
+field_reassign_with_default = "allow"
+needless_question_mark = "allow"
+
 [package]
 name = "openai-agents"
 version = "0.1.0"
@@ -20,6 +37,10 @@ openai = ["dep:async-openai", "dep:reqwest"]
 mcp = ["dep:reqwest", "tokio/process", "tokio/io-util"]
 # `SqliteSession`: file or in-memory conversation storage, same schema as the Python SDK.
 sqlite = ["dep:rusqlite"]
+
+# Inherits the lint config (including the tracked clippy backlog) from `[workspace.lints]`.
+[lints]
+workspace = true
 
 [dependencies]
 async-trait = "0.1"
@@ -42,6 +63,8 @@ reqwest = { version = "0.12", optional = true, default-features = false, feature
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util"] }
+# Verification layer 1.5: property / randomized tests. See docs/CONTRIBUTING.md.
+proptest = "1"
 # Used by the HTTP-level contract tests (verification layer 2); not part of the public API.
 wiremock = "0.6"
 serde_json = { version = "1", features = ["preserve_order"] }

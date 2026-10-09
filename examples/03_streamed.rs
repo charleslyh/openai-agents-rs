@@ -111,8 +111,8 @@ fn open_section(current: &mut Section, next: Section) -> io::Result<()> {
     }
     end_section(current)?;
     match next {
-        Section::Reasoning => print!("-- Reasoning:\n"),
-        Section::Message => print!("-- Message output:\n"),
+        Section::Reasoning => println!("-- Reasoning:"),
+        Section::Message => println!("-- Message output:"),
         Section::None => {}
     }
     io::stdout().flush()?;

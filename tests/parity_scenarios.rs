@@ -9,8 +9,9 @@ use std::sync::Arc;
 
 use openai_agents::testing::{ModelStep, ScriptedModel};
 use openai_agents::{
-    handoff, Agent, AgentsError, CustomOutputSchema, FunctionTool, ModelError, RunItem,
-    RunErrorHandlerResult, RunErrorHandlers, RunOptions, RunResult, Runner, ToolUseBehavior,
+    handoff, Agent, AgentsError, CustomOutputSchema, FunctionTool, ModelError,
+    RunErrorHandlerResult, RunErrorHandlers, RunItem, RunOptions, RunResult, Runner,
+    ToolUseBehavior,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -146,8 +147,8 @@ fn load_scenarios() -> Vec<(PathBuf, Scenario)> {
             continue;
         }
         let text = fs::read_to_string(&path).expect("read scenario");
-        let scenario: Scenario = serde_json::from_str(&text)
-            .unwrap_or_else(|e| panic!("parse {}: {e}", path.display()));
+        let scenario: Scenario =
+            serde_json::from_str(&text).unwrap_or_else(|e| panic!("parse {}: {e}", path.display()));
         out.push((path, scenario));
     }
     out.sort_by(|a, b| a.0.cmp(&b.0));
@@ -286,7 +287,11 @@ async fn parity_scenarios_match_expect_and_golden() {
             let err = outcome.expect_err(&format!("{name}: expected an error"));
             assert_eq!(python_error_name(&err), expected_error, "{name}: {err}");
             if let Some(golden) = golden {
-                assert_eq!(golden.error.as_deref(), Some(expected_error.as_str()), "{name}");
+                assert_eq!(
+                    golden.error.as_deref(),
+                    Some(expected_error.as_str()),
+                    "{name}"
+                );
             }
             continue;
         }
@@ -317,21 +322,36 @@ async fn parity_scenarios_match_expect_and_golden() {
             // Python's golden stores the final output as text; structured outputs are compared
             // as parsed JSON so key order does not matter.
             if let Some(text) = &golden.final_output {
-                let golden_output: Value = serde_json::from_str(text)
-                    .unwrap_or_else(|_| Value::String(text.clone()));
+                let golden_output: Value =
+                    serde_json::from_str(text).unwrap_or_else(|_| Value::String(text.clone()));
                 assert_eq!(result.final_output, golden_output, "golden mismatch {name}");
             }
             if let Some(count) = golden.raw_response_count {
-                assert_eq!(result.raw_responses.len(), count, "golden raw responses {name}");
+                assert_eq!(
+                    result.raw_responses.len(),
+                    count,
+                    "golden raw responses {name}"
+                );
             }
             if let Some(last_agent) = &golden.last_agent {
-                assert_eq!(&result.last_agent_name, last_agent, "golden last agent {name}");
+                assert_eq!(
+                    &result.last_agent_name, last_agent,
+                    "golden last agent {name}"
+                );
             }
             if let Some(count) = golden.new_item_count {
-                assert_eq!(result.new_items.len(), count, "golden new_item_count {name}");
+                assert_eq!(
+                    result.new_items.len(),
+                    count,
+                    "golden new_item_count {name}"
+                );
             }
             if let Some(count) = golden.tool_output_count {
-                assert_eq!(tool_output_count(&result), count, "golden tool outputs {name}");
+                assert_eq!(
+                    tool_output_count(&result),
+                    count,
+                    "golden tool outputs {name}"
+                );
             }
             if let Some(expected) = &golden.tool_outputs {
                 let actual: Vec<String> = result
@@ -353,8 +373,16 @@ async fn parity_scenarios_match_expect_and_golden() {
                         .find(|(n, _)| n == target)
                         .unwrap_or_else(|| panic!("{name}: no handoff target {target}"))
                         .1;
-                    let actual = model.calls().first().expect("target was called").input.clone();
-                    assert_eq!(&actual, input, "golden handoff input for {target} in {name}");
+                    let actual = model
+                        .calls()
+                        .first()
+                        .expect("target was called")
+                        .input
+                        .clone();
+                    assert_eq!(
+                        &actual, input,
+                        "golden handoff input for {target} in {name}"
+                    );
                 }
             }
         }

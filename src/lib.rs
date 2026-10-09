@@ -7,12 +7,12 @@
 
 pub mod agent;
 pub mod agent_output;
+pub mod context;
 pub mod error;
 pub mod guardrail;
 pub mod handoffs;
 pub mod items;
 pub mod lifecycle;
-pub mod context;
 pub mod mcp;
 pub mod memory;
 pub mod model;
@@ -38,9 +38,13 @@ pub use agent::{
 pub use agent_output::{
     output_schema, AgentOutputSchema, AgentOutputSchemaBase, CustomOutputSchema,
 };
+pub use context::{
+    chain_input_filters, default_token_counter, estimate_item_tokens, input_filter,
+    ContextWindowTrimmer, TokenCounter, ToolOutputTrimmer,
+};
 pub use error::{
-    AgentsError, InputGuardrailTripwireTriggered, MaxTurnsExceeded, ModelError, ModelRefusalError,
-    ModelConnectionError, ModelStatusError, ModelTimeoutError,
+    AgentsError, InputGuardrailTripwireTriggered, MaxTurnsExceeded, ModelConnectionError,
+    ModelError, ModelRefusalError, ModelStatusError, ModelTimeoutError,
     OutputGuardrailTripwireTriggered, ToolInputGuardrailTripwireTriggered,
     ToolOutputGuardrailTripwireTriggered, ToolTimeoutError, UserError,
 };
@@ -50,44 +54,50 @@ pub use guardrail::{
 };
 pub use handoffs::{
     default_handoff_history_mapper, get_conversation_history_wrappers, handoff,
-    handoff_input_filter, handoff_to_name, handoff_with, nest_handoff_history, reset_conversation_history_wrappers,
-    set_conversation_history_wrappers, Handoff, HandoffHistoryMapper, HandoffInputData,
-    HandoffInputFilter, OnHandoff,
+    handoff_input_filter, handoff_to_name, handoff_with, nest_handoff_history,
+    reset_conversation_history_wrappers, set_conversation_history_wrappers, Handoff,
+    HandoffHistoryMapper, HandoffInputData, HandoffInputFilter, OnHandoff,
 };
+pub use items::ReasoningItemIdPolicy;
 pub use items::{
     HandoffCallItem, HandoffOutputItem, InputLike, ItemHelpers, MessageOutputItem, ModelResponse,
     ReasoningItem, ResponseInputItem, ResponseOutputItem, RunItem, ToolApprovalItem, ToolCallItem,
     ToolCallOutputItem,
 };
 pub use lifecycle::{AgentHooks, RunHooks};
-#[cfg(feature = "mcp")]
-pub use mcp::{StdioParams, StreamableHttpParams};
 pub use mcp::{
     mcp_function_tools, render_tool_result, McpCallToolResult, McpClient, McpConfig, McpError,
     McpServer, McpServerManager, McpTool, RequireApproval, ToolFilter, ToolFilterContext,
 };
+#[cfg(feature = "mcp")]
+pub use mcp::{StdioParams, StreamableHttpParams};
+#[cfg(feature = "sqlite")]
+pub use memory::SqliteSession;
 pub use memory::{
     CompactingSession, InMemorySession, ModelSummarizer, Session, SessionInputCallback,
     SessionSettings, Summarizer, DEFAULT_TRIGGER_TOKENS,
 };
-#[cfg(feature = "sqlite")]
-pub use memory::SqliteSession;
 pub use model::{
     default_model_provider, MissingProvider, Model, ModelProvider, ModelRef, ModelRequest,
     ModelTracing, MultiProvider,
 };
 pub use model_settings::{ModelSettings, ToolChoice, Truncation, Verbosity};
 pub use result::{CancelMode, RunResult, RunResultStreaming, StreamingSnapshot};
+pub use retry::{
+    retry_policies, ModelRetryAdvice, ModelRetryAdviceRequest, ModelRetryBackoffSettings,
+    ModelRetryNormalizedError, ModelRetrySettings, ReplaySafety, RetryDecision, RetryPolicy,
+    RetryPolicyContext,
+};
 pub use run::{
-    CallModelData, CallModelInputFilter, ModelInputData, OutputGuardrailBlockedMessage,
-    OutputGuardrailBlockedMessageArgs, OUTPUT_GUARDRAIL_BLOCKED_TOOL_OUTPUT, ToolErrorFormatter, ToolErrorFormatterArgs,
-    ToolErrorKind, ToolExecutionConfig, ToolNameCollisionPolicy, RunErrorData, RunErrorHandler, RunErrorHandlerInput,
-    RunErrorHandlerResult, RunErrorHandlers, RunHandledError,
-    default_trace_include_sensitive_data, set_default_openai_api, DefaultOpenAiApi, RunConfig,
-    RunOptions, Runner, ToolNotFoundBehavior, DEFAULT_MAX_TURNS,
+    default_trace_include_sensitive_data, get_default_openai_api, set_default_openai_api,
+    CallModelData, CallModelInputFilter, DefaultOpenAiApi, ModelInputData,
+    OutputGuardrailBlockedMessage, OutputGuardrailBlockedMessageArgs, RunConfig, RunErrorData,
+    RunErrorHandler, RunErrorHandlerInput, RunErrorHandlerResult, RunErrorHandlers,
+    RunHandledError, RunOptions, Runner, ToolErrorFormatter, ToolErrorFormatterArgs, ToolErrorKind,
+    ToolExecutionConfig, ToolNameCollisionPolicy, ToolNotFoundBehavior, DEFAULT_MAX_TURNS,
+    OUTPUT_GUARDRAIL_BLOCKED_TOOL_OUTPUT,
 };
 pub use run_context::{ContextValue, RunContextWrapper};
-pub use tracing::TracingConfig;
 pub use run_state::{
     ApprovalDecision, ApprovalStore, RunState, StickyDecision, RUN_STATE_SCHEMA_VERSION,
     SUPPORTED_RUN_STATE_SCHEMAS,
@@ -98,24 +108,16 @@ pub use schemars;
 pub use serde;
 pub use stream_events::{RunItemStreamName, StreamEvent};
 pub use tool::{
-    FunctionTool, IsEnabledFn, NeedsApproval, ToolContext, ToolEnabled, ToolFailureHandling, ToolResult, ToolTimeoutBehavior,
-    DEFAULT_APPROVAL_REJECTION_MESSAGE, DEFAULT_TOOL_ERROR_MESSAGE,
+    FunctionTool, IsEnabledFn, NeedsApproval, ToolContext, ToolEnabled, ToolFailureHandling,
+    ToolResult, ToolTimeoutBehavior, DEFAULT_APPROVAL_REJECTION_MESSAGE,
+    DEFAULT_TOOL_ERROR_MESSAGE,
 };
 pub use tool_guardrails::{
     ToolGuardrailBehavior, ToolGuardrailFunctionOutput, ToolInputGuardrail, ToolInputGuardrailData,
     ToolInputGuardrailResult, ToolOutputGuardrail, ToolOutputGuardrailData,
     ToolOutputGuardrailResult,
 };
-pub use context::{
-    chain_input_filters, default_token_counter, estimate_item_tokens, input_filter,
-    ContextWindowTrimmer, TokenCounter, ToolOutputTrimmer,
-};
-pub use items::ReasoningItemIdPolicy;
-pub use retry::{
-    retry_policies, ModelRetryAdvice, ModelRetryAdviceRequest, ModelRetryBackoffSettings,
-    ModelRetryNormalizedError, ModelRetrySettings, ReplaySafety, RetryDecision, RetryPolicy,
-    RetryPolicyContext,
-};
+pub use tracing::TracingConfig;
 pub use usage::{InputTokensDetails, OutputTokensDetails, RequestUsage, Usage};
 
 /// Attribute macro: turn a function into a [`FunctionTool`] constructor (Python: `@function_tool`).

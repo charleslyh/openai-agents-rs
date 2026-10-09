@@ -18,7 +18,11 @@ fn short(items: &Value) -> Vec<(String, Option<String>)> {
         .iter()
         .map(|i| {
             (
-                i["type"].as_str().or(i["role"].as_str()).unwrap().to_string(),
+                i["type"]
+                    .as_str()
+                    .or(i["role"].as_str())
+                    .unwrap()
+                    .to_string(),
                 i["content"].as_str().map(str::to_string),
             )
         })
@@ -41,7 +45,9 @@ fn output() -> Value {
 async fn run(history: Vec<Value>, config: RunConfig) -> (Value, Vec<Value>) {
     let session = InMemorySession::shared("s");
     session.add_items(history).await.unwrap();
-    let model = Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::text_message("reply"))]));
+    let model = Arc::new(ScriptedModel::new([ModelStep::from(
+        ItemHelpers::text_message("reply"),
+    )]));
     let agent = Agent::new("a").model(model.clone());
     let mut options = RunOptions::default();
     options.session = Some(session.clone());
@@ -62,7 +68,10 @@ async fn a_callback_that_edits_history_in_place_does_not_resave_it() {
             Ok(history)
         })
     });
-    let config = RunConfig { session_input_callback: Some(callback), ..RunConfig::default() };
+    let config = RunConfig {
+        session_input_callback: Some(callback),
+        ..RunConfig::default()
+    };
     let history = vec![
         json!({"role": "user", "content": "long long long"}),
         json!({"role": "assistant", "content": "answer answer"}),
@@ -70,7 +79,11 @@ async fn a_callback_that_edits_history_in_place_does_not_resave_it() {
     let (input, stored) = run(history, config).await;
     assert_eq!(
         short(&input),
-        [item("user", Some("short")), item("assistant", Some("short")), item("user", Some("next"))]
+        [
+            item("user", Some("short")),
+            item("assistant", Some("short")),
+            item("user", Some("next"))
+        ]
     );
     assert_eq!(
         short(&json!(stored)),
@@ -88,7 +101,10 @@ async fn a_callback_that_edits_history_in_place_does_not_resave_it() {
 async fn stored_calls_without_an_output_are_not_sent_to_the_model() {
     let history = vec![json!({"role": "user", "content": "u1"}), call()];
     let (input, _) = run(history, RunConfig::default()).await;
-    assert_eq!(short(&input), [item("user", Some("u1")), item("user", Some("next"))]);
+    assert_eq!(
+        short(&input),
+        [item("user", Some("u1")), item("user", Some("next"))]
+    );
 }
 
 #[tokio::test]
@@ -106,13 +122,23 @@ async fn a_limit_that_cuts_a_call_from_its_output_drops_the_output() {
     let (input, _) = run(history, config).await;
     assert_eq!(
         short(&input),
-        [item("user", Some("a")), item("assistant", Some("b")), item("user", Some("next"))]
+        [
+            item("user", Some("a")),
+            item("assistant", Some("b")),
+            item("user", Some("next"))
+        ]
     );
 }
 
 #[tokio::test]
 async fn duplicate_stored_items_are_merged() {
-    let history = vec![json!({"role": "user", "content": "u"}), call(), output(), call(), output()];
+    let history = vec![
+        json!({"role": "user", "content": "u"}),
+        call(),
+        output(),
+        call(),
+        output(),
+    ];
     let (input, _) = run(history, RunConfig::default()).await;
     assert_eq!(
         short(&input),
@@ -134,7 +160,10 @@ async fn the_hidden_origin_key_never_reaches_the_model_or_the_session() {
             Ok(all)
         })
     });
-    let config = RunConfig { session_input_callback: Some(callback), ..RunConfig::default() };
+    let config = RunConfig {
+        session_input_callback: Some(callback),
+        ..RunConfig::default()
+    };
     let (input, stored) = run(vec![json!({"role": "user", "content": "old"})], config).await;
     for item in input.as_array().unwrap().iter().chain(stored.iter()) {
         assert!(item.get("_agents_session_origin").is_none(), "{item}");

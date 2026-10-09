@@ -39,7 +39,9 @@ fn works_from_many_plain_threads_at_once() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn works_inside_a_multi_thread_runtime() {
     assert_eq!(run("direct"), "direct", "called straight from async code");
-    let from_blocking = tokio::task::spawn_blocking(|| run("blocking")).await.expect("join");
+    let from_blocking = tokio::task::spawn_blocking(|| run("blocking"))
+        .await
+        .expect("join");
     assert_eq!(from_blocking, "blocking");
 }
 
@@ -64,7 +66,10 @@ fn run_blocking_on_uses_the_given_runtime() {
     .expect("run");
     assert_eq!(result.final_output_as_str(), Some("mine"));
 
-    let current = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    let current = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
     let err = Runner::run_blocking_on(current.handle(), &agent("x"), "go", RunOptions::default())
         .unwrap_err();
     assert!(matches!(err, AgentsError::User(_)), "{err}");
@@ -76,14 +81,12 @@ fn a_panic_in_the_run_reaches_the_caller() {
     let model = Arc::new(ScriptedModel::new([ModelStep::from(
         ItemHelpers::function_tool_call("boom", "{}", "c1"),
     )]));
-    let agent = Agent::new("a")
-        .model(model)
-        .tools(vec![FunctionTool::new(
-            "boom",
-            "panics",
-            serde_json::json!({"type": "object", "properties": {}}),
-            |_ctx, _args| async move { panic!("tool bug") },
-        )]);
+    let agent = Agent::new("a").model(model).tools(vec![FunctionTool::new(
+        "boom",
+        "panics",
+        serde_json::json!({"type": "object", "properties": {}}),
+        |_ctx, _args| async move { panic!("tool bug") },
+    )]);
     let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _ = Runner::run_blocking(&agent, "go", RunOptions::default());
     }));

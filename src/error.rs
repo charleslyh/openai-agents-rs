@@ -208,7 +208,10 @@ impl ModelStatusError {
 
     /// Seconds the provider asked the client to wait (`retry-after-ms`, then `retry-after`).
     pub fn retry_after(&self) -> Option<f64> {
-        crate::retry::retry_after_from_headers(self.header("retry-after-ms"), self.header("retry-after"))
+        crate::retry::retry_after_from_headers(
+            self.header("retry-after-ms"),
+            self.header("retry-after"),
+        )
     }
 }
 

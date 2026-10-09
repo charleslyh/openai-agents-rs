@@ -238,7 +238,11 @@ fn is_context_type(ty: &Type) -> bool {
         return false;
     };
     matches!(
-        p.path.segments.last().map(|s| s.ident.to_string()).as_deref(),
+        p.path
+            .segments
+            .last()
+            .map(|s| s.ident.to_string())
+            .as_deref(),
         Some("ToolContext" | "RunContextWrapper")
     )
 }

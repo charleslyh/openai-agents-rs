@@ -23,7 +23,9 @@ impl Respond for Queued {
     fn respond(&self, _: &Request) -> ResponseTemplate {
         match self.0.lock().unwrap().pop_front() {
             Some(body) => ResponseTemplate::new(200).set_body_json(body),
-            None => ResponseTemplate::new(500).set_body_json(json!({"error": {"message": "empty"}})),
+            None => {
+                ResponseTemplate::new(500).set_body_json(json!({"error": {"message": "empty"}}))
+            }
         }
     }
 }
@@ -103,11 +105,18 @@ async fn parallel_tool_calls_are_sent_as_one_assistant_message() {
     let agent = Agent::new("a")
         .model(chat_model(&server, "any-model"))
         .tools(vec![echo_tool("alpha"), echo_tool("beta")]);
-    let result = Runner::run(&agent, "go", RunOptions::default()).await.expect("run");
+    let result = Runner::run(&agent, "go", RunOptions::default())
+        .await
+        .expect("run");
     assert_eq!(result.final_output_as_str(), Some("done"));
 
     let second = &request_bodies(&server).await[1]["messages"];
-    let roles: Vec<&str> = second.as_array().unwrap().iter().map(|m| m["role"].as_str().unwrap()).collect();
+    let roles: Vec<&str> = second
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["role"].as_str().unwrap())
+        .collect();
     assert_eq!(roles, ["user", "assistant", "tool", "tool"], "{second}");
     assert_eq!(second[1]["tool_calls"].as_array().unwrap().len(), 2);
     assert_eq!(second[2]["tool_call_id"], "c1");
@@ -117,13 +126,22 @@ async fn parallel_tool_calls_are_sent_as_one_assistant_message() {
 /// Typed user messages keep their text (they used to be sent as an empty string).
 #[tokio::test]
 async fn typed_user_messages_keep_their_content() {
-    let server = chat_server(vec![completion(json!({"role": "assistant", "content": "ok"}), "stop")]).await;
+    let server = chat_server(vec![completion(
+        json!({"role": "assistant", "content": "ok"}),
+        "stop",
+    )])
+    .await;
     let agent = Agent::new("a").model(chat_model(&server, "m"));
     let input = vec![json!({"type": "message", "role": "user",
                             "content": [{"type": "input_text", "text": "hello there"}]})];
-    Runner::run(&agent, input, RunOptions::default()).await.expect("run");
+    Runner::run(&agent, input, RunOptions::default())
+        .await
+        .expect("run");
     let messages = &request_bodies(&server).await[0]["messages"];
-    assert_eq!(messages[0]["content"][0], json!({"type": "text", "text": "hello there"}));
+    assert_eq!(
+        messages[0]["content"][0],
+        json!({"type": "text", "text": "hello there"})
+    );
 }
 
 /// The structured-output schema is always named `final_output`, a name every server accepts
@@ -142,10 +160,17 @@ async fn structured_output_schema_name_is_valid() {
         "stop",
     )])
     .await;
-    let agent = Agent::new("a").model(chat_model(&server, "m")).output_type(schema.clone());
-    Runner::run(&agent, "go", RunOptions::default()).await.expect("chat run");
+    let agent = Agent::new("a")
+        .model(chat_model(&server, "m"))
+        .output_type(schema.clone());
+    Runner::run(&agent, "go", RunOptions::default())
+        .await
+        .expect("chat run");
     let body = &request_bodies(&server).await[0];
-    assert_eq!(body["response_format"]["json_schema"]["name"], "final_output");
+    assert_eq!(
+        body["response_format"]["json_schema"]["name"],
+        "final_output"
+    );
 
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -158,10 +183,19 @@ async fn structured_output_schema_name_is_valid() {
         })))
         .mount(&server)
         .await;
-    let model = Arc::new(OpenAIResponsesModel::new("m", "sk", Some(&format!("{}/v1", server.uri()))));
+    let model = Arc::new(OpenAIResponsesModel::new(
+        "m",
+        "sk",
+        Some(&format!("{}/v1", server.uri())),
+    ));
     let agent = Agent::new("a").model(model).output_type(schema);
-    Runner::run(&agent, "go", RunOptions::default()).await.expect("responses run");
-    assert_eq!(request_bodies(&server).await[0]["text"]["format"]["name"], "final_output");
+    Runner::run(&agent, "go", RunOptions::default())
+        .await
+        .expect("responses run");
+    assert_eq!(
+        request_bodies(&server).await[0]["text"]["format"]["name"],
+        "final_output"
+    );
 }
 
 /// `stream_options` is a parameter some servers reject, so it is only sent by default to OpenAI
@@ -169,7 +203,11 @@ async fn structured_output_schema_name_is_valid() {
 #[tokio::test]
 async fn stream_options_are_opt_in_for_third_party_servers() {
     let sse = "data: {\"id\":\"c\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"}}]}\n\ndata: [DONE]\n\n";
-    for (include_usage, expected) in [(None, None), (Some(true), Some(true)), (Some(false), Some(false))] {
+    for (include_usage, expected) in [
+        (None, None),
+        (Some(true), Some(true)),
+        (Some(false), Some(false)),
+    ] {
         let server = sse_server(sse).await;
         let mut options = RunOptions::default();
         options.run_config.model_settings = Some(ModelSettings {
@@ -182,7 +220,8 @@ async fn stream_options_are_opt_in_for_third_party_servers() {
         let body = &request_bodies(&server).await[0];
         assert_eq!(body["stream"], true);
         assert_eq!(
-            body.get("stream_options").map(|o| o["include_usage"].as_bool().unwrap()),
+            body.get("stream_options")
+                .map(|o| o["include_usage"].as_bool().unwrap()),
             expected,
             "include_usage={include_usage:?}"
         );
@@ -205,17 +244,30 @@ async fn lenient_reply_shapes_still_drive_the_tool_loop() {
         completion(json!({"role": "assistant", "content": "done"}), "stop"),
     ])
     .await;
-    let agent = Agent::new("a").model(chat_model(&server, "m")).tools(vec![echo_tool("alpha")]);
-    let result = Runner::run(&agent, "go", RunOptions::default()).await.expect("run");
+    let agent = Agent::new("a")
+        .model(chat_model(&server, "m"))
+        .tools(vec![echo_tool("alpha")]);
+    let result = Runner::run(&agent, "go", RunOptions::default())
+        .await
+        .expect("run");
     assert_eq!(result.final_output_as_str(), Some("done"));
 
     let second = &request_bodies(&server).await[1]["messages"];
-    assert_eq!(second[1]["content"], "thinking...", "text and call share one message");
+    assert_eq!(
+        second[1]["content"], "thinking...",
+        "text and call share one message"
+    );
     let call = &second[1]["tool_calls"][0];
     let id = call["id"].as_str().unwrap();
-    assert!(id.starts_with("call_") && id.len() > 8, "generated id: {id}");
+    assert!(
+        id.starts_with("call_") && id.len() > 8,
+        "generated id: {id}"
+    );
     assert_eq!(call["function"]["arguments"], "{\"q\":1}");
-    assert_eq!(second[2]["tool_call_id"], id, "the result is paired with the generated id");
+    assert_eq!(
+        second[2]["tool_call_id"], id,
+        "the result is paired with the generated id"
+    );
 }
 
 /// An empty completion is explained by `finish_reason` (Python parity): filtered output is a
@@ -225,20 +277,36 @@ async fn finish_reason_explains_empty_completions() {
     let empty = json!({"role": "assistant", "content": null});
     let server = chat_server(vec![completion(empty.clone(), "content_filter")]).await;
     let agent = Agent::new("a").model(chat_model(&server, "m"));
-    match Runner::run(&agent, "go", RunOptions::default()).await.unwrap_err() {
-        AgentsError::ModelRefusal(e) => assert!(e.refusal.contains("content filter"), "{}", e.refusal),
+    match Runner::run(&agent, "go", RunOptions::default())
+        .await
+        .unwrap_err()
+    {
+        AgentsError::ModelRefusal(e) => {
+            assert!(e.refusal.contains("content filter"), "{}", e.refusal)
+        }
         other => panic!("expected a refusal, got {other}"),
     }
 
     let server = chat_server(vec![completion(empty, "length")]).await;
     let agent = Agent::new("a").model(chat_model(&server, "m"));
-    let error = Runner::run(&agent, "go", RunOptions::default()).await.unwrap_err();
-    assert!(matches!(error, AgentsError::Model(ModelError::Behavior(_))), "{error}");
+    let error = Runner::run(&agent, "go", RunOptions::default())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(error, AgentsError::Model(ModelError::Behavior(_))),
+        "{error}"
+    );
 
     // A reply that has content is left alone whatever the finish reason says.
-    let server = chat_server(vec![completion(json!({"role": "assistant", "content": "cut"}), "length")]).await;
+    let server = chat_server(vec![completion(
+        json!({"role": "assistant", "content": "cut"}),
+        "length",
+    )])
+    .await;
     let agent = Agent::new("a").model(chat_model(&server, "m"));
-    let result = Runner::run(&agent, "go", RunOptions::default()).await.unwrap();
+    let result = Runner::run(&agent, "go", RunOptions::default())
+        .await
+        .unwrap();
     assert_eq!(result.final_output_as_str(), Some("cut"));
 }
 
@@ -251,7 +319,10 @@ async fn reply_refusal_field_is_a_refusal() {
     )])
     .await;
     let agent = Agent::new("a").model(chat_model(&server, "m"));
-    match Runner::run(&agent, "go", RunOptions::default()).await.unwrap_err() {
+    match Runner::run(&agent, "go", RunOptions::default())
+        .await
+        .unwrap_err()
+    {
         AgentsError::ModelRefusal(e) => assert_eq!(e.refusal, "I can't help with that"),
         other => panic!("expected a refusal, got {other}"),
     }
@@ -270,8 +341,12 @@ async fn reasoning_content_is_replayed_for_deepseek_only() {
             completion(json!({"role": "assistant", "content": "done"}), "stop"),
         ])
         .await;
-        let agent = Agent::new("a").model(chat_model(&server, model)).tools(vec![echo_tool("alpha")]);
-        Runner::run(&agent, "go", RunOptions::default()).await.expect("run");
+        let agent = Agent::new("a")
+            .model(chat_model(&server, model))
+            .tools(vec![echo_tool("alpha")]);
+        Runner::run(&agent, "go", RunOptions::default())
+            .await
+            .expect("run");
         let assistant = &request_bodies(&server).await[1]["messages"][1];
         assert_eq!(
             assistant.get("reasoning_content").and_then(Value::as_str),
@@ -290,15 +365,24 @@ async fn reasoning_content_is_replayed_for_deepseek_only() {
         completion(json!({"role": "assistant", "content": "done"}), "stop"),
     ])
     .await;
-    let model = OpenAIChatCompletionsModel::new("qwen", "sk", Some(&format!("{}/v1", server.uri())))
-        .should_replay_reasoning_content(|model, _| model.starts_with("qwen"));
-    let agent = Agent::new("a").model(Arc::new(model)).tools(vec![echo_tool("alpha")]);
-    Runner::run(&agent, "go", RunOptions::default()).await.expect("run");
-    assert_eq!(request_bodies(&server).await[1]["messages"][1]["reasoning_content"], "plan");
+    let model =
+        OpenAIChatCompletionsModel::new("qwen", "sk", Some(&format!("{}/v1", server.uri())))
+            .should_replay_reasoning_content(|model, _| model.starts_with("qwen"));
+    let agent = Agent::new("a")
+        .model(Arc::new(model))
+        .tools(vec![echo_tool("alpha")]);
+    Runner::run(&agent, "go", RunOptions::default())
+        .await
+        .expect("run");
+    assert_eq!(
+        request_bodies(&server).await[1]["messages"][1]["reasoning_content"],
+        "plan"
+    );
 }
 
 fn chunk(delta: Value, finish: Option<&str>) -> String {
-    let payload = json!({"id": "c", "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]});
+    let payload =
+        json!({"id": "c", "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]});
     format!("data: {payload}\n\n")
 }
 
@@ -328,7 +412,13 @@ async fn streamed_failures_are_reported() {
     let cases: [(Vec<String>, &str); 3] = [
         (vec![chunk(json!({}), Some("content_filter"))], "refusal"),
         (vec![chunk(json!({}), Some("length"))], "behavior"),
-        (vec![format!("data: {}\n\n", json!({"error": {"message": "overloaded"}}))], "behavior"),
+        (
+            vec![format!(
+                "data: {}\n\n",
+                json!({"error": {"message": "overloaded"}})
+            )],
+            "behavior",
+        ),
     ];
     for (chunks, kind) in cases {
         let server = sse_server(&chunks.concat()).await;
@@ -356,7 +446,11 @@ async fn streamed_tool_call_without_id_and_odd_sse_framing() {
         "data: [DONE]\r\n\r\n".to_string(),
     ]
     .concat();
-    let second = [chunk(json!({"content": "done"}), Some("stop")), "data: [DONE]\n\n".to_string()].concat();
+    let second = [
+        chunk(json!({"content": "done"}), Some("stop")),
+        "data: [DONE]\n\n".to_string(),
+    ]
+    .concat();
     let server = MockServer::start().await;
     let bodies = Mutex::new(VecDeque::from([first, second]));
     struct Sse(Mutex<VecDeque<String>>);
@@ -373,10 +467,17 @@ async fn streamed_tool_call_without_id_and_odd_sse_framing() {
         .mount(&server)
         .await;
 
-    let agent = Agent::new("a").model(chat_model(&server, "m")).tools(vec![echo_tool("alpha")]);
+    let agent = Agent::new("a")
+        .model(chat_model(&server, "m"))
+        .tools(vec![echo_tool("alpha")]);
     let mut streamed = Runner::run_streamed(agent, "go", RunOptions::default());
     streamed.collect_events().await.expect("events");
-    assert_eq!(streamed.final_output().and_then(|v| v.as_str().map(str::to_string)), Some("done".into()));
+    assert_eq!(
+        streamed
+            .final_output()
+            .and_then(|v| v.as_str().map(str::to_string)),
+        Some("done".into())
+    );
 
     let second = &request_bodies(&server).await[1]["messages"];
     let id = second[1]["tool_calls"][0]["id"].as_str().unwrap();
@@ -416,12 +517,19 @@ async fn extra_query_is_sent_with_the_request() {
     let agent = Agent::new("a").model(chat_model(&server, "m"));
     Runner::run(&agent, "go", options).await.expect("run");
     let url = server.received_requests().await.unwrap()[0].url.clone();
-    let pairs: Vec<(String, String)> =
-        url.query_pairs().map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
+    let pairs: Vec<(String, String)> = url
+        .query_pairs()
+        .map(|(k, v)| (k.into_owned(), v.into_owned()))
+        .collect();
     assert_eq!(
         pairs,
-        [("api-version", "2024-06-01"), ("n", "3"), ("tag", "a"), ("tag", "b")]
-            .map(|(k, v)| (k.to_string(), v.to_string()))
+        [
+            ("api-version", "2024-06-01"),
+            ("n", "3"),
+            ("tag", "a"),
+            ("tag", "b")
+        ]
+        .map(|(k, v)| (k.to_string(), v.to_string()))
     );
 }
 
@@ -429,7 +537,8 @@ async fn extra_query_is_sent_with_the_request() {
 /// model, for plain and streamed Chat Completions; without it nothing is kept.
 #[tokio::test]
 async fn preserve_raw_usage_keeps_the_provider_usage_object() {
-    let usage = json!({"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5, "cost": 0.0012});
+    let usage =
+        json!({"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5, "cost": 0.0012});
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/chat/completions"))
@@ -442,13 +551,19 @@ async fn preserve_raw_usage_keeps_the_provider_usage_object() {
         .await;
     let agent = Agent::new("a").model(chat_model(&server, "m"));
 
-    let result = Runner::run(&agent, "go", settings(|s| s.preserve_raw_usage = Some(true)))
-        .await
-        .expect("run");
+    let result = Runner::run(
+        &agent,
+        "go",
+        settings(|s| s.preserve_raw_usage = Some(true)),
+    )
+    .await
+    .expect("run");
     assert_eq!(result.raw_responses[0].raw_usage, Some(usage.clone()));
     assert_eq!(result.usage.total_tokens, 5);
 
-    let result = Runner::run(&agent, "go", RunOptions::default()).await.expect("run");
+    let result = Runner::run(&agent, "go", RunOptions::default())
+        .await
+        .expect("run");
     assert_eq!(result.raw_responses[0].raw_usage, None, "off by default");
 
     let sse = format!(
@@ -487,7 +602,11 @@ async fn responses_input_drops_other_providers_bookkeeping() {
         })))
         .mount(&server)
         .await;
-    let model = Arc::new(OpenAIResponsesModel::new("m", "k", Some(&format!("{}/v1", server.uri()))));
+    let model = Arc::new(OpenAIResponsesModel::new(
+        "m",
+        "k",
+        Some(&format!("{}/v1", server.uri())),
+    ));
     let history = vec![
         json!({"role": "user", "content": "go"}),
         json!({"id": "__fake_id__", "type": "reasoning", "summary": [],
@@ -499,11 +618,31 @@ async fn responses_input_drops_other_providers_bookkeeping() {
         json!({"type": "function_call_output", "call_id": "c2", "output": "y"}),
     ];
     let agent = Agent::new("a").model(model);
-    Runner::run(&agent, history, RunOptions::default()).await.expect("run");
+    Runner::run(&agent, history, RunOptions::default())
+        .await
+        .expect("run");
     let sent = &request_bodies(&server).await[0]["input"];
-    let kinds: Vec<_> = sent.as_array().unwrap().iter().map(|i| i["type"].as_str().or(i["role"].as_str()).unwrap()).collect();
-    assert_eq!(kinds, ["user", "function_call", "function_call_output", "function_call", "function_call_output"]);
-    assert!(sent[1].get("id").is_none() && sent[1].get("provider_data").is_none(), "{}", sent[1]);
+    let kinds: Vec<_> = sent
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["type"].as_str().or(i["role"].as_str()).unwrap())
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            "user",
+            "function_call",
+            "function_call_output",
+            "function_call",
+            "function_call_output"
+        ]
+    );
+    assert!(
+        sent[1].get("id").is_none() && sent[1].get("provider_data").is_none(),
+        "{}",
+        sent[1]
+    );
     assert_eq!(sent[3]["id"], "fc_real", "a real id stays");
 }
 
@@ -518,23 +657,40 @@ async fn gemini_thought_signature_comes_back_with_the_tool_call() {
 
     // Plain reply.
     let server = chat_server(vec![
-        completion(json!({"role": "assistant", "content": null, "tool_calls": [signed.clone()]}), "tool_calls"),
+        completion(
+            json!({"role": "assistant", "content": null, "tool_calls": [signed.clone()]}),
+            "tool_calls",
+        ),
         completion(json!({"role": "assistant", "content": "done"}), "stop"),
     ])
     .await;
-    let agent = Agent::new("a").model(chat_model(&server, "gemini-3-pro")).tools(vec![echo_tool("alpha")]);
-    Runner::run(&agent, "go", RunOptions::default()).await.expect("run");
+    let agent = Agent::new("a")
+        .model(chat_model(&server, "gemini-3-pro"))
+        .tools(vec![echo_tool("alpha")]);
+    Runner::run(&agent, "go", RunOptions::default())
+        .await
+        .expect("run");
     let call = &request_bodies(&server).await[1]["messages"][1]["tool_calls"][0];
-    assert_eq!(call["extra_content"]["google"]["thought_signature"], "SIG-1", "{call}");
+    assert_eq!(
+        call["extra_content"]["google"]["thought_signature"], "SIG-1",
+        "{call}"
+    );
 
     // Streamed reply.
     let first = [
-        chunk(json!({"tool_calls": [{"index": 0, "id": "c1", "extra_content": signed["extra_content"],
-            "function": {"name": "alpha", "arguments": "{}"}}]}), None),
+        chunk(
+            json!({"tool_calls": [{"index": 0, "id": "c1", "extra_content": signed["extra_content"],
+            "function": {"name": "alpha", "arguments": "{}"}}]}),
+            None,
+        ),
         "data: [DONE]\n\n".to_string(),
     ]
     .concat();
-    let second = [chunk(json!({"content": "done"}), Some("stop")), "data: [DONE]\n\n".to_string()].concat();
+    let second = [
+        chunk(json!({"content": "done"}), Some("stop")),
+        "data: [DONE]\n\n".to_string(),
+    ]
+    .concat();
     let server = MockServer::start().await;
     struct Sse(Mutex<VecDeque<String>>);
     impl Respond for Sse {
@@ -549,21 +705,37 @@ async fn gemini_thought_signature_comes_back_with_the_tool_call() {
         .respond_with(Sse(Mutex::new(VecDeque::from([first, second]))))
         .mount(&server)
         .await;
-    let agent = Agent::new("a").model(chat_model(&server, "gemini-3-pro")).tools(vec![echo_tool("alpha")]);
+    let agent = Agent::new("a")
+        .model(chat_model(&server, "gemini-3-pro"))
+        .tools(vec![echo_tool("alpha")]);
     let mut streamed = Runner::run_streamed(agent, "go", RunOptions::default());
     streamed.collect_events().await.expect("events");
     let call = &request_bodies(&server).await[1]["messages"][1]["tool_calls"][0];
-    assert_eq!(call["extra_content"]["google"]["thought_signature"], "SIG-1", "{call}");
+    assert_eq!(
+        call["extra_content"]["google"]["thought_signature"], "SIG-1",
+        "{call}"
+    );
 
     // Another model never gets it.
     let server = chat_server(vec![
-        completion(json!({"role": "assistant", "content": null, "tool_calls": [signed]}), "tool_calls"),
+        completion(
+            json!({"role": "assistant", "content": null, "tool_calls": [signed]}),
+            "tool_calls",
+        ),
         completion(json!({"role": "assistant", "content": "done"}), "stop"),
     ])
     .await;
-    let agent = Agent::new("a").model(chat_model(&server, "llama-3")).tools(vec![echo_tool("alpha")]);
-    Runner::run(&agent, "go", RunOptions::default()).await.expect("run");
-    assert!(request_bodies(&server).await[1]["messages"][1]["tool_calls"][0].get("extra_content").is_none());
+    let agent = Agent::new("a")
+        .model(chat_model(&server, "llama-3"))
+        .tools(vec![echo_tool("alpha")]);
+    Runner::run(&agent, "go", RunOptions::default())
+        .await
+        .expect("run");
+    assert!(
+        request_bodies(&server).await[1]["messages"][1]["tool_calls"][0]
+            .get("extra_content")
+            .is_none()
+    );
 }
 
 /// Claude with extended thinking needs its thinking blocks back in the assistant message that
@@ -581,11 +753,23 @@ async fn claude_thinking_blocks_are_replayed_when_asked() {
             completion(json!({"role": "assistant", "content": "done"}), "stop"),
         ])
         .await;
-        let model = OpenAIChatCompletionsModel::new("claude-sonnet", "sk", Some(&format!("{}/v1", server.uri())))
-            .preserve_thinking_blocks(preserve);
-        let agent = Agent::new("a").model(Arc::new(model)).tools(vec![echo_tool("alpha")]);
-        Runner::run(&agent, "go", RunOptions::default()).await.expect("run");
+        let model = OpenAIChatCompletionsModel::new(
+            "claude-sonnet",
+            "sk",
+            Some(&format!("{}/v1", server.uri())),
+        )
+        .preserve_thinking_blocks(preserve);
+        let agent = Agent::new("a")
+            .model(Arc::new(model))
+            .tools(vec![echo_tool("alpha")]);
+        Runner::run(&agent, "go", RunOptions::default())
+            .await
+            .expect("run");
         let assistant = &request_bodies(&server).await[1]["messages"][1];
-        assert_eq!(assistant.get("thinking_blocks") == Some(&blocks), expected, "preserve={preserve}: {assistant}");
+        assert_eq!(
+            assistant.get("thinking_blocks") == Some(&blocks),
+            expected,
+            "preserve={preserve}: {assistant}"
+        );
     }
 }

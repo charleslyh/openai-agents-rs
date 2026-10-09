@@ -135,9 +135,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 result.output_guardrail_results.len()
             );
         }
-        Err(AgentsError::InputGuardrailTripwire(InputGuardrailTripwireTriggered {
-            result,
-        })) => {
+        Err(AgentsError::InputGuardrailTripwire(InputGuardrailTripwireTriggered { result })) => {
             println!("blocked by guardrail `{}`", result.guardrail_name);
         }
         Err(e) => return Err(e.into()),

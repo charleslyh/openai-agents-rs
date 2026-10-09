@@ -275,7 +275,11 @@ async fn responses_request_shape() {
     assert_eq!(body["model"], "gpt-test");
     assert_eq!(body["instructions"], "be brief");
     assert!(body["input"].is_array());
-    assert!(body["tools"].as_array().unwrap().iter().any(|t| t["name"] == "noop"));
+    assert!(body["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|t| t["name"] == "noop"));
 }
 
 #[tokio::test]
@@ -318,10 +322,16 @@ async fn chat_completions_request_shape() {
     assert_eq!(requests.len(), 1);
     let body: serde_json::Value = requests[0].body_json().expect("json");
     assert_eq!(body["model"], "gpt-test");
-    assert!(body["messages"].as_array().unwrap().iter().any(|m| m["role"] == "system"));
-    assert!(body["tools"].as_array().unwrap().iter().any(|t| {
-        t["type"] == "function" && t["function"]["name"] == "noop"
-    }));
+    assert!(body["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|m| m["role"] == "system"));
+    assert!(body["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|t| { t["type"] == "function" && t["function"]["name"] == "noop" }));
 }
 
 fn extra_args(
@@ -656,7 +666,9 @@ async fn responses_stream_emits_token_deltas() {
         "Hello world"
     );
     assert_eq!(
-        streamed.final_output().and_then(|v| v.as_str().map(str::to_string)),
+        streamed
+            .final_output()
+            .and_then(|v| v.as_str().map(str::to_string)),
         Some("Hello world".into())
     );
 
@@ -699,9 +711,14 @@ async fn responses_stream_assembles_without_completed_event() {
         ["partial"]
     );
     // The synthesized terminal event continues the numbering of the forwarded events.
-    assert_eq!(raw_types(&events).last().map(String::as_str), Some("response.completed"));
     assert_eq!(
-        streamed.final_output().and_then(|v| v.as_str().map(str::to_string)),
+        raw_types(&events).last().map(String::as_str),
+        Some("response.completed")
+    );
+    assert_eq!(
+        streamed
+            .final_output()
+            .and_then(|v| v.as_str().map(str::to_string)),
         Some("partial".into())
     );
 }
@@ -769,12 +786,11 @@ async fn chat_stream_emits_token_deltas() {
     let completed = completed_response(&events);
     assert_eq!(completed["object"], "response");
     assert_eq!(completed["status"], "completed");
+    assert_eq!(completed["output"][0]["content"][0]["text"], "Hi there");
     assert_eq!(
-        completed["output"][0]["content"][0]["text"],
-        "Hi there"
-    );
-    assert_eq!(
-        streamed.final_output().and_then(|v| v.as_str().map(str::to_string)),
+        streamed
+            .final_output()
+            .and_then(|v| v.as_str().map(str::to_string)),
         Some("Hi there".into())
     );
 
@@ -1000,8 +1016,7 @@ async fn openai_provider_resolves_model_name() {
         .await;
 
     openai_agents::set_default_openai_api(openai_agents::DefaultOpenAiApi::ChatCompletions);
-    let provider =
-        OpenAIProvider::new("sk-test", Some(&format!("{}/v1", chat_server.uri())), None);
+    let provider = OpenAIProvider::new("sk-test", Some(&format!("{}/v1", chat_server.uri())), None);
     let mut opts = RunOptions::default();
     opts.run_config.model_provider = Some(Arc::new(provider));
     let result = Runner::run(&agent, "go", opts).await.expect("run");
@@ -1091,15 +1106,25 @@ async fn responses_usage_details_aggregate_per_request() {
             Some(&format!("{}/v1", server.uri())),
         )))
         .tools(vec![weather_tool()]);
-    let result = Runner::run(&agent, "hi", RunOptions::default()).await.expect("run");
+    let result = Runner::run(&agent, "hi", RunOptions::default())
+        .await
+        .expect("run");
     let usage = &result.usage;
     assert_eq!(usage.requests, 2);
-    assert_eq!((usage.input_tokens, usage.output_tokens, usage.total_tokens), (30, 9, 39));
+    assert_eq!(
+        (usage.input_tokens, usage.output_tokens, usage.total_tokens),
+        (30, 9, 39)
+    );
     assert_eq!(usage.input_tokens_details.cached_tokens, 14);
     assert_eq!(usage.output_tokens_details.reasoning_tokens, 4);
     assert_eq!(usage.request_usage_entries.len(), 2);
     assert_eq!(usage.request_usage_entries[1].input_tokens, 20);
-    assert_eq!(usage.request_usage_entries[1].input_tokens_details.cached_tokens, 8);
+    assert_eq!(
+        usage.request_usage_entries[1]
+            .input_tokens_details
+            .cached_tokens,
+        8
+    );
 }
 
 /// D-016: Chat Completions maps `prompt_tokens_details` / `completion_tokens_details`, keeps the
@@ -1107,8 +1132,10 @@ async fn responses_usage_details_aggregate_per_request() {
 #[tokio::test]
 async fn chat_usage_details_and_missing_usage() {
     let server = MockServer::start().await;
-    let choice = |text: &str| json!([{"index": 0, "finish_reason": "stop",
-        "message": {"role": "assistant", "content": text}}]);
+    let choice = |text: &str| {
+        json!([{"index": 0, "finish_reason": "stop",
+        "message": {"role": "assistant", "content": text}}])
+    };
     Mock::given(method("POST"))
         .and(path("/v1/chat/completions"))
         .respond_with(QueuedBodies::new(vec![
@@ -1125,13 +1152,20 @@ async fn chat_usage_details_and_missing_usage() {
         "sk-test",
         Some(&format!("{}/v1", server.uri())),
     )));
-    let first = Runner::run(&agent, "hi", RunOptions::default()).await.expect("run");
+    let first = Runner::run(&agent, "hi", RunOptions::default())
+        .await
+        .expect("run");
     assert_eq!(first.usage.input_tokens_details.cached_tokens, 5);
     assert_eq!(first.usage.output_tokens_details.reasoning_tokens, 1);
     assert_eq!(first.usage.total_tokens, 9);
 
-    let second = Runner::run(&agent, "hi", RunOptions::default()).await.expect("run");
-    assert_eq!(second.usage.requests, 1, "a completed request counts without usage");
+    let second = Runner::run(&agent, "hi", RunOptions::default())
+        .await
+        .expect("run");
+    assert_eq!(
+        second.usage.requests, 1,
+        "a completed request counts without usage"
+    );
     assert_eq!(second.usage.total_tokens, 0);
     assert!(second.usage.request_usage_entries.is_empty());
 }
@@ -1149,7 +1183,10 @@ impl wiremock::Respond for QueuedResponses {
     }
 }
 
-fn retrying_agent(model: Arc<dyn openai_agents::Model>, policy: openai_agents::RetryPolicy) -> Agent {
+fn retrying_agent(
+    model: Arc<dyn openai_agents::Model>,
+    policy: openai_agents::RetryPolicy,
+) -> Agent {
     Agent::new("a").model(model).model_settings(ModelSettings {
         retry: Some(
             openai_agents::ModelRetrySettings::new(2, policy).with_backoff(
@@ -1174,7 +1211,10 @@ async fn http_429_is_retried_using_the_provider_retry_after() {
     let ok_chat = json!({"id": "c", "choices": [{"index": 0, "finish_reason": "stop",
         "message": {"role": "assistant", "content": "done"}}],
         "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}});
-    for (route, body, chat) in [("/v1/responses", ok_responses, false), ("/v1/chat/completions", ok_chat, true)] {
+    for (route, body, chat) in [
+        ("/v1/responses", ok_responses, false),
+        ("/v1/chat/completions", ok_chat, true),
+    ] {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path(route))
@@ -1197,11 +1237,20 @@ async fn http_429_is_retried_using_the_provider_retry_after() {
         };
         let agent = retrying_agent(model, openai_agents::retry_policies::provider_suggested());
         let started = std::time::Instant::now();
-        let result = Runner::run(&agent, "hi", RunOptions::default()).await.expect(route);
-        assert!(started.elapsed() >= std::time::Duration::from_millis(20), "{route}: waited for retry-after-ms");
+        let result = Runner::run(&agent, "hi", RunOptions::default())
+            .await
+            .expect(route);
+        assert!(
+            started.elapsed() >= std::time::Duration::from_millis(20),
+            "{route}: waited for retry-after-ms"
+        );
         assert_eq!(result.final_output_as_str(), Some("done"), "{route}");
         assert_eq!(result.usage.requests, 2, "{route}: failed attempt counted");
-        assert_eq!(server.received_requests().await.unwrap().len(), 2, "{route}");
+        assert_eq!(
+            server.received_requests().await.unwrap().len(),
+            2,
+            "{route}"
+        );
         let _ = retry_policies::never();
     }
 }
@@ -1211,7 +1260,8 @@ async fn http_429_is_retried_using_the_provider_retry_after() {
 async fn http_errors_the_provider_says_not_to_retry_are_returned() {
     for (status, header) in [(500, Some("false")), (400, None), (401, None)] {
         let server = MockServer::start().await;
-        let mut template = ResponseTemplate::new(status).set_body_json(json!({"error": {"message": "no"}}));
+        let mut template =
+            ResponseTemplate::new(status).set_body_json(json!({"error": {"message": "no"}}));
         if let Some(value) = header {
             template = template.insert_header("x-should-retry", value);
         }
@@ -1220,9 +1270,15 @@ async fn http_errors_the_provider_says_not_to_retry_are_returned() {
             .respond_with(template)
             .mount(&server)
             .await;
-        let model = Arc::new(OpenAIResponsesModel::new("m", "sk-test", Some(&format!("{}/v1", server.uri()))));
+        let model = Arc::new(OpenAIResponsesModel::new(
+            "m",
+            "sk-test",
+            Some(&format!("{}/v1", server.uri())),
+        ));
         let agent = retrying_agent(model, openai_agents::retry_policies::provider_suggested());
-        let err = Runner::run(&agent, "hi", RunOptions::default()).await.unwrap_err();
+        let err = Runner::run(&agent, "hi", RunOptions::default())
+            .await
+            .unwrap_err();
         match err {
             openai_agents::AgentsError::Model(openai_agents::ModelError::Status(e)) => {
                 assert_eq!(e.status_code, status);
@@ -1230,7 +1286,11 @@ async fn http_errors_the_provider_says_not_to_retry_are_returned() {
             }
             other => panic!("expected a status error, got {other}"),
         }
-        assert_eq!(server.received_requests().await.unwrap().len(), 1, "status {status}");
+        assert_eq!(
+            server.received_requests().await.unwrap().len(),
+            1,
+            "status {status}"
+        );
     }
 }
 
@@ -1251,17 +1311,32 @@ async fn http_5xx_and_connection_failures_are_retried() {
         )))
         .mount(&server)
         .await;
-    let model = Arc::new(OpenAIResponsesModel::new("m", "sk-test", Some(&format!("{}/v1", server.uri()))));
+    let model = Arc::new(OpenAIResponsesModel::new(
+        "m",
+        "sk-test",
+        Some(&format!("{}/v1", server.uri())),
+    ));
     let agent = retrying_agent(model, openai_agents::retry_policies::provider_suggested());
-    let result = Runner::run(&agent, "hi", RunOptions::default()).await.expect("recovered");
+    let result = Runner::run(&agent, "hi", RunOptions::default())
+        .await
+        .expect("recovered");
     assert_eq!(result.final_output_as_str(), Some("up"));
 
     // Nothing listens on this port: a connection error, which `network_error` retries.
-    let dead = Arc::new(OpenAIResponsesModel::new("m", "sk-test", Some("http://127.0.0.1:9/v1")));
+    let dead = Arc::new(OpenAIResponsesModel::new(
+        "m",
+        "sk-test",
+        Some("http://127.0.0.1:9/v1"),
+    ));
     let agent = retrying_agent(dead, openai_agents::retry_policies::network_error());
-    let err = Runner::run(&agent, "hi", RunOptions::default()).await.unwrap_err();
+    let err = Runner::run(&agent, "hi", RunOptions::default())
+        .await
+        .unwrap_err();
     assert!(
-        matches!(err, openai_agents::AgentsError::Model(openai_agents::ModelError::Connection(_))),
+        matches!(
+            err,
+            openai_agents::AgentsError::Model(openai_agents::ModelError::Connection(_))
+        ),
         "{err}"
     );
 }

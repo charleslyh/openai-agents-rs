@@ -20,13 +20,15 @@ const MAX_SCHEMA_NODES: u32 = 100_000;
 /// Keep recursion comfortably below the stack limit. Counts nested maps and arrays.
 const MAX_SCHEMA_DEPTH: u32 = 100;
 
-const ADDITIONAL_PROPERTIES_ERROR: &str = "additionalProperties should not be set for object types. \
+const ADDITIONAL_PROPERTIES_ERROR: &str =
+    "additionalProperties should not be set for object types. \
      Use a plain object schema, or build the tool without a strict schema.";
 
 const SCHEMA_DEPTH_ERROR: &str =
     "JSON schema is too deeply nested to process safely. Simplify or flatten the schema.";
 
-const SCHEMA_BUDGET_ERROR: &str = "JSON schema is too large to convert to a strict schema. This can\
+const SCHEMA_BUDGET_ERROR: &str =
+    "JSON schema is too large to convert to a strict schema. This can\
      happen when a schema expands `$ref`s exponentially, which may indicate a malformed or\
      malicious schema.";
 
@@ -69,10 +71,7 @@ pub fn ensure_strict_json_schema(schema: &Value) -> Result<Value, AgentsError> {
     validate_json_schema_depth(schema)?;
 
     let Some(object) = schema.as_object() else {
-        return Err(UserError::new(format!(
-            "Expected a JSON object schema, got {schema}"
-        ))
-        .into());
+        return Err(UserError::new(format!("Expected a JSON object schema, got {schema}")).into());
     };
 
     if object.is_empty() {
@@ -133,10 +132,9 @@ fn spend(budget: &mut u32) -> Result<(), AgentsError> {
 
 fn ensure_strict_root(mut schema: Value) -> Result<Value, AgentsError> {
     if schema.get("anyOf").map(Value::is_array).unwrap_or(false) {
-        return Err(UserError::new(
-            "The root of a strict JSON schema must not use `anyOf`.",
-        )
-        .into());
+        return Err(
+            UserError::new("The root of a strict JSON schema must not use `anyOf`.").into(),
+        );
     }
     if let Some(Value::Array(types)) = schema.get("type") {
         if types.iter().any(|t| t == "object") {
@@ -216,7 +214,12 @@ fn ensure_strict_inner(
     }
 
     let typ = node.get("type").cloned();
-    if typ.is_none() && node.get("properties").map(Value::is_object).unwrap_or(false) {
+    if typ.is_none()
+        && node
+            .get("properties")
+            .map(Value::is_object)
+            .unwrap_or(false)
+    {
         node.insert("type".into(), Value::String("object".into()));
     } else if typ.is_none() {
         // Matches Python's `get("additionalProperties", False) is not False`: an absent key is
@@ -236,7 +239,10 @@ fn ensure_strict_inner(
     }
 
     if let Some(Value::Object(properties)) = node.get("properties").cloned() {
-        let required: Vec<Value> = properties.keys().map(|k| Value::String(k.clone())).collect();
+        let required: Vec<Value> = properties
+            .keys()
+            .map(|k| Value::String(k.clone()))
+            .collect();
         let mut rewritten = Map::new();
         for (key, prop) in properties {
             rewritten.insert(
@@ -311,7 +317,10 @@ fn ensure_strict_inner(
                         }
                     }
                 }
-                let target = resolve_ref(root, entry.get("$ref").and_then(Value::as_str).unwrap_or(""))?;
+                let target = resolve_ref(
+                    root,
+                    entry.get("$ref").and_then(Value::as_str).unwrap_or(""),
+                )?;
                 merge_ref_target(target, siblings)
             } else {
                 ensure_strict_inner(entry, root, budget, depth + 1, inside_nested_resource)?
@@ -446,7 +455,10 @@ fn resolve_ref(root: &Value, reference: &str) -> Result<Value, AgentsError> {
 }
 
 /// Merge a singleton `allOf` entry into its parent, rejecting incompatible overlaps.
-fn merge_single_all_of(entry: Value, parent: &Map<String, Value>) -> Result<Map<String, Value>, AgentsError> {
+fn merge_single_all_of(
+    entry: Value,
+    parent: &Map<String, Value>,
+) -> Result<Map<String, Value>, AgentsError> {
     let Value::Object(mut merged) = entry else {
         return Err(UserError::new(
             "JSON schema contains a singleton `allOf` entry that is not an object.",
@@ -536,7 +548,10 @@ mod tests {
             }
         }))
         .unwrap();
-        assert_eq!(out["properties"]["inner"]["additionalProperties"], json!(false));
+        assert_eq!(
+            out["properties"]["inner"]["additionalProperties"],
+            json!(false)
+        );
         assert_eq!(out["properties"]["inner"]["required"], json!(["b"]));
     }
 

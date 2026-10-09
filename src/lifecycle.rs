@@ -20,7 +20,13 @@ pub trait RunHooks: Send + Sync {
     async fn on_agent_end(&self, _context: RunContextWrapper, _agent: &Agent, _output: &Value) {}
 
     /// Called when a handoff occurs.
-    async fn on_handoff(&self, _context: RunContextWrapper, _from_agent: &Agent, _to_agent: &Agent) {}
+    async fn on_handoff(
+        &self,
+        _context: RunContextWrapper,
+        _from_agent: &Agent,
+        _to_agent: &Agent,
+    ) {
+    }
 
     /// Called immediately before a tool is invoked.
     async fn on_tool_start(&self, _context: ToolContext, _agent: &Agent, _tool: &FunctionTool) {}

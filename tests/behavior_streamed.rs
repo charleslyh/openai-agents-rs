@@ -32,7 +32,9 @@ async fn streamed_plain_text_emits_agent_raw_and_message() {
     )));
     assert!(streamed.is_complete());
     assert_eq!(
-        streamed.final_output().and_then(|v| v.as_str().map(str::to_string)),
+        streamed
+            .final_output()
+            .and_then(|v| v.as_str().map(str::to_string)),
         Some("hello".into())
     );
 }
@@ -64,7 +66,9 @@ async fn streamed_tool_then_text_emits_tool_events() {
         }
     )));
     assert_eq!(
-        streamed.final_output().and_then(|v| v.as_str().map(str::to_string)),
+        streamed
+            .final_output()
+            .and_then(|v| v.as_str().map(str::to_string)),
         Some("done".into())
     );
 }
@@ -112,7 +116,9 @@ async fn streamed_stop_on_first_tool() {
     let mut streamed = Runner::run_streamed(agent, "go", RunOptions::default());
     let _ = streamed.collect_events().await.expect("events");
     assert_eq!(
-        streamed.final_output().and_then(|v| v.as_str().map(str::to_string)),
+        streamed
+            .final_output()
+            .and_then(|v| v.as_str().map(str::to_string)),
         Some("final".into())
     );
 }

@@ -1,5 +1,10 @@
 //! Tracing smoke tests.
 
+// These tests hold a `std::sync::Mutex` guard (the processor's span log) while awaiting a run.
+// That is safe here — the guard is never held by another task — and restructuring every assertion
+// to drop it first would only obscure what is being checked.
+#![allow(clippy::await_holding_lock)]
+
 use std::sync::{Arc, Mutex, OnceLock};
 
 use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
@@ -304,7 +309,10 @@ fn span_tree(proc: &InMemoryProcessor) -> Vec<String> {
         .collect();
     let index = |id: &Option<String>| match id {
         None => "-".to_string(),
-        Some(id) => spans.iter().position(|s| &s.span_id == id).map_or("?".into(), |i| i.to_string()),
+        Some(id) => spans
+            .iter()
+            .position(|s| &s.span_id == id)
+            .map_or("?".into(), |i| i.to_string()),
     };
     spans
         .iter()
@@ -312,7 +320,9 @@ fn span_tree(proc: &InMemoryProcessor) -> Vec<String> {
             let what = match &s.data {
                 SpanData::Task { .. } => "task".to_string(),
                 SpanData::Agent { name } => format!("agent({name})"),
-                SpanData::Turn { turn, agent_name, .. } => format!("turn({turn},{agent_name})"),
+                SpanData::Turn {
+                    turn, agent_name, ..
+                } => format!("turn({turn},{agent_name})"),
                 SpanData::Function { name } => format!("function({name})"),
                 SpanData::Handoff { .. } => "handoff".to_string(),
                 SpanData::Guardrail { name } => format!("guardrail({name})"),
@@ -345,12 +355,16 @@ async fn task_and_turn_spans_nest_like_python() {
                     "h1",
                 )),
             ])))
-            .tools(vec![openai_agents::FunctionTool::constant("echo", "e", "x")])
+            .tools(vec![openai_agents::FunctionTool::constant(
+                "echo", "e", "x",
+            )])
             .handoffs(vec![openai_agents::handoff(b)])
     };
 
     let proc = InMemoryProcessor::install();
-    Runner::run(&build(), "go", RunOptions::default()).await.expect("run");
+    Runner::run(&build(), "go", RunOptions::default())
+        .await
+        .expect("run");
     // Python: task, agent A under task, turn 1 with its function, turn 2 with the handoff,
     // agent B back under the task.
     assert_eq!(
@@ -367,7 +381,10 @@ async fn task_and_turn_spans_nest_like_python() {
         ]
     );
     let finished = proc.spans.lock().unwrap().clone();
-    let task = finished.iter().find(|s| matches!(s.data, SpanData::Task { .. })).unwrap();
+    let task = finished
+        .iter()
+        .find(|s| matches!(s.data, SpanData::Task { .. }))
+        .unwrap();
     match &task.data {
         SpanData::Task { name, usage } => {
             assert_eq!(name, "Agent workflow");
@@ -375,33 +392,50 @@ async fn task_and_turn_spans_nest_like_python() {
         }
         _ => unreachable!(),
     }
-    let turn = finished.iter().find(|s| matches!(s.data, SpanData::Turn { .. })).unwrap();
-    assert!(matches!(&turn.data, SpanData::Turn { usage: Some(u), .. } if u.get("requests").is_none()));
+    let turn = finished
+        .iter()
+        .find(|s| matches!(s.data, SpanData::Turn { .. }))
+        .unwrap();
+    assert!(
+        matches!(&turn.data, SpanData::Turn { usage: Some(u), .. } if u.get("requests").is_none())
+    );
 
     // `include_task_and_turn_spans: false` drops both layers and re-parents the rest.
     let proc = InMemoryProcessor::install();
     let mut options = RunOptions::default();
     options.run_config.tracing = Some(TracingConfig {
         include_task_and_turn_spans: Some(false),
-        ..TracingConfig::default()
     });
     Runner::run(&build(), "go", options).await.expect("run");
     assert_eq!(
         span_tree(&proc),
-        ["agent(A)<--", "function(echo)<-0", "handoff<-0", "agent(B)<--"]
+        [
+            "agent(A)<--",
+            "function(echo)<-0",
+            "handoff<-0",
+            "agent(B)<--"
+        ]
     );
 
     // Input guardrails run inside the first turn, output guardrails after it, under the agent.
     let proc = InMemoryProcessor::install();
     let ok = || GuardrailFunctionOutput::pass(serde_json::Value::Null);
     let agent = Agent::new("A")
-        .model(Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::text_message("hi"))])))
+        .model(Arc::new(ScriptedModel::new([ModelStep::from(
+            ItemHelpers::text_message("hi"),
+        )])))
         .input_guardrails(vec![
             InputGuardrail::new("par", move |_c, _a, _i| async move { ok() }),
-            InputGuardrail::new("blk", move |_c, _a, _i| async move { ok() }).run_in_parallel(false),
+            InputGuardrail::new("blk", move |_c, _a, _i| async move { ok() })
+                .run_in_parallel(false),
         ])
-        .output_guardrails(vec![OutputGuardrail::new("out", move |_c, _a, _o| async move { ok() })]);
-    Runner::run(&agent, "go", RunOptions::default()).await.expect("run");
+        .output_guardrails(vec![OutputGuardrail::new(
+            "out",
+            move |_c, _a, _o| async move { ok() },
+        )]);
+    Runner::run(&agent, "go", RunOptions::default())
+        .await
+        .expect("run");
     assert_eq!(
         span_tree(&proc),
         [
@@ -423,7 +457,9 @@ async fn compaction_summary_is_a_span_of_the_run_that_triggered_it() {
     let _guard = tracing_test_lock().lock().unwrap();
     tracing::set_tracing_disabled(false);
 
-    let summary_model = Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::text_message("notes"))]));
+    let summary_model = Arc::new(ScriptedModel::new([ModelStep::from(
+        ItemHelpers::text_message("notes"),
+    )]));
     let session = Arc::new(
         CompactingSession::new(
             InMemorySession::shared("s"),
@@ -442,8 +478,9 @@ async fn compaction_summary_is_a_span_of_the_run_that_triggered_it() {
         .unwrap();
 
     let proc = InMemoryProcessor::install();
-    let agent = Agent::new("a")
-        .model(Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::text_message("hi"))])));
+    let agent = Agent::new("a").model(Arc::new(ScriptedModel::new([ModelStep::from(
+        ItemHelpers::text_message("hi"),
+    )])));
     let mut options = RunOptions::default();
     options.session = Some(session.clone());
     Runner::run(&agent, "t3", options).await.expect("run");
@@ -453,7 +490,10 @@ async fn compaction_summary_is_a_span_of_the_run_that_triggered_it() {
         .iter()
         .find(|s| matches!(&s.data, SpanData::Custom { name } if name == "conversation_summary"))
         .expect("summary span");
-    assert!(summary.parent_id.is_some(), "it hangs under the run, not at the trace root");
+    assert!(
+        summary.parent_id.is_some(),
+        "it hangs under the run, not at the trace root"
+    );
     assert_eq!(session.summarizer_usage().requests, 1);
 }
 
@@ -463,11 +503,16 @@ async fn compaction_summary_is_a_span_of_the_run_that_triggered_it() {
 async fn agent_as_tool_run_nests_under_the_function_span() {
     let _guard = tracing_test_lock().lock().unwrap();
     tracing::set_tracing_disabled(false);
-    let inner = Agent::new("Inner")
-        .model(Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::text_message("inner done"))])));
+    let inner = Agent::new("Inner").model(Arc::new(ScriptedModel::new([ModelStep::from(
+        ItemHelpers::text_message("inner done"),
+    )])));
     let outer = Agent::new("Outer")
         .model(Arc::new(ScriptedModel::new([
-            ModelStep::from(ItemHelpers::function_tool_call("ask_inner", r#"{"input":"hi"}"#, "c1")),
+            ModelStep::from(ItemHelpers::function_tool_call(
+                "ask_inner",
+                r#"{"input":"hi"}"#,
+                "c1",
+            )),
             ModelStep::from(ItemHelpers::text_message("outer done")),
         ])))
         .tools(vec![inner.as_tool(openai_agents::AsToolConfig {
@@ -477,7 +522,9 @@ async fn agent_as_tool_run_nests_under_the_function_span() {
         })]);
 
     let proc = InMemoryProcessor::install();
-    Runner::run(&outer, "go", RunOptions::default()).await.expect("run");
+    Runner::run(&outer, "go", RunOptions::default())
+        .await
+        .expect("run");
     assert_eq!(
         span_tree(&proc),
         [
@@ -499,7 +546,9 @@ async fn parallel_agent_tools_keep_their_own_parents() {
     let _guard = tracing_test_lock().lock().unwrap();
     tracing::set_tracing_disabled(false);
     let helper = |name: &str| {
-        Agent::new(name).model(Arc::new(ScriptedModel::new([ModelStep::from(ItemHelpers::text_message("ok"))])))
+        Agent::new(name).model(Arc::new(ScriptedModel::new([ModelStep::from(
+            ItemHelpers::text_message("ok"),
+        )])))
     };
     let tool = |agent: Agent, name: &str| {
         agent.as_tool(openai_agents::AsToolConfig {
@@ -519,7 +568,9 @@ async fn parallel_agent_tools_keep_their_own_parents() {
         .tools(vec![tool(helper("A"), "ask_a"), tool(helper("B"), "ask_b")]);
 
     let proc = InMemoryProcessor::install();
-    Runner::run(&outer, "go", RunOptions::default()).await.expect("run");
+    Runner::run(&outer, "go", RunOptions::default())
+        .await
+        .expect("run");
     let spans = proc.started_spans.lock().unwrap().clone();
     // agent span -> its task span -> the function span the task hangs under.
     let nested_parent = |agent: &str| {
@@ -528,7 +579,11 @@ async fn parallel_agent_tools_keep_their_own_parents() {
             .position(|s| matches!(&s.data, SpanData::Agent { name } if name == agent))
             .and_then(|i| spans[i].parent_id.clone())
             .and_then(|id| spans.iter().find(|s| s.span_id == id))
-            .and_then(|task| spans.iter().find(|s| Some(&s.span_id) == task.parent_id.as_ref()))
+            .and_then(|task| {
+                spans
+                    .iter()
+                    .find(|s| Some(&s.span_id) == task.parent_id.as_ref())
+            })
             .map(|p| p.data.clone())
     };
     assert!(matches!(nested_parent("A"), Some(SpanData::Function { name }) if name == "ask_a"));

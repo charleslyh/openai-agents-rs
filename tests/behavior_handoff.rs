@@ -18,11 +18,7 @@ async fn handoff_switches_agent_and_continues() {
         .model(specialist_model);
 
     let triage_model = Arc::new(ScriptedModel::new([ModelStep::from(
-        ItemHelpers::function_tool_call(
-            Handoff::default_tool_name("Specialist"),
-            "{}",
-            "h1",
-        ),
+        ItemHelpers::function_tool_call(Handoff::default_tool_name("Specialist"), "{}", "h1"),
     )]));
     let triage = Agent::new("Triage")
         .instructions("Route to specialist when needed.")
@@ -167,7 +163,9 @@ fn default_tool_name_sanitizes() {
 #[tokio::test]
 async fn handoffs_can_form_a_cycle() {
     use openai_agents::handoff_to_name;
-    let call = |name: &str, id: &str| ItemHelpers::function_tool_call(Handoff::default_tool_name(name), "{}", id);
+    let call = |name: &str, id: &str| {
+        ItemHelpers::function_tool_call(Handoff::default_tool_name(name), "{}", id)
+    };
     let triage_model = Arc::new(ScriptedModel::new([
         ModelStep::from(call("Billing", "h1")),
         ModelStep::from(ItemHelpers::text_message("triage closes")),
@@ -176,16 +174,23 @@ async fn handoffs_can_form_a_cycle() {
 
     let billing = Agent::new("Billing")
         .model(billing_model.clone())
-        .handoffs(vec![handoff_to_name("Triage").with_tool_description("Back to triage")]);
+        .handoffs(vec![
+            handoff_to_name("Triage").with_tool_description("Back to triage")
+        ]);
     let triage = Agent::new("Triage")
         .model(triage_model.clone())
         .handoffs(vec![handoff(billing)]);
 
-    let result = Runner::run(&triage, "help", RunOptions::default()).await.expect("run");
+    let result = Runner::run(&triage, "help", RunOptions::default())
+        .await
+        .expect("run");
     assert_eq!(result.final_output_as_str(), Some("triage closes"));
     assert_eq!(result.last_agent.name, "Triage");
     assert_eq!(triage_model.calls().len(), 2, "Triage ran twice");
-    assert_eq!(billing_model.calls()[0].tool_names, vec!["transfer_to_triage"]);
+    assert_eq!(
+        billing_model.calls()[0].tool_names,
+        vec!["transfer_to_triage"]
+    );
 }
 
 #[tokio::test]
@@ -194,7 +199,11 @@ async fn late_bound_handoff_to_an_unknown_agent_is_a_user_error() {
     let model = Arc::new(ScriptedModel::new([ModelStep::from(
         ItemHelpers::function_tool_call(Handoff::default_tool_name("Ghost"), "{}", "h1"),
     )]));
-    let agent = Agent::new("A").model(model).handoffs(vec![handoff_to_name("Ghost")]);
-    let err = Runner::run(&agent, "go", RunOptions::default()).await.unwrap_err();
+    let agent = Agent::new("A")
+        .model(model)
+        .handoffs(vec![handoff_to_name("Ghost")]);
+    let err = Runner::run(&agent, "go", RunOptions::default())
+        .await
+        .unwrap_err();
     assert!(matches!(err, AgentsError::User(_)), "{err}");
 }

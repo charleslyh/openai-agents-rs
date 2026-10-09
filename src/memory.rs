@@ -153,7 +153,11 @@ fn session_item_key(item: &Value) -> String {
             Value::Object(map) => {
                 let mut keys: Vec<&String> = map.keys().collect();
                 keys.sort();
-                Value::Object(keys.into_iter().map(|k| (k.clone(), canonical(&map[k]))).collect())
+                Value::Object(
+                    keys.into_iter()
+                        .map(|k| (k.clone(), canonical(&map[k])))
+                        .collect(),
+                )
             }
             Value::Array(items) => Value::Array(items.iter().map(canonical).collect()),
             other => other.clone(),
@@ -161,7 +165,11 @@ fn session_item_key(item: &Value) -> String {
     }
     let mut item = item.clone();
     if let Some(map) = item.as_object_mut() {
-        for key in ["_agents_tool_description", "_agents_tool_title", "created_by"] {
+        for key in [
+            "_agents_tool_description",
+            "_agents_tool_title",
+            "created_by",
+        ] {
             map.remove(key);
         }
     }
@@ -194,7 +202,10 @@ pub(crate) async fn prepare_input_with_session(
     callback: Option<&SessionInputCallback>,
     new_items: Vec<Value>,
 ) -> Result<(Vec<Value>, Vec<Value>), AgentsError> {
-    let settings = session.session_settings().unwrap_or_default().resolve(run_settings);
+    let settings = session
+        .session_settings()
+        .unwrap_or_default()
+        .resolve(run_settings);
     let history = session.get_items(settings.limit).await?;
 
     let (combined, from_history, to_save) = match callback {
@@ -204,7 +215,10 @@ pub(crate) async fn prepare_input_with_session(
                 .map(|_| true)
                 .chain(new_items.iter().map(|_| false))
                 .collect();
-            let combined: Vec<Value> = history.into_iter().chain(new_items.iter().cloned()).collect();
+            let combined: Vec<Value> = history
+                .into_iter()
+                .chain(new_items.iter().cloned())
+                .collect();
             (combined, from_history, new_items)
         }
         Some(callback) => {
@@ -228,7 +242,10 @@ pub(crate) async fn prepare_input_with_session(
 
     let prune_outputs = callback.is_none() && settings.limit.is_some();
     let prepared = history::drop_orphan_function_calls(combined, &from_history, prune_outputs);
-    Ok((history::deduplicate_input_items_preferring_latest(prepared), to_save))
+    Ok((
+        history::deduplicate_input_items_preferring_latest(prepared),
+        to_save,
+    ))
 }
 
 /// Split the items a callback returned into `(items, is_history, to_save)`.

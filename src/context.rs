@@ -76,8 +76,17 @@ pub(crate) fn summary_item(summary: &str) -> Value {
 /// The summary text carried by a summary item.
 pub(crate) fn summary_text(item: &Value) -> Option<String> {
     let text = plain_content(item)?.strip_prefix(SUMMARY_OPEN)?;
-    let text = text.trim().strip_suffix(SUMMARY_CLOSE).unwrap_or(text).trim();
-    Some(text.strip_prefix(SUMMARY_PREAMBLE).unwrap_or(text).trim().to_string())
+    let text = text
+        .trim()
+        .strip_suffix(SUMMARY_CLOSE)
+        .unwrap_or(text)
+        .trim();
+    Some(
+        text.strip_prefix(SUMMARY_PREAMBLE)
+            .unwrap_or(text)
+            .trim()
+            .to_string(),
+    )
 }
 
 /// System / developer messages and the summary stay in front of the conversation whatever happens.
@@ -251,7 +260,11 @@ impl ToolOutputTrimmer {
             return None;
         }
         let preview: String = output.chars().take(self.preview_chars).collect();
-        let name = if tool.is_empty() { "unknown_tool" } else { tool };
+        let name = if tool.is_empty() {
+            "unknown_tool"
+        } else {
+            tool
+        };
         let summary = format!(
             "[Trimmed: {name} output \u{2014} {length} chars \u{2192} {} char preview]\n{preview}...",
             self.preview_chars
@@ -343,7 +356,11 @@ impl ContextWindowTrimmer {
         };
         let count = |turn: &[Value]| turn.iter().map(|item| (self.counter)(item)).sum::<usize>();
         let mut used = reserved_tokens
-            + conversation.pinned.iter().map(|item| (self.counter)(item)).sum::<usize>()
+            + conversation
+                .pinned
+                .iter()
+                .map(|item| (self.counter)(item))
+                .sum::<usize>()
             + count(latest);
         let mut kept = 1;
         let mut first_kept = earlier.len();
@@ -355,7 +372,8 @@ impl ContextWindowTrimmer {
                 break;
             }
             used += cost;
-            kept += 1;
+            // One turn per admitted index, walking backwards from the end.
+            kept = 1 + (earlier.len() - index);
             first_kept = index;
         }
         let mut result = conversation.pinned.clone();
@@ -396,7 +414,10 @@ where
     F: Fn(&[Value], Option<&str>) -> Vec<Value> + Send + Sync + 'static,
 {
     Arc::new(move |data: CallModelData| {
-        let input = rewrite(&data.model_data.input, data.model_data.instructions.as_deref());
+        let input = rewrite(
+            &data.model_data.input,
+            data.model_data.instructions.as_deref(),
+        );
         Box::pin(async move {
             Ok(ModelInputData {
                 input,

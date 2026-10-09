@@ -132,7 +132,10 @@ fn render_item(item: &Value, max_tool_chars: usize) -> Option<String> {
         Some("function_call") => {
             let name = item.get("name").and_then(Value::as_str).unwrap_or("?");
             let arguments = item.get("arguments").and_then(Value::as_str).unwrap_or("");
-            Some(format!("[tool call] {name}({})", truncate_chars(arguments, max_tool_chars)))
+            Some(format!(
+                "[tool call] {name}({})",
+                truncate_chars(arguments, max_tool_chars)
+            ))
         }
         Some("function_call_output") => {
             let output = match item.get("output") {
@@ -140,11 +143,17 @@ fn render_item(item: &Value, max_tool_chars: usize) -> Option<String> {
                 Some(other) => other.to_string(),
                 None => String::new(),
             };
-            Some(format!("[tool result] {}", truncate_chars(&output, max_tool_chars)))
+            Some(format!(
+                "[tool result] {}",
+                truncate_chars(&output, max_tool_chars)
+            ))
         }
         Some("reasoning") => None,
         _ => {
-            let role = item.get("role").and_then(Value::as_str).unwrap_or("assistant");
+            let role = item
+                .get("role")
+                .and_then(Value::as_str)
+                .unwrap_or("assistant");
             let text = message_text(item)?;
             Some(format!("{role}: {text}"))
         }
@@ -190,10 +199,19 @@ impl Summarizer for ModelSummarizer {
                 output_schema: None,
             })
             .await?;
-        self.usage.lock().expect("summarizer usage").add(&response.usage);
-        let text: String = response.output.iter().filter_map(extract_message_text).collect();
+        self.usage
+            .lock()
+            .expect("summarizer usage")
+            .add(&response.usage);
+        let text: String = response
+            .output
+            .iter()
+            .filter_map(extract_message_text)
+            .collect();
         if text.trim().is_empty() {
-            return Err(ModelError::Behavior("the summarizer model returned no text".into()).into());
+            return Err(
+                ModelError::Behavior("the summarizer model returned no text".into()).into(),
+            );
         }
         Ok(text)
     }
@@ -303,9 +321,11 @@ impl CompactingSession {
     }
 
     fn should_compact(&self, items: &[Value]) -> bool {
-        let tokens = self
-            .trigger_tokens
-            .or_else(|| self.trigger_items.is_none().then_some(DEFAULT_TRIGGER_TOKENS));
+        let tokens = self.trigger_tokens.or_else(|| {
+            self.trigger_items
+                .is_none()
+                .then_some(DEFAULT_TRIGGER_TOKENS)
+        });
         if let Some(max) = tokens {
             if items.iter().map(|item| (self.counter)(item)).sum::<usize>() > max {
                 return true;
@@ -328,10 +348,15 @@ impl CompactingSession {
         let earlier: Vec<String> = pinned.iter().filter_map(summary_text).collect();
         let previous = (!earlier.is_empty()).then(|| earlier.join("\n\n"));
         let old_items: Vec<Value> = old.iter().flatten().cloned().collect();
-        let notes = self.summarizer.summarize(previous.as_deref(), &old_items).await?;
+        let notes = self
+            .summarizer
+            .summarize(previous.as_deref(), &old_items)
+            .await?;
 
-        let mut compacted: Vec<Value> =
-            pinned.into_iter().filter(|item| !is_summary_item(item)).collect();
+        let mut compacted: Vec<Value> = pinned
+            .into_iter()
+            .filter(|item| !is_summary_item(item))
+            .collect();
         compacted.push(summary_item(&notes));
         compacted.extend(recent.iter().flatten().cloned());
         self.inner.replace_items(compacted).await?;

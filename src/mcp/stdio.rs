@@ -24,8 +24,18 @@ use super::rpc::{
 /// server never sees API keys that happen to be in the parent's environment; pass what it needs
 /// through [`StdioParams::env`] (Python: `get_default_environment`).
 const INHERITED_ENV: [&str; 12] = [
-    "HOME", "LOGNAME", "PATH", "SHELL", "TERM", "USER", "APPDATA", "HOMEDRIVE", "HOMEPATH",
-    "SYSTEMROOT", "TEMP", "USERNAME",
+    "HOME",
+    "LOGNAME",
+    "PATH",
+    "SHELL",
+    "TERM",
+    "USER",
+    "APPDATA",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "SYSTEMROOT",
+    "TEMP",
+    "USERNAME",
 ];
 
 /// How to start a stdio server (Python: `MCPServerStdioParams`).
@@ -129,7 +139,11 @@ impl StdioTransport {
         let pending: Pending = Arc::default();
         let closed = Arc::new(AtomicBool::new(false));
 
-        let reader = (Arc::clone(&stdin), Arc::clone(&pending), Arc::clone(&closed));
+        let reader = (
+            Arc::clone(&stdin),
+            Arc::clone(&pending),
+            Arc::clone(&closed),
+        );
         tokio::spawn(async move {
             let (stdin, pending, closed) = reader;
             let mut lines = BufReader::new(stdout).lines();
@@ -209,7 +223,10 @@ impl Transport for StdioTransport {
         // Closing stdin is the polite way to stop a stdio server.
         self.stdin.lock().await.take();
         let mut child = self.child.lock().await;
-        if tokio::time::timeout(Duration::from_secs(2), child.wait()).await.is_err() {
+        if tokio::time::timeout(Duration::from_secs(2), child.wait())
+            .await
+            .is_err()
+        {
             let _ = child.kill().await;
         }
     }

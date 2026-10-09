@@ -222,8 +222,7 @@ impl ScriptedModel {
             .into_iter()
             .enumerate()
             .map(|(i, s)| {
-                s.validate(i)
-                    .expect("invalid scripted model step");
+                s.validate(i).expect("invalid scripted model step");
                 s
             })
             .collect();
@@ -282,7 +281,9 @@ impl ScriptedModel {
             remaining == 0,
             "{}",
             ModelScriptError::UnconsumedModelSteps {
-                message: format!("UnconsumedModelSteps: {remaining} scripted model step(s) were not consumed."),
+                message: format!(
+                    "UnconsumedModelSteps: {remaining} scripted model step(s) were not consumed."
+                ),
                 remaining_steps: remaining,
             }
         );

@@ -110,7 +110,10 @@ pub(crate) fn response_outcome(message: &Value) -> Option<Result<Value, McpError
 }
 
 /// `initialize` followed by `notifications/initialized`.
-pub(crate) async fn handshake(transport: &dyn Transport, timeout: Duration) -> Result<(), McpError> {
+pub(crate) async fn handshake(
+    transport: &dyn Transport,
+    timeout: Duration,
+) -> Result<(), McpError> {
     let result = transport
         .request(
             "initialize",

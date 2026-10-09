@@ -37,14 +37,28 @@ async fn stores_reads_limits_pops_and_clears() {
     assert!(session.get_items(None).await.unwrap().is_empty());
     assert!(session.pop_item().await.unwrap().is_none());
 
-    session.add_items(vec![msg("user", "a"), msg("assistant", "b")]).await.unwrap();
+    session
+        .add_items(vec![msg("user", "a"), msg("assistant", "b")])
+        .await
+        .unwrap();
     session.add_items(vec![msg("user", "c")]).await.unwrap();
     session.add_items(vec![]).await.unwrap();
 
     let all = session.get_items(None).await.unwrap();
-    assert_eq!(all.iter().map(|i| i["content"].as_str().unwrap()).collect::<Vec<_>>(), ["a", "b", "c"]);
+    assert_eq!(
+        all.iter()
+            .map(|i| i["content"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["a", "b", "c"]
+    );
     let latest = session.get_items(Some(2)).await.unwrap();
-    assert_eq!(latest.iter().map(|i| i["content"].as_str().unwrap()).collect::<Vec<_>>(), ["b", "c"]);
+    assert_eq!(
+        latest
+            .iter()
+            .map(|i| i["content"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["b", "c"]
+    );
     assert!(session.get_items(Some(0)).await.unwrap().is_empty());
     assert_eq!(session.get_items(Some(10)).await.unwrap().len(), 3);
 
@@ -64,25 +78,46 @@ async fn items_persist_and_sessions_in_one_file_are_isolated() {
         b.add_items(vec![msg("user", "from b")]).await.unwrap();
     }
     let a = SqliteSession::open("a", &db.0).unwrap();
-    assert_eq!(a.get_items(None).await.unwrap(), vec![msg("user", "from a")]);
+    assert_eq!(
+        a.get_items(None).await.unwrap(),
+        vec![msg("user", "from a")]
+    );
     a.clear_session().await.unwrap();
     let b = SqliteSession::open("b", &db.0).unwrap();
-    assert_eq!(b.get_items(None).await.unwrap(), vec![msg("user", "from b")], "clear is per session");
+    assert_eq!(
+        b.get_items(None).await.unwrap(),
+        vec![msg("user", "from b")],
+        "clear is per session"
+    );
 }
 
 #[tokio::test]
 async fn unreadable_rows_are_skipped_and_do_not_count_toward_the_limit() {
     let db = TempDb::new();
     let session = SqliteSession::open("s", &db.0).unwrap();
-    session.add_items(vec![msg("user", "a"), msg("user", "b")]).await.unwrap();
-    let raw = rusqlite::Connection::open(&db.0).unwrap();
-    raw.execute("INSERT INTO agent_messages (session_id, message_data) VALUES ('s', 'not json')", [])
+    session
+        .add_items(vec![msg("user", "a"), msg("user", "b")])
+        .await
         .unwrap();
+    let raw = rusqlite::Connection::open(&db.0).unwrap();
+    raw.execute(
+        "INSERT INTO agent_messages (session_id, message_data) VALUES ('s', 'not json')",
+        [],
+    )
+    .unwrap();
 
     assert_eq!(session.get_items(None).await.unwrap().len(), 2);
     let latest = session.get_items(Some(2)).await.unwrap();
-    assert_eq!(latest, vec![msg("user", "a"), msg("user", "b")], "the corrupt tail row is not an item");
-    assert_eq!(session.pop_item().await.unwrap(), Some(msg("user", "b")), "pop drops the corrupt row first");
+    assert_eq!(
+        latest,
+        vec![msg("user", "a"), msg("user", "b")],
+        "the corrupt tail row is not an item"
+    );
+    assert_eq!(
+        session.pop_item().await.unwrap(),
+        Some(msg("user", "b")),
+        "pop drops the corrupt row first"
+    );
 }
 
 #[tokio::test]
@@ -94,7 +129,9 @@ async fn table_names_are_validated_and_can_be_customized() {
     let custom = SqliteSession::open_with_tables("s", &db.0, "my_sessions", "my_messages").unwrap();
     custom.add_items(vec![msg("user", "x")]).await.unwrap();
     let raw = rusqlite::Connection::open(&db.0).unwrap();
-    let count: i64 = raw.query_row("SELECT COUNT(*) FROM my_messages", [], |r| r.get(0)).unwrap();
+    let count: i64 = raw
+        .query_row("SELECT COUNT(*) FROM my_messages", [], |r| r.get(0))
+        .unwrap();
     assert_eq!(count, 1);
 }
 
@@ -112,15 +149,33 @@ async fn runner_resumes_a_conversation_from_a_reopened_database() {
         options
     };
 
-    Runner::run(&agent, "one", run(SqliteSession::open("conv", &db.0).unwrap())).await.unwrap();
+    Runner::run(
+        &agent,
+        "one",
+        run(SqliteSession::open("conv", &db.0).unwrap()),
+    )
+    .await
+    .unwrap();
     // A fresh session object over the same file, like a new process.
-    let result = Runner::run(&agent, "two", run(SqliteSession::open("conv", &db.0).unwrap()))
-        .await
-        .unwrap();
+    let result = Runner::run(
+        &agent,
+        "two",
+        run(SqliteSession::open("conv", &db.0).unwrap()),
+    )
+    .await
+    .unwrap();
     assert_eq!(result.final_output_as_str(), Some("second answer"));
     let second_input = model.calls()[1].input.clone();
-    assert_eq!(second_input.as_array().map(Vec::len), Some(3), "{second_input}");
-    let stored = SqliteSession::open("conv", &db.0).unwrap().get_items(None).await.unwrap();
+    assert_eq!(
+        second_input.as_array().map(Vec::len),
+        Some(3),
+        "{second_input}"
+    );
+    let stored = SqliteSession::open("conv", &db.0)
+        .unwrap()
+        .get_items(None)
+        .await
+        .unwrap();
     assert_eq!(stored.len(), 4);
 }
 
@@ -149,14 +204,24 @@ asyncio.run(main(sys.argv[1]))
             .arg(&db.0)
             .output()
             .expect("python");
-        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
         String::from_utf8_lossy(&out.stdout).trim().to_string()
     };
 
     assert_eq!(run_python(), "0");
     let session = SqliteSession::open("shared", &db.0).unwrap();
-    assert_eq!(session.get_items(None).await.unwrap(), vec![msg("user", "from python")]);
-    session.add_items(vec![msg("assistant", "from rust")]).await.unwrap();
+    assert_eq!(
+        session.get_items(None).await.unwrap(),
+        vec![msg("user", "from python")]
+    );
+    session
+        .add_items(vec![msg("assistant", "from rust")])
+        .await
+        .unwrap();
     drop(session);
     assert_eq!(run_python(), "2", "Python sees the item Rust added");
 }
@@ -166,17 +231,30 @@ async fn replace_items_swaps_the_history_atomically() {
     let db = TempDb::new();
     let a = SqliteSession::open("a", &db.0).unwrap();
     let b = SqliteSession::open("b", &db.0).unwrap();
-    a.add_items(vec![msg("user", "1"), msg("assistant", "2")]).await.unwrap();
+    a.add_items(vec![msg("user", "1"), msg("assistant", "2")])
+        .await
+        .unwrap();
     b.add_items(vec![msg("user", "other")]).await.unwrap();
 
     a.replace_items(vec![msg("user", "summary")]).await.unwrap();
-    assert_eq!(a.get_items(None).await.unwrap(), vec![msg("user", "summary")]);
-    assert_eq!(b.get_items(None).await.unwrap(), vec![msg("user", "other")], "other sessions untouched");
+    assert_eq!(
+        a.get_items(None).await.unwrap(),
+        vec![msg("user", "summary")]
+    );
+    assert_eq!(
+        b.get_items(None).await.unwrap(),
+        vec![msg("user", "other")],
+        "other sessions untouched"
+    );
 
     a.replace_items(vec![]).await.unwrap();
     assert!(a.get_items(None).await.unwrap().is_empty());
     a.add_items(vec![msg("user", "again")]).await.unwrap();
-    assert_eq!(a.get_items(None).await.unwrap().len(), 1, "an emptied session is still usable");
+    assert_eq!(
+        a.get_items(None).await.unwrap().len(),
+        1,
+        "an emptied session is still usable"
+    );
 }
 
 /// Compaction over SQLite: the summary replaces old turns atomically and survives a reopen.
@@ -192,16 +270,31 @@ async fn compacting_session_over_sqlite_persists_the_summary() {
         }
     }
     let db = TempDb::new();
-    let session = CompactingSession::new(Arc::new(SqliteSession::open("c", &db.0).unwrap()), Arc::new(Fixed))
-        .keep_recent_turns(1);
+    let session = CompactingSession::new(
+        Arc::new(SqliteSession::open("c", &db.0).unwrap()),
+        Arc::new(Fixed),
+    )
+    .keep_recent_turns(1);
     session
-        .add_items(vec![msg("user", "t1"), msg("assistant", "a1"), msg("user", "t2"), msg("assistant", "a2")])
+        .add_items(vec![
+            msg("user", "t1"),
+            msg("assistant", "a1"),
+            msg("user", "t2"),
+            msg("assistant", "a2"),
+        ])
         .await
         .unwrap();
     assert!(session.compact().await.unwrap());
 
-    let reopened = SqliteSession::open("c", &db.0).unwrap().get_items(None).await.unwrap();
+    let reopened = SqliteSession::open("c", &db.0)
+        .unwrap()
+        .get_items(None)
+        .await
+        .unwrap();
     assert_eq!(reopened.len(), 3);
-    assert!(reopened[0]["content"].as_str().unwrap().contains("persisted notes"));
+    assert!(reopened[0]["content"]
+        .as_str()
+        .unwrap()
+        .contains("persisted notes"));
     assert_eq!(&reopened[1..], &[msg("user", "t2"), msg("assistant", "a2")]);
 }

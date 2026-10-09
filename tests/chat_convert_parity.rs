@@ -18,7 +18,8 @@ fn root() -> PathBuf {
 }
 
 fn cases() -> Value {
-    let text = std::fs::read_to_string(root().join("tests/parity/chat_convert_cases.json")).unwrap();
+    let text =
+        std::fs::read_to_string(root().join("tests/parity/chat_convert_cases.json")).unwrap();
     serde_json::from_str(&text).expect("cases json")
 }
 
@@ -33,7 +34,11 @@ fn python_results() -> Option<Value> {
         .arg(root().join("tests/parity/chat_convert_cases.json"))
         .output()
         .expect("python");
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     // The SDK may print warnings before the JSON line; the JSON is the last line.
     let stdout = String::from_utf8_lossy(&out.stdout);
     let last = stdout.lines().last().expect("oracle output");
@@ -46,7 +51,9 @@ fn is_error(value: &Value) -> bool {
 
 #[test]
 fn items_to_messages_match_python() {
-    let Some(python) = python_results() else { return };
+    let Some(python) = python_results() else {
+        return;
+    };
     let mut failures = Vec::new();
     for case in cases()["items_to_messages"].as_array().unwrap() {
         let name = case["name"].as_str().unwrap();
@@ -58,9 +65,9 @@ fn items_to_messages_match_python() {
         };
         let expected = &python["items_to_messages"][name];
         match items_to_chat_messages(items, &options) {
-            Ok(messages) if is_error(expected) => {
-                failures.push(format!("{name}: python raised {expected}, rust returned {messages:?}"))
-            }
+            Ok(messages) if is_error(expected) => failures.push(format!(
+                "{name}: python raised {expected}, rust returned {messages:?}"
+            )),
             Ok(messages) => {
                 if Value::Array(messages.clone()) != *expected {
                     failures.push(format!(
@@ -69,18 +76,25 @@ fn items_to_messages_match_python() {
                     ));
                 }
             }
-            Err(error) if !is_error(expected) => {
-                failures.push(format!("{name}: rust failed ({error}), python gave {expected}"))
-            }
+            Err(error) if !is_error(expected) => failures.push(format!(
+                "{name}: rust failed ({error}), python gave {expected}"
+            )),
             Err(_) => {}
         }
     }
-    assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.join("\n"));
+    assert!(
+        failures.is_empty(),
+        "{} mismatches:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
 }
 
 #[test]
 fn reply_messages_match_python() {
-    let Some(python) = python_results() else { return };
+    let Some(python) = python_results() else {
+        return;
+    };
     let mut failures = Vec::new();
     for case in cases()["message_to_output_items"].as_array().unwrap() {
         let name = case["name"].as_str().unwrap();
@@ -93,5 +107,10 @@ fn reply_messages_match_python() {
             failures.push(format!("{name}:\n  python {expected}\n  rust   {actual}"));
         }
     }
-    assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.join("\n"));
+    assert!(
+        failures.is_empty(),
+        "{} mismatches:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
 }

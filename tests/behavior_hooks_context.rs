@@ -99,25 +99,46 @@ impl RunHooks for Recorder {
             .unwrap()
             .push(format!("agent_start:{}", agent.name));
     }
-    async fn on_agent_end(&self, _context: RunContextWrapper, agent: &Agent, output: &serde_json::Value) {
+    async fn on_agent_end(
+        &self,
+        _context: RunContextWrapper,
+        agent: &Agent,
+        output: &serde_json::Value,
+    ) {
         self.events
             .lock()
             .unwrap()
             .push(format!("agent_end:{}:{output}", agent.name));
     }
-    async fn on_llm_start(&self, _context: RunContextWrapper, agent: &Agent, _p: Option<&str>, _i: &[serde_json::Value]) {
+    async fn on_llm_start(
+        &self,
+        _context: RunContextWrapper,
+        agent: &Agent,
+        _p: Option<&str>,
+        _i: &[serde_json::Value],
+    ) {
         self.events
             .lock()
             .unwrap()
             .push(format!("llm_start:{}", agent.name));
     }
-    async fn on_llm_end(&self, _context: RunContextWrapper, agent: &Agent, _r: &openai_agents::ModelResponse) {
+    async fn on_llm_end(
+        &self,
+        _context: RunContextWrapper,
+        agent: &Agent,
+        _r: &openai_agents::ModelResponse,
+    ) {
         self.events
             .lock()
             .unwrap()
             .push(format!("llm_end:{}", agent.name));
     }
-    async fn on_tool_start(&self, _context: openai_agents::ToolContext, _agent: &Agent, tool: &FunctionTool) {
+    async fn on_tool_start(
+        &self,
+        _context: openai_agents::ToolContext,
+        _agent: &Agent,
+        tool: &FunctionTool,
+    ) {
         self.events
             .lock()
             .unwrap()
@@ -185,7 +206,12 @@ async fn agent_hooks_fire() {
         async fn on_start(&self, _context: RunContextWrapper, _agent: &Agent) {
             self.0.fetch_add(1, Ordering::SeqCst);
         }
-        async fn on_end(&self, _context: RunContextWrapper, _agent: &Agent, _output: &serde_json::Value) {
+        async fn on_end(
+            &self,
+            _context: RunContextWrapper,
+            _agent: &Agent,
+            _output: &serde_json::Value,
+        ) {
             self.0.fetch_add(1, Ordering::SeqCst);
         }
     }

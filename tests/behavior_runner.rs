@@ -74,12 +74,12 @@ async fn max_turns_exceeded() {
         ModelStep::from(ItemHelpers::function_tool_call("echo", "{}", "c3")),
     ]));
     let tool = FunctionTool::constant("echo", "echo", "ok");
-    let agent = Agent::new("assistant")
-        .model(model)
-        .tools(vec![tool]);
+    let agent = Agent::new("assistant").model(model).tools(vec![tool]);
     let mut opts = RunOptions::default();
     opts.max_turns = Some(2);
-    let err = Runner::run(&agent, "loop", opts).await.expect_err("should exceed");
+    let err = Runner::run(&agent, "loop", opts)
+        .await
+        .expect_err("should exceed");
     match err {
         openai_agents::AgentsError::MaxTurns(MaxTurnsExceeded { max_turns }) => {
             assert_eq!(max_turns, 2);
@@ -91,6 +91,57 @@ async fn max_turns_exceeded() {
 #[tokio::test]
 async fn default_max_turns_constant() {
     assert_eq!(DEFAULT_MAX_TURNS, 10);
+}
+
+/// D-042: Python documents `max_turns` as "Set to `None` to disable the limit"
+/// (`run_config.py:591-592`) and only compares when it is not `None` (`run.py:1507`). `None`
+/// must not silently fall back to `DEFAULT_MAX_TURNS`.
+#[tokio::test]
+async fn max_turns_none_disables_the_limit() {
+    // A 12-turn script: eleven tool calls and a final answer.
+    let steps: Vec<ModelStep> = (1..=11)
+        .map(|i| {
+            ModelStep::from(ItemHelpers::function_tool_call(
+                "echo",
+                "{}",
+                format!("c{i}"),
+            ))
+        })
+        .chain(std::iter::once(ModelStep::from(ItemHelpers::text_message(
+            "done",
+        ))))
+        .collect();
+    let tool = FunctionTool::constant("echo", "echo", "ok");
+
+    // The default (`Some(10)`) stops it.
+    let model = Arc::new(ScriptedModel::new(steps.clone()));
+    let agent = Agent::new("assistant")
+        .model(model)
+        .tools(vec![tool.clone()]);
+    let err = Runner::run(&agent, "loop", RunOptions::default())
+        .await
+        .expect_err("12 turns must exceed the default limit");
+    assert!(
+        matches!(
+            err,
+            AgentsError::MaxTurns(MaxTurnsExceeded { max_turns: 10 })
+        ),
+        "unexpected error: {err}"
+    );
+
+    // `None` runs it to completion.
+    let model = Arc::new(ScriptedModel::new(steps));
+    let agent = Agent::new("assistant")
+        .model(model.clone())
+        .tools(vec![tool]);
+    let mut opts = RunOptions::default();
+    opts.max_turns = None;
+    let result = Runner::run(&agent, "loop", opts).await.expect("no limit");
+    assert_eq!(result.final_output_as_str(), Some("done"));
+    // `None` is the value the caller set, not a fallback.
+    assert_eq!(result.max_turns, None);
+    assert_eq!(model.calls().len(), 12);
+    model.assert_complete();
 }
 
 #[tokio::test]
@@ -300,12 +351,10 @@ async fn tools_in_one_turn_run_in_parallel() {
         ]),
         ModelStep::from(ItemHelpers::text_message("both done")),
     ]));
-    let agent = Agent::new("assistant")
-        .model(model.clone())
-        .tools(vec![
-            probe.delayed_tool("slow", Duration::from_millis(80), "slow-ok"),
-            probe.delayed_tool("fast", Duration::from_millis(10), "fast-ok"),
-        ]);
+    let agent = Agent::new("assistant").model(model.clone()).tools(vec![
+        probe.delayed_tool("slow", Duration::from_millis(80), "slow-ok"),
+        probe.delayed_tool("fast", Duration::from_millis(10), "fast-ok"),
+    ]);
 
     let started = Instant::now();
     let result = Runner::run(&agent, "run both", RunOptions::default())

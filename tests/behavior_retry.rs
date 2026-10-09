@@ -67,8 +67,14 @@ async fn network_errors_are_retried_with_backoff_and_counted_in_usage() {
     let agent = agent_with(model.clone(), 2, retry_policies::network_error());
 
     let start = Instant::now();
-    let result = Runner::run(&agent, "hi", RunOptions::default()).await.expect("run");
-    assert_eq!(start.elapsed(), Duration::from_secs(3), "1s then 2s of backoff");
+    let result = Runner::run(&agent, "hi", RunOptions::default())
+        .await
+        .expect("run");
+    assert_eq!(
+        start.elapsed(),
+        Duration::from_secs(3),
+        "1s then 2s of backoff"
+    );
     assert_eq!(model.calls().len(), 3);
     assert_eq!(result.final_output_as_str(), Some("ok"));
     // Python: every failed attempt is a request with a zero-token entry.
@@ -85,8 +91,13 @@ async fn the_error_is_returned_when_retries_run_out() {
         ModelStep::raise_model_error(connection(false)),
     ]));
     let agent = agent_with(model.clone(), 1, retry_policies::network_error());
-    let err = Runner::run(&agent, "hi", RunOptions::default()).await.unwrap_err();
-    assert!(matches!(err, AgentsError::Model(ModelError::Connection(_))), "{err}");
+    let err = Runner::run(&agent, "hi", RunOptions::default())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, AgentsError::Model(ModelError::Connection(_))),
+        "{err}"
+    );
     assert_eq!(model.calls().len(), 2, "one retry, then give up");
 }
 
@@ -97,21 +108,27 @@ async fn nothing_is_retried_without_settings_or_policy() {
         ok_step(),
     ]));
     let agent = Agent::new("a").model(model.clone());
-    assert!(Runner::run(&agent, "hi", RunOptions::default()).await.is_err());
+    assert!(Runner::run(&agent, "hi", RunOptions::default())
+        .await
+        .is_err());
     assert_eq!(model.calls().len(), 1);
 
     let model = Arc::new(ScriptedModel::new([
         ModelStep::raise_model_error(connection(false)),
         ok_step(),
     ]));
-    let agent = Agent::new("a").model(model.clone()).model_settings(ModelSettings {
-        retry: Some(ModelRetrySettings {
-            max_retries: Some(3),
+    let agent = Agent::new("a")
+        .model(model.clone())
+        .model_settings(ModelSettings {
+            retry: Some(ModelRetrySettings {
+                max_retries: Some(3),
+                ..Default::default()
+            }),
             ..Default::default()
-        }),
-        ..Default::default()
-    });
-    assert!(Runner::run(&agent, "hi", RunOptions::default()).await.is_err());
+        });
+    assert!(Runner::run(&agent, "hi", RunOptions::default())
+        .await
+        .is_err());
     assert_eq!(model.calls().len(), 1, "no policy, no retry");
 }
 
@@ -132,7 +149,9 @@ async fn retry_after_from_the_provider_beats_the_backoff() {
     ]));
     let agent = agent_with(model, 2, policy);
     let start = Instant::now();
-    Runner::run(&agent, "hi", RunOptions::default()).await.expect("run");
+    Runner::run(&agent, "hi", RunOptions::default())
+        .await
+        .expect("run");
     assert_eq!(start.elapsed(), Duration::from_millis(8500), "7s then 1.5s");
 }
 
@@ -156,7 +175,9 @@ async fn a_policy_can_choose_the_delay_and_see_the_normalized_error() {
     ]));
     let agent = agent_with(model, 3, policy);
     let start = Instant::now();
-    Runner::run(&agent, "hi", RunOptions::default()).await.expect("run");
+    Runner::run(&agent, "hi", RunOptions::default())
+        .await
+        .expect("run");
     assert_eq!(start.elapsed(), Duration::from_millis(500));
     assert_eq!(
         *seen.lock().unwrap(),
@@ -177,12 +198,16 @@ async fn stateful_requests_fail_closed_unless_the_provider_says_replay_is_safe()
     };
 
     let (ok, calls) = run(ModelStep::raise_model_error(connection(false))).await;
-    assert!(!ok && calls == 1, "a stateful request is not replayed on a plain retry=true");
+    assert!(
+        !ok && calls == 1,
+        "a stateful request is not replayed on a plain retry=true"
+    );
 
-    let safe = ModelStep::raise_model_error(connection(false)).with_retry_advice(ModelRetryAdvice {
-        replay_safety: Some(ReplaySafety::Safe),
-        ..Default::default()
-    });
+    let safe =
+        ModelStep::raise_model_error(connection(false)).with_retry_advice(ModelRetryAdvice {
+            replay_safety: Some(ReplaySafety::Safe),
+            ..Default::default()
+        });
     let (ok, calls) = run(safe).await;
     assert!(ok && calls == 2, "provider-marked safe replay is allowed");
 }
@@ -199,9 +224,14 @@ async fn provider_unsafe_replay_needs_an_explicit_approval() {
     let run = |policy: RetryPolicy| async move {
         let model = Arc::new(ScriptedModel::new([unsafe_step(), ok_step()]));
         let agent = agent_with(model.clone(), 2, policy);
-        Runner::run(&agent, "hi", RunOptions::default()).await.is_ok()
+        Runner::run(&agent, "hi", RunOptions::default())
+            .await
+            .is_ok()
     };
-    assert!(!run(RetryPolicy::new(|_| async { true })).await, "plain retry=true is vetoed");
+    assert!(
+        !run(RetryPolicy::new(|_| async { true })).await,
+        "plain retry=true is vetoed"
+    );
     assert!(
         run(RetryPolicy::new(|_| async {
             RetryDecision::yes().with_approve_unsafe_replay()
@@ -214,13 +244,16 @@ async fn provider_unsafe_replay_needs_an_explicit_approval() {
 #[tokio::test(start_paused = true)]
 async fn provider_suggested_follows_the_advice() {
     let run = |suggested: Option<bool>| async move {
-        let step = ModelStep::raise_model_error(connection(false)).with_retry_advice(ModelRetryAdvice {
-            suggested,
-            ..Default::default()
-        });
+        let step =
+            ModelStep::raise_model_error(connection(false)).with_retry_advice(ModelRetryAdvice {
+                suggested,
+                ..Default::default()
+            });
         let model = Arc::new(ScriptedModel::new([step, ok_step()]));
         let agent = agent_with(model, 1, retry_policies::provider_suggested());
-        Runner::run(&agent, "hi", RunOptions::default()).await.is_ok()
+        Runner::run(&agent, "hi", RunOptions::default())
+            .await
+            .is_ok()
     };
     assert!(run(Some(true)).await);
     assert!(!run(Some(false)).await);
@@ -234,7 +267,9 @@ async fn all_and_any_combine_policies() {
             ModelStep::raise_model_error(status(429, &[], json!({}))),
             ok_step(),
         ]));
-        Runner::run(&agent_with(model, 1, policy), "hi", RunOptions::default()).await.is_ok()
+        Runner::run(&agent_with(model, 1, policy), "hi", RunOptions::default())
+            .await
+            .is_ok()
     };
     let rate_limited = || retry_policies::http_status([429]);
     let network = || retry_policies::network_error();
@@ -260,21 +295,32 @@ async fn conversation_locked_is_replayed_without_a_policy_unless_disabled() {
         ok_step(),
     ]));
     let start = Instant::now();
-    let result = Runner::run(&Agent::new("a").model(model.clone()), "hi", RunOptions::default())
-        .await
-        .expect("replayed");
+    let result = Runner::run(
+        &Agent::new("a").model(model.clone()),
+        "hi",
+        RunOptions::default(),
+    )
+    .await
+    .expect("replayed");
     assert_eq!(start.elapsed(), Duration::from_secs(3), "1s then 2s");
     assert_eq!(result.usage.requests, 3);
 
-    let model = Arc::new(ScriptedModel::new([ModelStep::raise_model_error(locked()), ok_step()]));
-    let agent = Agent::new("a").model(model.clone()).model_settings(ModelSettings {
-        retry: Some(ModelRetrySettings {
-            max_retries: Some(0),
+    let model = Arc::new(ScriptedModel::new([
+        ModelStep::raise_model_error(locked()),
+        ok_step(),
+    ]));
+    let agent = Agent::new("a")
+        .model(model.clone())
+        .model_settings(ModelSettings {
+            retry: Some(ModelRetrySettings {
+                max_retries: Some(0),
+                ..Default::default()
+            }),
             ..Default::default()
-        }),
-        ..Default::default()
-    });
-    assert!(Runner::run(&agent, "hi", RunOptions::default()).await.is_err());
+        });
+    assert!(Runner::run(&agent, "hi", RunOptions::default())
+        .await
+        .is_err());
     assert_eq!(model.calls().len(), 1, "max_retries=0 opts out");
 
     // Python gives up after 3 compatibility replays (1s, 2s, 4s).
@@ -282,9 +328,13 @@ async fn conversation_locked_is_replayed_without_a_policy_unless_disabled() {
         (0..5).map(|_| ModelStep::raise_model_error(locked())),
     ));
     let start = Instant::now();
-    assert!(Runner::run(&Agent::new("a").model(model.clone()), "hi", RunOptions::default())
-        .await
-        .is_err());
+    assert!(Runner::run(
+        &Agent::new("a").model(model.clone()),
+        "hi",
+        RunOptions::default()
+    )
+    .await
+    .is_err());
     assert_eq!(model.calls().len(), 4);
     assert_eq!(start.elapsed(), Duration::from_secs(7));
 }
@@ -331,13 +381,22 @@ impl Model for FailsAfterOutput {
 #[tokio::test(start_paused = true)]
 async fn a_stream_that_already_showed_output_is_not_replayed() {
     let model = Arc::new(FailsAfterOutput(AtomicUsize::new(0)));
-    let agent = Agent::new("a").model(model.clone()).model_settings(ModelSettings {
-        retry: Some(ModelRetrySettings::new(3, RetryPolicy::new(|_| async { true }))),
-        ..Default::default()
-    });
+    let agent = Agent::new("a")
+        .model(model.clone())
+        .model_settings(ModelSettings {
+            retry: Some(ModelRetrySettings::new(
+                3,
+                RetryPolicy::new(|_| async { true }),
+            )),
+            ..Default::default()
+        });
     let mut streamed = Runner::run_streamed(agent, "hi", RunOptions::default());
     assert!(streamed.collect_events().await.is_err());
-    assert_eq!(model.0.load(Ordering::SeqCst), 1, "replaying would duplicate the delta");
+    assert_eq!(
+        model.0.load(Ordering::SeqCst),
+        1,
+        "replaying would duplicate the delta"
+    );
 }
 
 /// A model that never answers.
@@ -357,16 +416,29 @@ impl Model for Hangs {
 #[tokio::test(start_paused = true)]
 async fn each_attempt_has_its_own_timeout_and_a_timeout_is_retryable() {
     let model = Arc::new(Hangs(AtomicUsize::new(0)));
-    let agent = Agent::new("a").model(model.clone()).model_settings(ModelSettings {
-        timeout: Some(2.0),
-        retry: Some(ModelRetrySettings::new(1, retry_policies::network_error()).with_backoff(backoff())),
-        ..Default::default()
-    });
+    let agent = Agent::new("a")
+        .model(model.clone())
+        .model_settings(ModelSettings {
+            timeout: Some(2.0),
+            retry: Some(
+                ModelRetrySettings::new(1, retry_policies::network_error()).with_backoff(backoff()),
+            ),
+            ..Default::default()
+        });
     let start = Instant::now();
-    let err = Runner::run(&agent, "hi", RunOptions::default()).await.unwrap_err();
-    assert!(matches!(err, AgentsError::Model(ModelError::Timeout(ref t)) if t.timeout_seconds == 2.0), "{err}");
+    let err = Runner::run(&agent, "hi", RunOptions::default())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, AgentsError::Model(ModelError::Timeout(ref t)) if t.timeout_seconds == 2.0),
+        "{err}"
+    );
     assert_eq!(model.0.load(Ordering::SeqCst), 2);
-    assert_eq!(start.elapsed(), Duration::from_secs(2 + 1 + 2), "attempt, backoff, attempt");
+    assert_eq!(
+        start.elapsed(),
+        Duration::from_secs(2 + 1 + 2),
+        "attempt, backoff, attempt"
+    );
 }
 
 #[test]
@@ -399,7 +471,10 @@ fn retry_settings_merge_field_by_field_and_serialize_without_the_policy() {
     assert_eq!(merged.max_retries, Some(3));
     assert!(merged.policy.is_some(), "the inherited policy survives");
     let b = merged.backoff.expect("backoff");
-    assert_eq!((b.initial_delay, b.max_delay, b.jitter), (Some(1.0), Some(30.0), Some(false)));
+    assert_eq!(
+        (b.initial_delay, b.max_delay, b.jitter),
+        (Some(1.0), Some(30.0), Some(false))
+    );
 
     let json = serde_json::to_value(&merged).unwrap();
     assert_eq!(json["max_retries"], 3);

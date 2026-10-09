@@ -12,7 +12,8 @@ use crate::model::{Model, ModelRequest};
 use crate::usage::Usage;
 
 use super::chat_convert::{
-    chat_message_to_output_items_with, items_to_chat_messages, ChatConvertOptions, ReplayReasoningFn,
+    chat_message_to_output_items_with, items_to_chat_messages, ChatConvertOptions,
+    ReplayReasoningFn,
 };
 use super::{
     apply_model_settings_chat, decorate_request, is_json_response, map_reqwest, status_error,
@@ -29,7 +30,11 @@ pub struct OpenAIChatCompletionsModel {
 
 impl OpenAIChatCompletionsModel {
     /// Create with API key and optional custom base URL (for wiremock / proxies).
-    pub fn new(model: impl Into<String>, api_key: impl Into<String>, base_url: Option<&str>) -> Self {
+    pub fn new(
+        model: impl Into<String>,
+        api_key: impl Into<String>,
+        base_url: Option<&str>,
+    ) -> Self {
         Self {
             endpoint: OpenAiEndpoint::new(api_key, base_url),
             model: model.into(),
@@ -106,7 +111,9 @@ impl Model for OpenAIChatCompletionsModel {
         let body = build_chat_body(&self.model, &self.convert_options(), &request)?;
         // non-stream
         let resp = decorate_request(
-            self.endpoint.http.post(self.endpoint.url("/chat/completions")),
+            self.endpoint
+                .http
+                .post(self.endpoint.url("/chat/completions")),
             request.model_settings,
         )
         .headers(self.endpoint.auth_headers())
@@ -153,7 +160,9 @@ impl Model for OpenAIChatCompletionsModel {
         }
 
         let resp = decorate_request(
-            self.endpoint.http.post(self.endpoint.url("/chat/completions")),
+            self.endpoint
+                .http
+                .post(self.endpoint.url("/chat/completions")),
             request.model_settings,
         )
         .headers(self.endpoint.auth_headers())
@@ -267,7 +276,12 @@ impl Model for OpenAIChatCompletionsModel {
                         layout.open_message(&mut emitter).await;
                         let index = layout.message_index();
                         emitter
-                            .text_delta(FAKE_RESPONSES_ID, index, layout.text_content_index, content)
+                            .text_delta(
+                                FAKE_RESPONSES_ID,
+                                index,
+                                layout.text_content_index,
+                                content,
+                            )
                             .await;
                         layout.text.push_str(content);
                     }
@@ -322,7 +336,9 @@ impl Model for OpenAIChatCompletionsModel {
                                 self.model
                                     .to_lowercase()
                                     .contains("gemini")
-                                    .then(|| tc.pointer("/provider_specific_fields/thought_signature"))
+                                    .then(|| {
+                                        tc.pointer("/provider_specific_fields/thought_signature")
+                                    })
                                     .flatten()
                             })
                             .and_then(Value::as_str)
@@ -729,18 +745,15 @@ fn build_chat_body(
     }
     // Python: structured output becomes `response_format` for Chat Completions.
     if let Some(schema) = request.output_schema.filter(|s| !s.is_plain_text()) {
-        match schema.json_schema() {
-            Ok(schema_value) => {
-                body["response_format"] = json!({
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "final_output",
-                        "schema": schema_value,
-                        "strict": schema.is_strict_json_schema(),
-                    }
-                });
-            }
-            Err(_) => {}
+        if let Ok(schema_value) = schema.json_schema() {
+            body["response_format"] = json!({
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "final_output",
+                    "schema": schema_value,
+                    "strict": schema.is_strict_json_schema(),
+                }
+            });
         }
     }
     // Applied last, like Python: `extra_args` collides with anything already in the request
@@ -809,10 +822,15 @@ fn chat_payload_to_model_response(
     }
     // Python: every output item records the model (and response) that produced it.
     let mut provider_data = json!({"model": model});
-    if let Some(id) = payload.get("id").and_then(Value::as_str).filter(|id| !id.is_empty()) {
+    if let Some(id) = payload
+        .get("id")
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty())
+    {
         provider_data["response_id"] = id.into();
     }
-    let output: Vec<ResponseOutputItem> = chat_message_to_output_items_with(&message, Some(&provider_data));
+    let output: Vec<ResponseOutputItem> =
+        chat_message_to_output_items_with(&message, Some(&provider_data));
 
     let usage = chat_usage_or_completed_request(payload.get("usage"));
     let raw_usage = payload
