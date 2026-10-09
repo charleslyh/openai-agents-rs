@@ -95,7 +95,7 @@ impl Model for OpenAIChatCompletionsModel {
         &self,
         request: &crate::retry::ModelRetryAdviceRequest,
     ) -> Option<crate::retry::ModelRetryAdvice> {
-        crate::retry::openai_retry_advice(request)
+        crate::model::openai::retry_advice::openai_retry_advice(request)
     }
 
     async fn get_response(&self, request: ModelRequest<'_>) -> Result<ModelResponse, ModelError> {

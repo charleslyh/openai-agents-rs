@@ -10,7 +10,7 @@ use std::sync::Mutex;
 use serde_json::{json, Map, Value};
 
 use super::HandoffInputData;
-use crate::pyjson;
+use crate::support::pyjson;
 
 const DEFAULT_START: &str = "<CONVERSATION HISTORY>";
 const DEFAULT_END: &str = "</CONVERSATION HISTORY>";

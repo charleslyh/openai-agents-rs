@@ -21,7 +21,7 @@ use std::sync::Arc;
 use serde_json::Value;
 
 use crate::error::{AgentsError, UserError};
-use crate::run::{CallModelData, CallModelInputFilter, ModelInputData};
+use crate::model::{CallModelData, CallModelInputFilter, ModelInputData};
 
 /// Opening marker of the item that stands in for summarized history.
 pub(crate) const SUMMARY_OPEN: &str = "<conversation_summary>";

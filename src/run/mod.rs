@@ -9,26 +9,27 @@
 //! - `agent_loop` — the agent loop itself
 
 mod agent_loop;
+mod as_tool;
 pub mod config;
 pub mod errors;
+mod finalize;
+mod resolve;
+mod session_writer;
 pub(crate) mod tools;
 
-pub use agent_loop::default_provider;
 pub use config::{
-    default_trace_include_sensitive_data, get_default_openai_api, set_default_openai_api,
-    CallModelData, CallModelInputFilter, DefaultOpenAiApi, ModelInputData,
-    OutputGuardrailBlockedMessage, OutputGuardrailBlockedMessageArgs, RunConfig, RunOptions,
-    ToolErrorFormatter, ToolErrorFormatterArgs, ToolErrorKind, ToolExecutionConfig,
-    ToolNameCollisionPolicy, ToolNotFoundBehavior, DEFAULT_MAX_TURNS,
-    OUTPUT_GUARDRAIL_BLOCKED_TOOL_OUTPUT,
+    default_trace_include_sensitive_data, OutputGuardrailBlockedMessage,
+    OutputGuardrailBlockedMessageArgs, RunConfig, RunOptions, ToolErrorFormatter,
+    ToolErrorFormatterArgs, ToolErrorKind, ToolExecutionConfig, ToolNameCollisionPolicy,
+    ToolNotFoundBehavior, DEFAULT_MAX_TURNS, OUTPUT_GUARDRAIL_BLOCKED_TOOL_OUTPUT,
 };
 pub use errors::{
     RunErrorData, RunErrorHandler, RunErrorHandlerInput, RunErrorHandlerResult, RunErrorHandlers,
     RunHandledError,
 };
+pub use resolve::default_provider;
 
-pub(crate) use config::explicit_default_openai_api;
-pub(crate) use tools::build_agent_as_tool;
+pub(crate) use as_tool::build_agent_as_tool;
 
 use std::sync::{Arc, Mutex};
 

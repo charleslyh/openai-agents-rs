@@ -17,7 +17,6 @@ pub mod mcp;
 pub mod memory;
 pub mod model;
 pub mod model_settings;
-pub(crate) mod pyjson;
 pub mod result;
 pub mod retry;
 pub mod run;
@@ -25,6 +24,7 @@ pub mod run_context;
 pub mod run_state;
 pub mod stream_events;
 pub mod strict_schema;
+pub(crate) mod support;
 pub mod testing;
 pub mod tool;
 pub mod tool_guardrails;
@@ -78,9 +78,11 @@ pub use memory::{
     SessionSettings, Summarizer, DEFAULT_TRIGGER_TOKENS,
 };
 pub use model::{
-    default_model_provider, MissingProvider, Model, ModelProvider, ModelRef, ModelRequest,
-    ModelTracing, MultiProvider,
+    default_model_provider, CallModelData, CallModelInputFilter, MissingProvider, Model,
+    ModelInputData, ModelProvider, ModelRef, ModelRequest, ModelTracing, MultiProvider,
 };
+#[cfg(feature = "openai")]
+pub use model::{get_default_openai_api, set_default_openai_api, DefaultOpenAiApi};
 pub use model_settings::{ModelSettings, ToolChoice, Truncation, Verbosity};
 pub use result::{CancelMode, RunResult, RunResultStreaming, StreamingSnapshot};
 pub use retry::{
@@ -89,12 +91,11 @@ pub use retry::{
     RetryPolicyContext,
 };
 pub use run::{
-    default_trace_include_sensitive_data, get_default_openai_api, set_default_openai_api,
-    CallModelData, CallModelInputFilter, DefaultOpenAiApi, ModelInputData,
-    OutputGuardrailBlockedMessage, OutputGuardrailBlockedMessageArgs, RunConfig, RunErrorData,
-    RunErrorHandler, RunErrorHandlerInput, RunErrorHandlerResult, RunErrorHandlers,
-    RunHandledError, RunOptions, Runner, ToolErrorFormatter, ToolErrorFormatterArgs, ToolErrorKind,
-    ToolExecutionConfig, ToolNameCollisionPolicy, ToolNotFoundBehavior, DEFAULT_MAX_TURNS,
+    default_trace_include_sensitive_data, OutputGuardrailBlockedMessage,
+    OutputGuardrailBlockedMessageArgs, RunConfig, RunErrorData, RunErrorHandler,
+    RunErrorHandlerInput, RunErrorHandlerResult, RunErrorHandlers, RunHandledError, RunOptions,
+    Runner, ToolErrorFormatter, ToolErrorFormatterArgs, ToolErrorKind, ToolExecutionConfig,
+    ToolNameCollisionPolicy, ToolNotFoundBehavior, DEFAULT_MAX_TURNS,
     OUTPUT_GUARDRAIL_BLOCKED_TOOL_OUTPUT,
 };
 pub use run_context::{ContextValue, RunContextWrapper};

@@ -11,13 +11,22 @@ use crate::model_settings::ModelSettings;
 use crate::tool::FunctionTool;
 
 #[cfg(feature = "openai")]
+pub mod default_api;
+pub mod input;
+#[cfg(feature = "openai")]
 pub mod openai;
 pub mod provider;
 pub mod scripted;
 pub(crate) mod wire_events;
 
+#[cfg(feature = "openai")]
+pub use default_api::{get_default_openai_api, set_default_openai_api, DefaultOpenAiApi};
+pub use input::{CallModelData, CallModelInputFilter, ModelInputData};
 pub use provider::{MissingProvider, ModelProvider, MultiProvider};
 pub use scripted::ScriptedModel;
+
+#[cfg(feature = "openai")]
+pub(crate) use default_api::explicit_default_openai_api;
 
 /// A model reference: either a ready instance or a name resolved by a [`ModelProvider`].
 #[derive(Clone)]
@@ -76,7 +85,7 @@ pub fn default_model_provider() -> Arc<dyn ModelProvider> {
                         Arc::new(
                             provider
                                 .clone()
-                                .api(crate::run::DefaultOpenAiApi::Responses),
+                                .api(crate::model::DefaultOpenAiApi::Responses),
                         ),
                     );
                 Arc::new(router)

@@ -4,7 +4,7 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
@@ -12,21 +12,18 @@ use tokio::sync::mpsc;
 use crate::agent::{Agent, FunctionToolResult, ToolUseBehavior};
 use crate::error::{
     AgentsError, InputGuardrailTripwireTriggered, MaxTurnsExceeded, ModelError, ModelRefusalError,
-    OutputGuardrailTripwireTriggered, UserError,
+    UserError,
 };
-use crate::guardrail::{InputGuardrail, InputGuardrailResult, OutputGuardrail};
+use crate::guardrail::{InputGuardrail, InputGuardrailResult};
 use crate::handoffs::{nest_handoff_history, Handoff, HandoffInputData};
 use crate::items::apply_reasoning_item_id_policy;
 use crate::items::{
     extract_message_text, is_function_call, is_reasoning, required_function_call_parts,
     HandoffCallItem, HandoffOutputItem, InputLike, ItemHelpers, MessageOutputItem, ModelResponse,
-    ReasoningItem, RunItem, ToolApprovalItem, ToolCallItem,
+    ReasoningItem, RunItem, ToolCallItem,
 };
-use crate::lifecycle::RunHooks;
-use crate::memory::{prepare_input_with_session, Session};
-use crate::model::{
-    default_model_provider, Model, ModelInput, ModelProvider, ModelRef, ModelRequest, ModelTracing,
-};
+use crate::memory::prepare_input_with_session;
+use crate::model::{CallModelData, Model, ModelInput, ModelInputData, ModelRequest, ModelTracing};
 use crate::result::{InterruptSnapshot, RunResult, StreamingSnapshot};
 use crate::run_context::RunContextWrapper;
 use crate::run_state::{ApprovalStore, RunState};
@@ -37,13 +34,13 @@ use crate::tracing::{
 };
 use crate::usage::Usage;
 
-use super::config::{
-    resolve_blocked_message, CallModelData, ModelInputData, OutputGuardrailBlockedMessage,
-    RunConfig, RunOptions,
-};
+use super::config::{OutputGuardrailBlockedMessage, RunOptions};
 use super::errors::{
     accept_handler_output, build_run_error_data, invoke_run_error_handler, RunHandledError,
 };
+use super::finalize::{finalize_run, finished_result, interrupted_result};
+use super::resolve::{collect_agents, resolve_agent_by_name, resolve_model};
+use super::session_writer::SessionWriter;
 use super::tools::{
     execute_planned_tools, finalize_tool_output, has_tool_output, plan_tool_calls,
     push_tool_output, resolve_tool_name_collisions, tool_output_item, tools_for_agent,
@@ -209,75 +206,6 @@ pub(crate) async fn run_loop(
 /// Python saves the input before the first model call and each turn's items when the turn ends,
 /// so a run that fails or is cut off keeps the turns it completed. `saved_items` counts the
 /// leading `generated_items` already stored.
-struct SessionWriter {
-    session: Arc<dyn Session>,
-    policy: Option<crate::items::ReasoningItemIdPolicy>,
-    /// The run's input, until it has been saved.
-    pending_input: Option<Vec<Value>>,
-    saved_items: usize,
-}
-
-impl SessionWriter {
-    fn new(session: Arc<dyn Session>, policy: Option<crate::items::ReasoningItemIdPolicy>) -> Self {
-        Self {
-            session,
-            policy,
-            pending_input: None,
-            saved_items: 0,
-        }
-    }
-
-    /// Save the turn whose final output an output guardrail withheld.
-    ///
-    /// Python (`blocked_output.py`) keeps the turn's tool calls but replaces every tool output
-    /// with the placeholder, and leaves out the model's own messages. A turn that holds a
-    /// reasoning item is not saved at all, because reasoning cannot be replayed without the
-    /// items it led up to. Earlier turns were saved when they ended.
-    async fn save_blocked_turn(
-        &mut self,
-        items: &[RunItem],
-        placeholder: &str,
-    ) -> Result<(), AgentsError> {
-        let mut out = self.pending_input.take().unwrap_or_default();
-        let turn = &items[self.saved_items.min(items.len())..];
-        if !turn.iter().any(|i| matches!(i, RunItem::Reasoning(_))) {
-            for item in turn {
-                match item {
-                    RunItem::ToolCall(_) => out.push(item.raw_item().clone()),
-                    RunItem::ToolCallOutput(_) => {
-                        let mut raw = item.raw_item().clone();
-                        raw["output"] = Value::String(placeholder.to_string());
-                        out.push(raw);
-                    }
-                    _ => {}
-                }
-            }
-        }
-        self.saved_items = items.len();
-        if !out.is_empty() {
-            self.session.add_items(out).await?;
-        }
-        Ok(())
-    }
-
-    /// Save the input (once) and every model-visible item not saved yet.
-    async fn flush(&mut self, items: &[RunItem]) -> Result<(), AgentsError> {
-        let mut out = self.pending_input.take().unwrap_or_default();
-        let start = self.saved_items.min(items.len());
-        out.extend(
-            items[start..]
-                .iter()
-                .filter(|i| i.is_model_input())
-                .map(|i| apply_reasoning_item_id_policy(i.raw_item(), self.policy)),
-        );
-        self.saved_items = items.len();
-        if !out.is_empty() {
-            self.session.add_items(out).await?;
-        }
-        Ok(())
-    }
-}
-
 async fn run_loop_inner(
     starting_agent: Agent,
     start: LoopStart,
@@ -1199,7 +1127,7 @@ async fn run_loop_inner(
                 on_handoff(context.clone(), input).await?;
             }
 
-            let transfer = crate::pyjson::dumps(&json!({"assistant": h.agent.name}));
+            let transfer = crate::support::pyjson::dumps(&json!({"assistant": h.agent.name}));
             let source_agent_name = current_agent.name.clone();
             let target_agent_name = h.agent.name.clone();
             let out_item = RunItem::HandoffOutput(HandoffOutputItem {
@@ -1414,208 +1342,4 @@ async fn run_loop_inner(
             ));
         }
     }
-}
-
-/// Run `on_agent_end` hooks plus output guardrails, then build the final [`RunResult`].
-///
-/// Python runs output guardrails concurrently after the final output is known and raises
-/// `OutputGuardrailTripwireTriggered` if any of them tripped.
-#[allow(clippy::too_many_arguments)]
-async fn finalize_run(
-    input: InputLike,
-    new_items: Vec<RunItem>,
-    raw_responses: Vec<ModelResponse>,
-    final_output: Value,
-    agent: &Agent,
-    max_turns: Option<usize>,
-    usage: Usage,
-    context: &RunContextWrapper,
-    hooks: Option<&Arc<dyn RunHooks>>,
-    extra_output_guardrails: &[OutputGuardrail],
-    input_guardrail_results: Vec<InputGuardrailResult>,
-    tool_origin: Option<&RunConfig>,
-    session_writer: Option<&mut SessionWriter>,
-) -> Result<RunResult, AgentsError> {
-    // Python closes the turn span before the run's end hooks and output guardrails.
-    let _outside_turn = crate::tracing::leave_turn_span();
-    if let Some(h) = hooks {
-        h.on_agent_end(context.clone(), agent, &final_output).await;
-    }
-    if let Some(ah) = &agent.hooks {
-        ah.on_end(context.clone(), agent, &final_output).await;
-    }
-
-    let guardrails: Vec<OutputGuardrail> = extra_output_guardrails
-        .iter()
-        .chain(agent.output_guardrails.iter())
-        .cloned()
-        .collect();
-    let mut output_guardrail_results = Vec::new();
-    if !guardrails.is_empty() {
-        let agent = Arc::new(agent.clone());
-        let futs = guardrails.iter().map(|g| {
-            let g = g.clone();
-            let agent = Arc::clone(&agent);
-            let output = final_output.clone();
-            let ctx = context.clone();
-            async move { g.run(agent, output, ctx).await }
-        });
-        let results = futures::future::join_all(futs).await;
-        let tripped = results
-            .iter()
-            .find(|r| r.output.tripwire_triggered)
-            .cloned();
-        output_guardrail_results = results;
-        if let Some(mut result) = tripped {
-            // Python (`blocked_output.py`): a final output that came from a tool is withheld, so
-            // the error carries a data-free placeholder instead of the tool's output, and so
-            // does the session.
-            if let Some(run_config) = tool_origin {
-                let placeholder =
-                    resolve_blocked_message(run_config, &result.guardrail_name, &agent, context);
-                if let Some(writer) = session_writer {
-                    writer.save_blocked_turn(&new_items, &placeholder).await?;
-                }
-                result.agent_output = Value::String(placeholder);
-                result.output.output_info = Value::Null;
-            }
-            return Err(OutputGuardrailTripwireTriggered { result }.into());
-        }
-    }
-
-    let mut result = finished_result(
-        input,
-        new_items,
-        raw_responses,
-        final_output,
-        Arc::new(agent.clone()),
-        max_turns,
-        usage,
-    );
-    result.input_guardrail_results = input_guardrail_results;
-    result.output_guardrail_results = output_guardrail_results;
-    Ok(result)
-}
-
-fn finished_result(
-    input: InputLike,
-    new_items: Vec<RunItem>,
-    raw_responses: Vec<ModelResponse>,
-    final_output: Value,
-    last_agent: Arc<Agent>,
-    max_turns: Option<usize>,
-    usage: Usage,
-) -> RunResult {
-    RunResult {
-        input,
-        new_items,
-        raw_responses,
-        final_output,
-        last_agent_name: last_agent.name.clone(),
-        last_agent,
-        max_turns,
-        usage,
-        interruptions: Vec::new(),
-        input_guardrail_results: Vec::new(),
-        output_guardrail_results: Vec::new(),
-        tool_input_guardrail_results: Vec::new(),
-        tool_output_guardrail_results: Vec::new(),
-        reasoning_item_id_policy: None,
-        interrupt_state: None,
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn interrupted_result(
-    input: InputLike,
-    new_items: Vec<RunItem>,
-    raw_responses: Vec<ModelResponse>,
-    last_agent: Arc<Agent>,
-    max_turns: Option<usize>,
-    usage: Usage,
-    interruptions: Vec<ToolApprovalItem>,
-    interrupt_state: InterruptSnapshot,
-) -> RunResult {
-    RunResult {
-        input,
-        new_items,
-        raw_responses,
-        final_output: Value::Null,
-        last_agent_name: last_agent.name.clone(),
-        last_agent,
-        max_turns,
-        usage,
-        interruptions,
-        input_guardrail_results: interrupt_state.input_guardrail_results.clone(),
-        output_guardrail_results: Vec::new(),
-        tool_input_guardrail_results: Vec::new(),
-        tool_output_guardrail_results: Vec::new(),
-        reasoning_item_id_policy: None,
-        interrupt_state: Some(interrupt_state),
-    }
-}
-
-/// Record `root` and every agent it owns through `handoff(..)`, by name. Late-bound handoffs
-/// are stand-ins and are skipped; the first agent seen under a name is kept.
-fn collect_agents(root: &Agent, into: &mut HashMap<String, Agent>) {
-    if into.contains_key(&root.name) {
-        return;
-    }
-    into.insert(root.name.clone(), root.clone());
-    for h in root.handoffs.iter().filter(|h| !h.late_bound) {
-        collect_agents(&h.agent, into);
-    }
-}
-
-fn resolve_agent_by_name(root: &Agent, name: &str) -> Result<Agent, AgentsError> {
-    if root.name == name {
-        return Ok(root.clone());
-    }
-    let mut stack = vec![root.clone()];
-    while let Some(agent) = stack.pop() {
-        for h in agent.handoffs.iter().filter(|h| !h.late_bound) {
-            if h.agent.name == name {
-                return Ok((*h.agent).clone());
-            }
-            stack.push((*h.agent).clone());
-        }
-    }
-    Err(UserError::new(format!("Agent `{name}` not found in starting agent graph")).into())
-}
-
-static DEFAULT_MODEL_PROVIDER: OnceLock<Arc<dyn ModelProvider>> = OnceLock::new();
-
-/// Lazily-created default provider (Python: `RunConfig.model_provider` fallback).
-pub fn default_provider() -> &'static Arc<dyn ModelProvider> {
-    DEFAULT_MODEL_PROVIDER.get_or_init(default_model_provider)
-}
-
-/// Resolve the model for a turn.
-///
-/// Order matches Python: `RunConfig.model` (instance or name) → `Agent.model` →
-/// `Agent.model_name`, with names resolved through the configured provider.
-fn resolve_model(agent: &Agent, run_config: &RunConfig) -> Result<Arc<dyn Model>, AgentsError> {
-    let provider: &Arc<dyn ModelProvider> = match &run_config.model_provider {
-        Some(p) => p,
-        None => default_provider(),
-    };
-
-    if let Some(ModelRef::Instance(m)) = &run_config.model {
-        return Ok(Arc::clone(m));
-    }
-    if let Some(ModelRef::Name(name)) = &run_config.model {
-        return Ok(provider.get_model(Some(name))?);
-    }
-    if let Some(m) = &agent.model {
-        return Ok(Arc::clone(m));
-    }
-    if let Some(name) = &agent.model_name {
-        return Ok(provider.get_model(Some(name))?);
-    }
-    Err(UserError::new(
-        "No model configured. Bind a Model (e.g. ScriptedModel) via `Agent::model`, set \
-         `Agent::model_name` / `RunConfig.model` to a name resolvable by a ModelProvider, or \
-         enable the `openai` feature with OPENAI_API_KEY set.",
-    )
-    .into())
 }
