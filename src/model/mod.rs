@@ -203,7 +203,7 @@ pub trait Model: Send + Sync {
             &response.usage,
             "none",
         );
-        wire_events::emit_response_stream(&raw_tx, wire).await;
+        wire_events::emit::emit_response_stream(&raw_tx, wire).await;
         Ok(response)
     }
 }
