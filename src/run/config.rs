@@ -1,7 +1,7 @@
 //! Run configuration: `RunConfig`, `RunOptions` and the settings hanging off them
 //! (Python: `run_config.py`).
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use serde_json::Value;
 
@@ -12,7 +12,7 @@ use crate::handoffs::{HandoffHistoryMapper, HandoffInputFilter};
 use crate::items::ReasoningItemIdPolicy;
 use crate::lifecycle::RunHooks;
 use crate::memory::{Session, SessionInputCallback, SessionSettings};
-use crate::model::{ModelProvider, ModelRef};
+use crate::model::{CallModelData, CallModelInputFilter, ModelInputData, ModelProvider, ModelRef};
 use crate::model_settings::ModelSettings;
 use crate::run_context::{ContextValue, RunContextWrapper};
 use crate::tracing::TracingConfig;
@@ -21,39 +21,6 @@ use super::errors::RunErrorHandlers;
 
 /// Default max turns (Python: `DEFAULT_MAX_TURNS = 10`).
 pub const DEFAULT_MAX_TURNS: usize = 10;
-
-/// Which HTTP API the OpenAI-protocol models use by default (Python: `set_default_openai_api`).
-///
-/// Unlike Python, whose default is Responses, the default here is Chat Completions: this SDK
-/// targets any server that speaks the OpenAI protocol, and Chat Completions is the one nearly
-/// all of them implement (D-I).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum DefaultOpenAiApi {
-    /// Responses API.
-    Responses,
-    /// Chat Completions API (default).
-    #[default]
-    ChatCompletions,
-}
-
-static DEFAULT_OPENAI_API: Mutex<Option<DefaultOpenAiApi>> = Mutex::new(None);
-
-/// Set the default OpenAI API (Python: `set_default_openai_api`).
-///
-/// An explicit choice applies to every provider that has not been given its own (see D-I).
-pub fn set_default_openai_api(api: DefaultOpenAiApi) {
-    *DEFAULT_OPENAI_API.lock().expect("api lock") = Some(api);
-}
-
-/// Get the default API: the explicit choice, else Chat Completions.
-pub fn get_default_openai_api() -> DefaultOpenAiApi {
-    explicit_default_openai_api().unwrap_or_default()
-}
-
-/// The API chosen with [`set_default_openai_api`], if any.
-pub(crate) fn explicit_default_openai_api() -> Option<DefaultOpenAiApi> {
-    *DEFAULT_OPENAI_API.lock().expect("api lock")
-}
 
 /// Default for `trace_include_sensitive_data`, mirroring Python's
 /// `OPENAI_AGENTS_TRACE_INCLUDE_SENSITIVE_DATA` (defaults to true).
@@ -66,39 +33,6 @@ pub fn default_trace_include_sensitive_data() -> bool {
         Err(_) => true,
     }
 }
-
-/// The input and instructions about to be sent to the model
-/// (Python: `ModelInputData`).
-#[derive(Debug, Clone)]
-pub struct ModelInputData {
-    /// Responses input items.
-    pub input: Vec<Value>,
-    /// System instructions.
-    pub instructions: Option<String>,
-}
-
-/// Payload given to [`RunConfig::call_model_input_filter`] (Python: `CallModelData`).
-#[derive(Clone)]
-pub struct CallModelData {
-    /// The model input as prepared by the runner.
-    pub model_data: ModelInputData,
-    /// The agent about to be called.
-    pub agent: Arc<Agent>,
-    /// The run context.
-    pub context: RunContextWrapper,
-}
-
-/// Rewrites the model input right before each model call (Python: `CallModelInputFilter`).
-///
-/// The filtered data is used for this call only; the run history is unchanged.
-pub type CallModelInputFilter = Arc<
-    dyn Fn(
-            CallModelData,
-        ) -> std::pin::Pin<
-            Box<dyn std::future::Future<Output = Result<ModelInputData, AgentsError>> + Send>,
-        > + Send
-        + Sync,
->;
 
 /// Default text that replaces a tool output withheld by an output guardrail
 /// (Python: `OUTPUT_GUARDRAIL_BLOCKED_TOOL_OUTPUT`).

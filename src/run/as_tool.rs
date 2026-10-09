@@ -1,0 +1,81 @@
+//! `Agent.as_tool`: run an agent as a function tool (Python: `Agent.as_tool`).
+
+use serde_json::{json, Value};
+
+use crate::agent::{Agent, AsToolConfig};
+use crate::error::AgentsError;
+use crate::tool::{FunctionTool, ToolResult};
+
+use super::agent_loop::take_nested_resume_state;
+use super::config::RunOptions;
+use super::Runner;
+
+/// Build an `Agent.as_tool` FunctionTool (Python: `Agent.as_tool`).
+pub(crate) fn build_agent_as_tool(agent: &Agent, config: AsToolConfig) -> FunctionTool {
+    let nested_agent = agent.clone();
+    let tool_name = config
+        .name
+        .unwrap_or_else(|| crate::handoffs::transform_string_function_style(&nested_agent.name));
+    let tool_description = config.description.unwrap_or_else(|| {
+        nested_agent
+            .handoff_description
+            .clone()
+            .unwrap_or_else(|| format!("Agent tool: {}", nested_agent.name))
+    });
+    let max_turns = config.max_turns;
+    let needs = config.needs_approval;
+
+    FunctionTool::new_with_result(
+        tool_name,
+        tool_description,
+        json!({
+            "type": "object",
+            "properties": {
+                "input": { "type": "string", "description": "Input for the agent" }
+            },
+            "required": ["input"],
+            "additionalProperties": false
+        }),
+        move |ctx, args| {
+            let nested_agent = nested_agent.clone();
+            async move {
+                let input_text = extract_as_tool_input(&args)?;
+                let mut opts = RunOptions::default();
+                if let Some(mt) = max_turns {
+                    opts.max_turns = Some(mt);
+                }
+
+                let result = if let Some(state) = take_nested_resume_state(&ctx.tool_call_id) {
+                    Runner::run_state(&nested_agent, state, opts).await?
+                } else {
+                    Runner::run(&nested_agent, input_text, opts).await?
+                };
+
+                if result.is_interrupted() {
+                    let nested_state = result.to_state()?;
+                    return Ok(ToolResult::interrupted(
+                        result.interruptions.clone(),
+                        nested_state,
+                    ));
+                }
+
+                Ok(ToolResult::output(result.final_output))
+            }
+        },
+    )
+    .with_needs_approval(needs)
+}
+
+fn extract_as_tool_input(args: &str) -> Result<String, AgentsError> {
+    let v: Value = serde_json::from_str(args)
+        .map_err(|e| AgentsError::tool_with_source("invalid agent tool args", e))?;
+    if let Some(s) = v.get("input").and_then(|x| x.as_str()) {
+        return Ok(s.to_string());
+    }
+    if let Some(s) = v.as_str() {
+        return Ok(s.to_string());
+    }
+    Err(AgentsError::tool(
+        "agent tool requires string field `input`",
+    ))
+}
