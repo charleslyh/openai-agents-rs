@@ -85,7 +85,6 @@ ALLOWED_CYCLES: list[frozenset[str]] = [
             "tool_guardrails",
         }
     ),
-    frozenset({"context", "memory"}),
 ]
 
 # Third-party crates re-exported at the crate root for the `#[function_tool]` macro
@@ -107,13 +106,18 @@ def edges() -> list[tuple[Path, str, str]]:
     for path in sorted(SRC.rglob("*.rs")):
         rel = path.relative_to(SRC)
         src_module = module_of(rel)
-        text = path.read_text(encoding="utf-8")
+        # Doc comments mention paths in intra-doc links; those are not compile dependencies.
+        code = "\n".join(
+            line
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if not line.lstrip().startswith("//")
+        )
         targets = set()
-        for line in text.splitlines():
+        for line in code.splitlines():
             m = USE_RE.match(line)
             if m:
                 targets.add(m.group(1))
-        targets.update(PATH_RE.findall(text))
+        targets.update(PATH_RE.findall(code))
         for target in sorted(targets):
             if target == src_module or target in REEXPORTED_CRATES:
                 continue
