@@ -9,35 +9,11 @@ use std::sync::Arc;
 use serde_json::Value;
 
 use crate::agent::Agent;
+use crate::error::payload as guardrail_payload;
 use crate::items::InputLike;
 use crate::run_context::RunContextWrapper;
 
-/// Result of a guardrail function (Python: `GuardrailFunctionOutput`).
-#[derive(Debug, Clone)]
-pub struct GuardrailFunctionOutput {
-    /// Optional details about the checks that were performed.
-    pub output_info: Value,
-    /// Whether the guardrail halted the run.
-    pub tripwire_triggered: bool,
-}
-
-impl GuardrailFunctionOutput {
-    /// A guardrail that did not trigger the tripwire.
-    pub fn pass(output_info: Value) -> Self {
-        Self {
-            output_info,
-            tripwire_triggered: false,
-        }
-    }
-
-    /// A guardrail that triggered the tripwire.
-    pub fn trip(output_info: Value) -> Self {
-        Self {
-            output_info,
-            tripwire_triggered: true,
-        }
-    }
-}
+pub use guardrail_payload::{GuardrailFunctionOutput, InputGuardrailResult, OutputGuardrailResult};
 
 /// Guardrail body: `(context, agent, input) -> GuardrailFunctionOutput`.
 pub type InputGuardrailFn = Arc<
@@ -202,26 +178,4 @@ where
     Fut: Future<Output = GuardrailFunctionOutput> + Send + 'static,
 {
     OutputGuardrail::new(name, f)
-}
-
-/// Result of running an input guardrail (Python: `InputGuardrailResult`).
-#[derive(Debug, Clone)]
-pub struct InputGuardrailResult {
-    /// Guardrail name.
-    pub guardrail_name: String,
-    /// Guardrail output.
-    pub output: GuardrailFunctionOutput,
-}
-
-/// Result of running an output guardrail (Python: `OutputGuardrailResult`).
-#[derive(Debug, Clone)]
-pub struct OutputGuardrailResult {
-    /// Guardrail name.
-    pub guardrail_name: String,
-    /// Agent whose output was checked.
-    pub agent_name: String,
-    /// The checked output.
-    pub agent_output: Value,
-    /// Guardrail output.
-    pub output: GuardrailFunctionOutput,
 }

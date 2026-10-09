@@ -2,6 +2,15 @@
 
 use thiserror::Error;
 
+pub mod payload;
+mod retry_after;
+
+pub use payload::{
+    default_tool_timeout_error_message, GuardrailFunctionOutput, InputGuardrailResult,
+    OutputGuardrailResult, ToolGuardrailBehavior, ToolGuardrailFunctionOutput,
+};
+pub(crate) use retry_after::retry_after_from_headers;
+
 /// Top-level Agents SDK error.
 #[derive(Debug, Error)]
 pub enum AgentsError {
@@ -100,7 +109,7 @@ pub struct ToolInputGuardrailTripwireTriggered {
     /// Name of the guardrail that tripped.
     pub guardrail_name: String,
     /// What the guardrail returned.
-    pub output: crate::tool_guardrails::ToolGuardrailFunctionOutput,
+    pub output: ToolGuardrailFunctionOutput,
 }
 
 /// Raised when a tool output guardrail asks to stop the run.
@@ -110,12 +119,12 @@ pub struct ToolOutputGuardrailTripwireTriggered {
     /// Name of the guardrail that tripped.
     pub guardrail_name: String,
     /// What the guardrail returned.
-    pub output: crate::tool_guardrails::ToolGuardrailFunctionOutput,
+    pub output: ToolGuardrailFunctionOutput,
 }
 
 /// Raised when a function tool invocation exceeds its timeout (Python: `ToolTimeoutError`).
 #[derive(Debug, Error, Clone)]
-#[error("{}", crate::tool::default_tool_timeout_error_message(tool_name, *timeout_seconds))]
+#[error("{}", default_tool_timeout_error_message(tool_name, *timeout_seconds))]
 pub struct ToolTimeoutError {
     /// Name of the tool that timed out.
     pub tool_name: String,
@@ -208,10 +217,7 @@ impl ModelStatusError {
 
     /// Seconds the provider asked the client to wait (`retry-after-ms`, then `retry-after`).
     pub fn retry_after(&self) -> Option<f64> {
-        crate::retry::retry_after_from_headers(
-            self.header("retry-after-ms"),
-            self.header("retry-after"),
-        )
+        retry_after_from_headers(self.header("retry-after-ms"), self.header("retry-after"))
     }
 }
 
@@ -243,7 +249,7 @@ pub struct ModelTimeoutError {
 #[error("Input guardrail `{}` triggered a tripwire", result.guardrail_name)]
 pub struct InputGuardrailTripwireTriggered {
     /// The guardrail result that tripped.
-    pub result: crate::guardrail::InputGuardrailResult,
+    pub result: InputGuardrailResult,
 }
 
 /// Raised when an output guardrail trips (Python: `OutputGuardrailTripwireTriggered`).
@@ -251,7 +257,7 @@ pub struct InputGuardrailTripwireTriggered {
 #[error("Output guardrail `{}` triggered a tripwire", result.guardrail_name)]
 pub struct OutputGuardrailTripwireTriggered {
     /// The guardrail result that tripped.
-    pub result: crate::guardrail::OutputGuardrailResult,
+    pub result: OutputGuardrailResult,
 }
 
 /// Invalid configuration or caller misuse (Python: `UserError`).

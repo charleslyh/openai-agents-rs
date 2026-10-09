@@ -58,10 +58,6 @@ TIERS: dict[str, int] = {
 
 # Known upward edges. Every entry needs a refactor id and a removal plan.
 EXCEPTIONS: dict[tuple[str, str], str] = {
-    ("error", "guardrail"): "C1: guardrail result payloads have to move down to tier 1",
-    ("error", "tool_guardrails"): "C1: ToolGuardrailFunctionOutput has to move down to tier 1",
-    ("error", "tool"): "C1: default_tool_timeout_error_message has to move down to tier 1",
-    ("error", "retry"): "C1: retry_after_from_headers has to move down to tier 1",
     ("agent", "mcp"): "C6: agent may only use the mcp contract, not client/transport/manager",
     ("agent", "run"): "C3: as_tool; the runner entry point has to move under core",
     ("tool", "run_state"): "C4: nested RunState in ToolResult",

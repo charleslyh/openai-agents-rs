@@ -11,60 +11,10 @@ use std::sync::Arc;
 use serde_json::Value;
 
 use crate::agent::Agent;
+use crate::error::payload as tool_guardrail_payload;
 use crate::tool::ToolContext;
 
-/// How a tool guardrail result is acted on (Python: `Allow` / `RejectContent` / `RaiseException`
-/// behavior).
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub enum ToolGuardrailBehavior {
-    /// Carry on normally (default).
-    #[default]
-    Allow,
-    /// Skip the call (input) or discard the result (output) and send `message` to the model.
-    RejectContent {
-        /// Text the model sees instead of the tool result.
-        message: String,
-    },
-    /// Stop the run with a tripwire error.
-    RaiseException,
-}
-
-/// Result of a tool guardrail function (Python: `ToolGuardrailFunctionOutput`).
-#[derive(Debug, Clone, PartialEq)]
-pub struct ToolGuardrailFunctionOutput {
-    /// Free-form details about the checks that ran.
-    pub output_info: Value,
-    /// What to do about it.
-    pub behavior: ToolGuardrailBehavior,
-}
-
-impl ToolGuardrailFunctionOutput {
-    /// Allow the call to continue.
-    pub fn allow(output_info: Value) -> Self {
-        Self {
-            output_info,
-            behavior: ToolGuardrailBehavior::Allow,
-        }
-    }
-
-    /// Reject the call or result and tell the model `message` instead.
-    pub fn reject_content(message: impl Into<String>, output_info: Value) -> Self {
-        Self {
-            output_info,
-            behavior: ToolGuardrailBehavior::RejectContent {
-                message: message.into(),
-            },
-        }
-    }
-
-    /// Stop the run.
-    pub fn raise_exception(output_info: Value) -> Self {
-        Self {
-            output_info,
-            behavior: ToolGuardrailBehavior::RaiseException,
-        }
-    }
-}
+pub use tool_guardrail_payload::{ToolGuardrailBehavior, ToolGuardrailFunctionOutput};
 
 /// Data given to a tool input guardrail (Python: `ToolInputGuardrailData`).
 #[derive(Debug, Clone)]
