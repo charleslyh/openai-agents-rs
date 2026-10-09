@@ -19,6 +19,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Formatting
         run: cargo fmt --all -- --check
+      - name: Module dependency direction
+        # The tier map and the tracked upward edges live in the script; the exception list must
+        # only ever shrink. See docs/refactor/01-principles.md.
+        run: python3 scripts/check_module_deps.py
       - name: Clippy (all features, all targets)
         # `-D warnings` blocks every lint that is not part of the tracked backlog declared in
         # `[workspace.lints]` in Cargo.toml. That list must only ever shrink.
