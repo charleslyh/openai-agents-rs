@@ -22,8 +22,10 @@ use openai_agents::{
 };
 use serde_json::{json, Value};
 
+mod common;
+
 fn root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    common::repo_root()
 }
 
 /// Held for a whole test, so no two tests create sockets and spawn processes at the same time.
@@ -61,16 +63,10 @@ impl std::ops::Deref for Python {
 
 fn python() -> Option<Python> {
     let serial = one_at_a_time();
-    let path = root().join(".venv/bin/python");
-    if path.exists() {
-        Some(Python {
-            path,
-            _serial: serial,
-        })
-    } else {
-        eprintln!("skipping: no .venv (run conformance/setup_venv.sh)");
-        None
-    }
+    common::oracle_python().map(|path| Python {
+        path,
+        _serial: serial,
+    })
 }
 
 fn server_script() -> PathBuf {

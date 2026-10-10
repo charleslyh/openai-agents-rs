@@ -26,7 +26,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC = ROOT / "src"
+SRC = ROOT / "crates" / "core" / "src"
 
 # Tier 0 has no crate-internal dependencies; each higher tier may depend on any lower tier.
 TIERS: dict[str, int] = {
@@ -178,6 +178,10 @@ def main() -> int:
     violations: list[str] = []
     unknown: set[str] = set()
     all_edges = edges()
+    if not SRC.is_dir() or not all_edges:
+        # A gate that checks nothing must not report success: it means the source moved.
+        print(f"no module dependencies found under {SRC}; did the sources move?", file=sys.stderr)
+        return 1
 
     for rel, src_module, target in all_edges:
         if src_module not in TIERS:

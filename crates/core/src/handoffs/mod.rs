@@ -207,7 +207,7 @@ pub fn handoff(agent: Agent) -> Handoff {
 /// [`Handoff::with_tool_description`] when the model needs more than the default text.
 ///
 /// ```
-/// use openai_agents::{handoff, handoff_to_name, Agent};
+/// use openai_agents_core::{handoff, handoff_to_name, Agent};
 ///
 /// let billing = Agent::new("Billing").handoffs(vec![handoff_to_name("Triage")]);
 /// let triage = Agent::new("Triage").handoffs(vec![handoff(billing)]);

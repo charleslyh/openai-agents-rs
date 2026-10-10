@@ -13,8 +13,10 @@ use openai_agents::model::openai::chat_convert::{
 };
 use serde_json::Value;
 
+mod common;
+
 fn root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    common::repo_root()
 }
 
 fn cases() -> Value {

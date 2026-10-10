@@ -3,6 +3,8 @@
 //! Each `conformance/scenarios/<name>.json` is run here and by `conformance/run_parity.py`; the
 //! Python run writes `<name>.golden.json`, which this test then compares against.
 
+mod common;
+
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -128,7 +130,7 @@ struct Golden {
 }
 
 fn scenario_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("conformance/scenarios")
+    common::repo_root().join("conformance/scenarios")
 }
 
 fn load_scenarios() -> Vec<(PathBuf, Scenario)> {

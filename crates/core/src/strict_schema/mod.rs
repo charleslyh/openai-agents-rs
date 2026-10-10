@@ -46,7 +46,7 @@ const SCHEMA_BUDGET_ERROR: &str =
 /// schema cannot be made strict without changing the values it accepts.
 ///
 /// ```rust
-/// use openai_agents::strict_schema::ensure_strict_json_schema;
+/// use openai_agents_core::strict_schema::ensure_strict_json_schema;
 /// use serde_json::json;
 ///
 /// let strict = ensure_strict_json_schema(&json!({

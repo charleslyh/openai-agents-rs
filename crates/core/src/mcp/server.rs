@@ -15,7 +15,7 @@ use super::{McpCallToolResult, McpTool};
 
 /// A source of tools (Python: `MCPServer`).
 ///
-/// [`McpClient`] implements it for real servers; implement it yourself for an in-process source.
+/// `McpClient` implements it for real servers; implement it yourself for an in-process source.
 #[async_trait]
 pub trait McpServer: std::fmt::Debug + Send + Sync {
     /// Name used in messages and traces.

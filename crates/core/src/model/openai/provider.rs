@@ -100,7 +100,7 @@ impl OpenAIProvider {
 ///
 /// ```no_run
 /// use std::sync::Arc;
-/// use openai_agents::{CompatibleProvider, DefaultOpenAiApi, MultiProvider};
+/// use openai_agents_core::{CompatibleProvider, DefaultOpenAiApi, MultiProvider};
 ///
 /// let router = MultiProvider::new()
 ///     .register("local", Arc::new(CompatibleProvider::new("http://localhost:8000/v1")))

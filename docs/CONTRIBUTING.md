@@ -57,7 +57,7 @@ Regenerating a golden is a deliberate act, never part of `check`:
 | 1 | `ScriptedModel` behavior, no HTTP client in the build | `cargo test --no-default-features` |
 | 1.5 | Invariants over generated inputs | `cargo test --test property_core` |
 | 2 | OpenAI HTTP contracts via wiremock | `cargo test` / `cargo test --all-features` |
-| 2.5 | The whole request body, so a drift in an unasserted field is still reviewed | `cargo test --test openai_wiremock` (`tests/snapshots/`, insta) |
+| 2.5 | The whole request body, so a drift in an unasserted field is still reviewed | `cargo test --test openai_wiremock` (`crates/facade/tests/snapshots/`, insta) |
 | 3 | Python oracle parity + MCP interop (two implementations over the wire) | `run_parity.py --check`, `cargo test --test parity_scenarios --test mcp_interop --test chat_convert_parity` |
 | 4 | A live provider still accepts what we send (nightly, non-blocking) | `.github/workflows/nightly.yml`, needs `OPENAI_API_KEY` / `OPENAI_MODEL` secrets |
 | 5 | Per-turn latency and session cost | `cargo bench` |
@@ -68,7 +68,7 @@ Regenerating a golden is a deliberate act, never part of `check`:
 Regenerating an insta snapshot is deliberate, like a parity golden:
 
 ```bash
-INSTA_UPDATE=always cargo test --test openai_wiremock   # writes tests/snapshots/*.snap
+INSTA_UPDATE=always cargo test --test openai_wiremock   # writes crates/facade/tests/snapshots/*.snap
 # or: cargo insta review
 ```
 
@@ -100,4 +100,4 @@ So a change to behaviour or to the public API is only finished when the record m
 - Adding a Python-side check (an oracle script, a parity scenario) → say so in the row it pins.
 
 A useful check before opening a PR: does anything `COMPAT.md` calls "not ported" actually exist in
-`src/` now, and does every `D-NNN` referenced anywhere still have a row?
+`crates/` now, and does every `D-NNN` referenced anywhere still have a row?

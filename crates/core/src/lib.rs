@@ -106,6 +106,8 @@ pub use run_state::{
 pub use schemars;
 /// Re-exported so `#[function_tool]`-generated code does not require a direct dependency.
 pub use serde;
+/// Re-exported so `#[function_tool]`-generated code does not require a direct dependency.
+pub use serde_json;
 pub use stream_events::{RunItemStreamName, StreamEvent};
 pub use tool::{
     FunctionTool, IsEnabledFn, NeedsApproval, ToolContext, ToolEnabled, ToolFailureHandling,
@@ -119,9 +121,6 @@ pub use tool_guardrails::{
 };
 pub use tracing::TracingConfig;
 pub use usage::{InputTokensDetails, OutputTokensDetails, RequestUsage, Usage};
-
-/// Attribute macro: turn a function into a [`FunctionTool`] constructor (Python: `@function_tool`).
-pub use openai_agents_macros::function_tool;
 
 #[cfg(feature = "openai")]
 pub use model::openai::{
