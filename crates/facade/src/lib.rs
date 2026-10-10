@@ -11,6 +11,10 @@
 
 pub use openai_agents_core::*;
 
+/// SQLite-backed [`Session`] (Python: `SQLiteSession`).
+#[cfg(feature = "sqlite")]
+pub use openai_agents_sqlite::SqliteSession;
+
 /// Attribute macro: turn a function into a [`FunctionTool`] constructor (Python: `@function_tool`).
 pub use openai_agents_macros::function_tool;
 

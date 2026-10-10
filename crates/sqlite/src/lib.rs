@@ -3,7 +3,7 @@
 //! Uses the Python SDK's schema, so a database file written by one SDK can be read by the other:
 //! `agent_sessions(session_id, created_at, updated_at)` and
 //! `agent_messages(id, session_id, message_data, created_at)` where `message_data` is the item as
-//! JSON text. Enabled by the `sqlite` cargo feature.
+//! JSON text. The `openai-agents` crate re-exports this as `SqliteSession` behind its `sqlite` feature.
 //!
 //! One connection is shared behind a mutex and every call runs on the blocking thread pool, so
 //! the session never blocks the async runtime. Cloning the session shares the connection.
@@ -15,8 +15,8 @@ use async_trait::async_trait;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
 
-use super::Session;
-use crate::error::{AgentsError, UserError};
+use openai_agents_core::error::{AgentsError, UserError};
+use openai_agents_core::memory::Session;
 
 const DEFAULT_SESSIONS_TABLE: &str = "agent_sessions";
 const DEFAULT_MESSAGES_TABLE: &str = "agent_messages";
