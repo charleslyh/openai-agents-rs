@@ -11,6 +11,9 @@
 
 pub use openai_agents_core::*;
 
+/// Deterministic test doubles (Python: `agents.testing`).
+pub use openai_agents_testing as testing;
+
 /// SQLite-backed [`Session`] (Python: `SQLiteSession`).
 #[cfg(feature = "sqlite")]
 pub use openai_agents_sqlite::SqliteSession;

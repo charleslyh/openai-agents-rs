@@ -9,17 +9,18 @@ use std::sync::Mutex;
 use async_trait::async_trait;
 use serde_json::Value;
 
-use crate::error::ModelError;
-use crate::items::{ModelResponse, ResponseOutputItem};
-use crate::model::wire_events::emit::emit_response_stream;
-use crate::model::wire_events::response_object;
-use crate::model::wire_events::{SCRIPTED_MODEL, SCRIPTED_RESPONSE_ID};
-use crate::model::{Model, ModelRequest};
-use crate::model_settings::ModelSettings;
-use crate::retry::{ModelRetryAdvice, ModelRetryAdviceRequest};
-use crate::usage::Usage;
+use openai_agents_core::error::ModelError;
+use openai_agents_core::items::{ModelResponse, ResponseOutputItem};
+use openai_agents_core::model::{replay_response, Model, ModelRequest, ModelTracing};
+use openai_agents_core::model_settings::ModelSettings;
+use openai_agents_core::retry::{ModelRetryAdvice, ModelRetryAdviceRequest};
+use openai_agents_core::usage::Usage;
 
-use super::ModelTracing;
+/// Response id used when a step declares none (Python: `"scripted-response"`).
+const SCRIPTED_RESPONSE_ID: &str = "scripted-response";
+
+/// Model name reported in the `response` object (Python: `"scripted-model"`).
+const SCRIPTED_MODEL: &str = "scripted-model";
 
 /// Why a scripted step was rejected (Python: `ModelStepReason`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -372,19 +373,14 @@ impl Model for ScriptedModel {
 
         // Python (`testing/model.py`) expands a step into the standard Responses event sequence;
         // Rust replays the same sequence (D-011).
-        let wire = response_object(
-            response
-                .response_id
-                .as_deref()
-                .unwrap_or(SCRIPTED_RESPONSE_ID),
+        replay_response(
+            &raw_tx,
+            &response,
+            SCRIPTED_RESPONSE_ID,
             SCRIPTED_MODEL,
-            "completed",
             0.0,
-            &response.output,
-            &response.usage,
-            "none",
-        );
-        emit_response_stream(&raw_tx, wire).await;
+        )
+        .await;
 
         Ok(response)
     }
@@ -424,8 +420,8 @@ impl ScriptedModel {
         let call = ModelCall {
             system_instructions: request.system_instructions.map(str::to_string),
             input: match &request.input {
-                crate::model::ModelInput::Text(s) => Value::String((*s).to_string()),
-                crate::model::ModelInput::Items(items) => Value::Array(items.to_vec()),
+                openai_agents_core::model::ModelInput::Text(s) => Value::String((*s).to_string()),
+                openai_agents_core::model::ModelInput::Items(items) => Value::Array(items.to_vec()),
             },
             model_settings: request.model_settings.clone(),
             tool_names: request.tools.iter().map(|t| t.name.clone()).collect(),

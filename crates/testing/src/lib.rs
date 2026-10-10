@@ -6,10 +6,10 @@
 
 use serde_json::{json, Value};
 
-pub use crate::items::ItemHelpers;
-pub use crate::model::scripted::{
-    ModelCall, ModelScriptError, ModelStep, ModelStepReason, ScriptedModel,
-};
+mod scripted;
+
+pub use openai_agents_core::items::ItemHelpers;
+pub use scripted::{ModelCall, ModelScriptError, ModelStep, ModelStepReason, ScriptedModel};
 
 /// Build one normalized assistant text output item (Python: `assistant_message`).
 pub fn assistant_message(text: impl Into<String>) -> Value {

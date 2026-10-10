@@ -25,7 +25,6 @@ pub mod run_state;
 pub mod stream_events;
 pub mod strict_schema;
 pub(crate) mod support;
-pub mod testing;
 pub mod tool;
 pub mod tool_guardrails;
 pub mod tracing;
