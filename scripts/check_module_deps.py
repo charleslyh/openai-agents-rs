@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the module dependency structure of `src/`.
+"""Check the dependency structure of the workspace: between crates, and inside core.
 
 The refactor in `docs/refactor/01-principles.md` puts every module in a tier and forbids a
 lower tier from importing a higher one. Two rules are enforced:
@@ -16,17 +16,54 @@ Usage:
 Exit code 1 means a new upward dependency or a new cycle appeared. Either move the type down,
 or register it here *with* a `docs/refactor/03-cycle-breaking.md` id and a plan to remove it:
 the exception list must only ever shrink.
+
+The crate-level rules (`CRATE_DEPS`, `BANNED_IN_CORE`) are checked against `cargo metadata`:
+core depends on no extension, every extension depends on core and nothing else, and core never
+declares a network, database or child-process dependency. They are what keeps `core` buildable
+without an HTTP client, SQLite or process spawning.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "crates" / "core" / "src"
+
+# Which workspace crates each crate may depend on (normal, build *and* dev dependencies).
+#
+# Dev dependencies count on purpose: if core's own tests depended on an extension crate that itself
+# depends on core, `cargo test` would link two copies of core and trait objects would stop lining
+# up (the "double types" problem). Extension crates must never depend on one another either, so
+# any of them can be dropped from a build without touching the rest.
+CORE = "openai-agents-core"
+EXTENSIONS = {
+    "openai-agents-macros",
+    "openai-agents-mcp",
+    "openai-agents-openai",
+    "openai-agents-sqlite",
+    "openai-agents-testing",
+}
+FACADE = "openai-agents"
+CRATE_DEPS: dict[str, set[str]] = {
+    CORE: set(),
+    "openai-agents-macros": set(),
+    "openai-agents-mcp": {CORE},
+    "openai-agents-openai": {CORE},
+    "openai-agents-sqlite": {CORE},
+    "openai-agents-testing": {CORE},
+    FACADE: {CORE} | EXTENSIONS,
+}
+
+# Third-party crates core must not depend on, and tokio features it must not enable. They are what
+# a build without the OpenAI adapters, MCP or SQLite is meant to be free of.
+BANNED_IN_CORE = {"reqwest", "async-openai", "rusqlite", "hyper"}
+BANNED_TOKIO_FEATURES_IN_CORE = {"process", "net", "fs", "io-std"}
 
 # Tier 0 has no crate-internal dependencies; each higher tier may depend on any lower tier.
 TIERS: dict[str, int] = {
@@ -128,6 +165,55 @@ def edges() -> list[tuple[Path, str, str]]:
     return out
 
 
+def check_crates() -> list[str]:
+    """Violations of the crate-level rules, from `cargo metadata`."""
+    try:
+        out = subprocess.run(
+            ["cargo", "metadata", "--no-deps", "--format-version", "1"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError) as error:
+        return [f"could not run `cargo metadata`: {error}"]
+
+    packages = {p["name"]: p for p in json.loads(out)["packages"]}
+    problems: list[str] = []
+
+    unknown = sorted(set(packages) - set(CRATE_DEPS))
+    if unknown:
+        problems.append(
+            "workspace crates missing from CRATE_DEPS: " + ", ".join(unknown)
+            + " (say which workspace crates each may depend on)"
+        )
+    missing = sorted(set(CRATE_DEPS) - set(packages))
+    if missing:
+        problems.append("CRATE_DEPS names crates that no longer exist: " + ", ".join(missing))
+
+    for name, package in sorted(packages.items()):
+        if name not in CRATE_DEPS:
+            continue
+        for dep in package["dependencies"]:
+            if dep["name"] in packages and dep["name"] not in CRATE_DEPS[name]:
+                kind = dep["kind"] or "normal"
+                problems.append(
+                    f"{name} depends on {dep['name']} ({kind}); it may only depend on "
+                    f"{sorted(CRATE_DEPS[name]) or 'no workspace crate'}"
+                )
+
+    core = packages.get(CORE)
+    if core:
+        for dep in core["dependencies"]:
+            if dep["name"] in BANNED_IN_CORE:
+                problems.append(f"{CORE} declares `{dep['name']}`; that belongs in an extension crate")
+            if dep["name"] == "tokio":
+                banned = sorted(BANNED_TOKIO_FEATURES_IN_CORE & set(dep["features"]))
+                if banned:
+                    problems.append(f"{CORE} enables tokio feature(s) {banned}; core must not spawn processes or open sockets")
+    return problems
+
+
 def cycles(all_edges: list[tuple[Path, str, str]]) -> list[frozenset[str]]:
     """Strongly connected components with more than one module (Tarjan)."""
     graph: dict[str, set[str]] = {}
@@ -227,8 +313,15 @@ def main() -> int:
         )
         return 1
 
+    crate_problems = check_crates()
+    if crate_problems:
+        print("crate dependency violations:", file=sys.stderr)
+        for problem in crate_problems:
+            print(f"  {problem}", file=sys.stderr)
+        return 1
+
     if not args.explain:
-        print("module deps ok")
+        print("module deps ok (crates and modules)")
     return 0
 
 
