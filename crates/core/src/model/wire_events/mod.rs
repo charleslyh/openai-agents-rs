@@ -24,12 +24,6 @@ pub mod emit;
 /// (Python: `agents.models.fake_id.FAKE_RESPONSES_ID`).
 pub(crate) const FAKE_RESPONSES_ID: &str = "__fake_id__";
 
-/// Response id `ScriptedModel` uses when a step declares none (Python: `"scripted-response"`).
-pub(crate) const SCRIPTED_RESPONSE_ID: &str = "scripted-response";
-
-/// Model name `ScriptedModel` reports (Python: `"scripted-model"`).
-pub(crate) const SCRIPTED_MODEL: &str = "scripted-model";
-
 /// Monotonic event counter (Python: `chatcmpl_stream_handler.SequenceNumber`).
 #[derive(Debug, Default)]
 pub(crate) struct SequenceNumber(u64);

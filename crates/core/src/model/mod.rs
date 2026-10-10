@@ -16,14 +16,12 @@ pub mod input;
 #[cfg(feature = "openai")]
 pub mod openai;
 pub mod provider;
-pub mod scripted;
 pub(crate) mod wire_events;
 
 #[cfg(feature = "openai")]
 pub use default_api::{get_default_openai_api, set_default_openai_api, DefaultOpenAiApi};
 pub use input::{CallModelData, CallModelInputFilter, ModelInputData};
 pub use provider::{MissingProvider, ModelProvider, MultiProvider};
-pub use scripted::ScriptedModel;
 
 #[cfg(feature = "openai")]
 pub(crate) use default_api::explicit_default_openai_api;
@@ -191,19 +189,43 @@ pub trait Model: Send + Sync {
         raw_tx: tokio::sync::mpsc::Sender<serde_json::Value>,
     ) -> Result<ModelResponse, ModelError> {
         let response = self.get_response(request).await?;
-        let wire = wire_events::response_object(
-            response
-                .response_id
-                .as_deref()
-                .unwrap_or(wire_events::FAKE_RESPONSES_ID),
+        replay_response(
+            &raw_tx,
+            &response,
+            wire_events::FAKE_RESPONSES_ID,
             "unknown",
-            "completed",
             wire_events::now_seconds(),
-            &response.output,
-            &response.usage,
-            "none",
-        );
-        wire_events::emit::emit_response_stream(&raw_tx, wire).await;
+        )
+        .await;
         Ok(response)
     }
+}
+
+/// Replay a finished response as the standard Responses event sequence
+/// (`response.created`, per-item events, `response.completed`).
+///
+/// This is what the default [`Model::stream_response`] does, and what a model that cannot stream
+/// natively (such as a scripted test double) should call from its own `stream_response`.
+/// `default_response_id` is used when the response carries none; `model_name` and `created_at`
+/// fill the corresponding fields of the `response` object.
+pub async fn replay_response(
+    raw_tx: &tokio::sync::mpsc::Sender<serde_json::Value>,
+    response: &ModelResponse,
+    default_response_id: &str,
+    model_name: &str,
+    created_at: f64,
+) {
+    let wire = wire_events::response_object(
+        response
+            .response_id
+            .as_deref()
+            .unwrap_or(default_response_id),
+        model_name,
+        "completed",
+        created_at,
+        &response.output,
+        &response.usage,
+        "none",
+    );
+    wire_events::emit::emit_response_stream(raw_tx, wire).await;
 }

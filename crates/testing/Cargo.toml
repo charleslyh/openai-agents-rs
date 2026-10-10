@@ -1,0 +1,17 @@
+[package]
+name = "openai-agents-testing"
+version = "0.1.0"
+edition = "2021"
+description = "Deterministic test doubles for the Rust OpenAI Agents SDK (ScriptedModel and item builders)"
+license = "MIT"
+repository = "https://github.com/charleslyh/openai-agents-rs"
+
+# Inherits the lint config (including the tracked clippy backlog) from `[workspace.lints]`.
+[lints]
+workspace = true
+
+[dependencies]
+openai-agents-core = { path = "../core", version = "0.1.0", default-features = false }
+async-trait = "0.1"
+serde_json = { version = "1", features = ["preserve_order"] }
+tokio = { version = "1", features = ["sync"] }
