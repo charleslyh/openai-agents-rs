@@ -11,8 +11,6 @@ default = ["openai", "mcp"]
 openai = ["dep:async-openai", "dep:reqwest"]
 # MCP client transports: stdio (child process) and streamable HTTP.
 mcp = ["dep:reqwest", "tokio/process", "tokio/io-util"]
-# `SqliteSession`: file or in-memory conversation storage, same schema as the Python SDK.
-sqlite = ["dep:rusqlite"]
 
 # Inherits the lint config (including the tracked clippy backlog) from `[workspace.lints]`.
 [lints]
@@ -29,8 +27,6 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"
 tracing = "0.1"
 uuid = { version = "1", features = ["v4"] }
 
-# Optional SQLite session backend
-rusqlite = { version = "0.32", optional = true, features = ["bundled"] }
 
 # Optional OpenAI HTTP client (third-party Rust client)
 async-openai = { version = "0.42", optional = true, default-features = false, features = ["chat-completion", "responses"] }

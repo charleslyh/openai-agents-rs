@@ -18,11 +18,6 @@ mod compaction;
 mod history;
 pub use compaction::{CompactingSession, ModelSummarizer, Summarizer, DEFAULT_TRIGGER_TOKENS};
 
-#[cfg(feature = "sqlite")]
-mod sqlite;
-#[cfg(feature = "sqlite")]
-pub use sqlite::SqliteSession;
-
 /// Settings for session reads (Python: `SessionSettings`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SessionSettings {

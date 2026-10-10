@@ -70,8 +70,6 @@ pub use mcp::{
 };
 #[cfg(feature = "mcp")]
 pub use mcp::{StdioParams, StreamableHttpParams};
-#[cfg(feature = "sqlite")]
-pub use memory::SqliteSession;
 pub use memory::{
     CompactingSession, InMemorySession, ModelSummarizer, Session, SessionInputCallback,
     SessionSettings, Summarizer, DEFAULT_TRIGGER_TOKENS,
