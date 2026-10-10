@@ -6,10 +6,6 @@ description = "Core of the Rust port of the OpenAI Agents Python SDK: agents, to
 license = "MIT"
 repository = "https://github.com/charleslyh/openai-agents-rs"
 
-[features]
-default = ["openai"]
-openai = ["dep:async-openai", "dep:reqwest"]
-
 # Inherits the lint config (including the tracked clippy backlog) from `[workspace.lints]`.
 [lints]
 workspace = true
@@ -24,11 +20,6 @@ thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 tracing = "0.1"
 uuid = { version = "1", features = ["v4"] }
-
-
-# Optional OpenAI HTTP client (third-party Rust client)
-async-openai = { version = "0.42", optional = true, default-features = false, features = ["chat-completion", "responses"] }
-reqwest = { version = "0.12", optional = true, default-features = false, features = ["json", "rustls-tls", "stream"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util"] }
