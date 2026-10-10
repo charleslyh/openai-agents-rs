@@ -108,7 +108,7 @@ bash scripts/sync_vendor.sh --check
 | 2. OpenAI HTTP contracts (wiremock) | `cargo test` (default features; needs `openai`) |
 | 2.5 Whole request bodies (insta snapshots) | `cargo test --test openai_wiremock` |
 | SQLite sessions | `cargo test --features sqlite` |
-| MCP interoperability (real Python MCP server) | `cargo test --test mcp_interop` (needs the venv, skips without it) |
+| MCP interoperability (real Python MCP server) | `cargo test --features mcp --test mcp_interop` (needs the venv, skips without it) |
 | 3. Python oracle parity | `.venv/bin/python conformance/run_parity.py --check` then `cargo test --test parity_scenarios` |
 | 4. Live endpoint smoke (nightly, non-blocking) | `.github/workflows/nightly.yml` |
 | 5. Latency benchmarks | `cargo bench` |

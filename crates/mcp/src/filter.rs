@@ -4,11 +4,11 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use crate::agent::Agent;
-use crate::run_context::RunContextWrapper;
-use crate::tool::NeedsApproval;
+use openai_agents_core::agent::Agent;
+use openai_agents_core::run_context::RunContextWrapper;
+use openai_agents_core::tool::NeedsApproval;
 
-use super::McpTool;
+use openai_agents_core::McpTool;
 
 // ---------------------------------------------------------------------------------------------
 // Tool filtering and approval
@@ -115,12 +115,4 @@ impl RequireApproval {
             Self::PerTool { always, .. } => always.iter().any(|n| n == name),
         })
     }
-}
-
-/// How an agent turns MCP tools into function tools (Python: `MCPConfig`).
-#[derive(Debug, Clone, Copy, Default)]
-pub struct McpConfig {
-    /// Rewrite each tool's input schema into OpenAI's strict form. A schema that cannot be made
-    /// strict is used as it is.
-    pub convert_schemas_to_strict: bool,
 }

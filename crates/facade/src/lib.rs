@@ -14,6 +14,13 @@ pub use openai_agents_core::*;
 /// Deterministic test doubles (Python: `agents.testing`).
 pub use openai_agents_testing as testing;
 
+/// MCP client: stdio and streamable HTTP transports, tool filters, approval policy.
+#[cfg(feature = "mcp")]
+pub use openai_agents_mcp::{
+    McpClient, McpError, McpServerManager, RequireApproval, StdioParams, StreamableHttpParams,
+    ToolFilter, ToolFilterContext,
+};
+
 /// SQLite-backed [`Session`] (Python: `SQLiteSession`).
 #[cfg(feature = "sqlite")]
 pub use openai_agents_sqlite::SqliteSession;

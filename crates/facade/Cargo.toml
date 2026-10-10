@@ -13,10 +13,11 @@ categories = ["api-bindings", "asynchronous"]
 name = "openai_agents"
 
 [features]
-default = ["openai", "mcp"]
+default = ["openai"]
 openai = ["openai-agents-core/openai"]
-# MCP client transports: stdio (child process) and streamable HTTP.
-mcp = ["openai-agents-core/mcp"]
+# MCP client: stdio (child process) and streamable HTTP transports. Off by default, so a build
+# that does not talk to MCP servers compiles neither the client nor its process/HTTP code.
+mcp = ["dep:openai-agents-mcp"]
 # `SqliteSession`: file or in-memory conversation storage, same schema as the Python SDK.
 sqlite = ["dep:openai-agents-sqlite"]
 
@@ -28,6 +29,7 @@ workspace = true
 openai-agents-core = { path = "../core", version = "0.1.0", default-features = false }
 openai-agents-macros = { path = "../macros", version = "0.1.0" }
 openai-agents-testing = { path = "../testing", version = "0.1.0" }
+openai-agents-mcp = { path = "../mcp", version = "0.1.0", optional = true }
 openai-agents-sqlite = { path = "../sqlite", version = "0.1.0", optional = true }
 
 [dev-dependencies]

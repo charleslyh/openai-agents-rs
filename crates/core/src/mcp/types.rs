@@ -1,9 +1,6 @@
 //! MCP data types and result rendering.
 
-use serde_json::{json, Value};
-
-/// Upper bound on `tools/list` pages followed, so a misbehaving server cannot loop forever.
-pub(crate) const MAX_TOOL_PAGES: usize = 100;
+use serde_json::Value;
 
 /// A tool a server offers (Python: `mcp.types.Tool`).
 #[derive(Debug, Clone, PartialEq)]
@@ -18,22 +15,6 @@ pub struct McpTool {
     pub input_schema: Value,
 }
 
-impl McpTool {
-    pub(crate) fn parse(value: &Value) -> Option<Self> {
-        let text = |key: &str| value.get(key).and_then(Value::as_str).map(str::to_string);
-        Some(Self {
-            name: text("name")?,
-            description: text("description"),
-            title: text("title"),
-            input_schema: value
-                .get("inputSchema")
-                .filter(|s| s.is_object())
-                .cloned()
-                .unwrap_or_else(|| json!({"type": "object", "properties": {}})),
-        })
-    }
-}
-
 /// Answer of a tool call (Python: `mcp.types.CallToolResult`).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct McpCallToolResult {
@@ -44,26 +25,6 @@ pub struct McpCallToolResult {
     /// The server flags the call as failed. The content then explains why and is shown to the
     /// model like any other result.
     pub is_error: bool,
-}
-
-impl McpCallToolResult {
-    pub(crate) fn parse(value: &Value) -> Self {
-        Self {
-            content: value
-                .get("content")
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default(),
-            structured_content: value
-                .get("structuredContent")
-                .filter(|s| !s.is_null())
-                .cloned(),
-            is_error: value
-                .get("isError")
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
-        }
-    }
 }
 
 /// The text the model sees for a tool result.

@@ -58,7 +58,7 @@ Regenerating a golden is a deliberate act, never part of `check`:
 | 1.5 | Invariants over generated inputs | `cargo test --test property_core` |
 | 2 | OpenAI HTTP contracts via wiremock | `cargo test` / `cargo test --all-features` |
 | 2.5 | The whole request body, so a drift in an unasserted field is still reviewed | `cargo test --test openai_wiremock` (`crates/facade/tests/snapshots/`, insta) |
-| 3 | Python oracle parity + MCP interop (two implementations over the wire) | `run_parity.py --check`, `cargo test --test parity_scenarios --test mcp_interop --test chat_convert_parity` |
+| 3 | Python oracle parity + MCP interop (two implementations over the wire) | `run_parity.py --check`, `cargo test --features mcp --test parity_scenarios --test mcp_interop --test chat_convert_parity` |
 | 4 | A live provider still accepts what we send (nightly, non-blocking) | `.github/workflows/nightly.yml`, needs `OPENAI_API_KEY` / `OPENAI_MODEL` secrets |
 | 5 | Per-turn latency and session cost | `cargo bench` |
 | 6 | Line coverage does not drop | `.github/workflows/coverage.yml` (`--fail-under-lines`, a ratchet) |
