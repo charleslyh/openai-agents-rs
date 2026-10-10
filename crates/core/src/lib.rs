@@ -64,11 +64,8 @@ pub use items::{
 };
 pub use lifecycle::{AgentHooks, RunHooks};
 pub use mcp::{
-    mcp_function_tools, render_tool_result, McpCallToolResult, McpClient, McpConfig, McpError,
-    McpServer, McpServerManager, McpTool, RequireApproval, ToolFilter, ToolFilterContext,
+    mcp_function_tools, render_tool_result, McpCallToolResult, McpConfig, McpServer, McpTool,
 };
-#[cfg(feature = "mcp")]
-pub use mcp::{StdioParams, StreamableHttpParams};
 pub use memory::{
     CompactingSession, InMemorySession, ModelSummarizer, Session, SessionInputCallback,
     SessionSettings, Summarizer, DEFAULT_TRIGGER_TOKENS,

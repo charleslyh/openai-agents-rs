@@ -8,20 +8,19 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use tokio::sync::Mutex as AsyncMutex;
 
-use crate::agent::Agent;
-use crate::error::AgentsError;
-use crate::run_context::RunContextWrapper;
-use crate::tool::NeedsApproval;
+use openai_agents_core::agent::Agent;
+use openai_agents_core::error::AgentsError;
+use openai_agents_core::run_context::RunContextWrapper;
+use openai_agents_core::tool::NeedsApproval;
 
-#[cfg(feature = "mcp")]
 use super::http::StreamableHttpParams;
 use super::rpc::{Connector, McpError, Transport};
-#[cfg(feature = "mcp")]
 use super::stdio::StdioParams;
-use super::{
-    McpCallToolResult, McpServer, McpTool, RequireApproval, ToolFilter, ToolFilterContext,
-    MAX_TOOL_PAGES,
-};
+use super::{RequireApproval, ToolFilter, ToolFilterContext};
+use openai_agents_core::{McpCallToolResult, McpServer, McpTool};
+
+/// Upper bound on `tools/list` pages followed, so a misbehaving server cannot loop forever.
+const MAX_TOOL_PAGES: usize = 100;
 
 /// An MCP server reached over a private `Transport` (Python: `MCPServerStdio`,
 /// `MCPServerStreamableHttp`).
@@ -52,7 +51,6 @@ impl std::fmt::Debug for McpClient {
 }
 
 impl McpClient {
-    #[cfg_attr(not(feature = "mcp"), allow(dead_code))]
     pub(crate) fn with_connector(name: String, connector: Arc<dyn Connector>) -> Self {
         Self {
             name,
@@ -71,14 +69,12 @@ impl McpClient {
     }
 
     /// A server run as a child process (Python: `MCPServerStdio`).
-    #[cfg(feature = "mcp")]
     pub fn stdio(params: StdioParams) -> Self {
         let name = format!("stdio: {}", params.command);
         Self::with_connector(name, Arc::new(super::stdio::StdioConnector(params)))
     }
 
     /// A server reached over streamable HTTP (Python: `MCPServerStreamableHttp`).
-    #[cfg(feature = "mcp")]
     pub fn streamable_http(params: StreamableHttpParams) -> Self {
         let name = format!("streamable_http: {}", params.url);
         Self::with_connector(name, Arc::new(super::http::HttpConnector(params)))
@@ -139,7 +135,7 @@ impl McpClient {
         self
     }
 
-    /// Wrap in an `Arc`, ready for [`Agent::mcp_servers`](crate::Agent::mcp_servers).
+    /// Wrap in an `Arc`, ready for [`Agent::mcp_servers`](openai_agents_core::Agent::mcp_servers).
     pub fn shared(self) -> Arc<Self> {
         Arc::new(self)
     }
@@ -227,7 +223,7 @@ impl McpClient {
                     .and_then(Value::as_array)
                     .into_iter()
                     .flatten()
-                    .filter_map(McpTool::parse),
+                    .filter_map(parse_tool),
             );
             match page
                 .get("nextCursor")
@@ -303,7 +299,7 @@ impl McpServer for McpClient {
     ) -> Result<McpCallToolResult, AgentsError> {
         let params = json!({"name": name, "arguments": arguments.unwrap_or_else(|| json!({}))});
         let result = self.request("tools/call", Some(params)).await?;
-        Ok(McpCallToolResult::parse(&result))
+        Ok(parse_call_result(&result))
     }
 
     fn invalidate_tools_cache(&self) {
@@ -316,5 +312,39 @@ impl McpServer for McpClient {
 
     fn use_structured_content(&self) -> bool {
         self.use_structured_content
+    }
+}
+
+/// A `tools/list` entry as a [`McpTool`]; an entry without a name is skipped.
+fn parse_tool(value: &Value) -> Option<McpTool> {
+    let text = |key: &str| value.get(key).and_then(Value::as_str).map(str::to_string);
+    Some(McpTool {
+        name: text("name")?,
+        description: text("description"),
+        title: text("title"),
+        input_schema: value
+            .get("inputSchema")
+            .filter(|s| s.is_object())
+            .cloned()
+            .unwrap_or_else(|| json!({"type": "object", "properties": {}})),
+    })
+}
+
+/// The `result` of a `tools/call` as a [`McpCallToolResult`].
+fn parse_call_result(value: &Value) -> McpCallToolResult {
+    McpCallToolResult {
+        content: value
+            .get("content")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default(),
+        structured_content: value
+            .get("structuredContent")
+            .filter(|s| !s.is_null())
+            .cloned(),
+        is_error: value
+            .get("isError")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
     }
 }

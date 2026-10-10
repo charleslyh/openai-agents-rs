@@ -10,10 +10,15 @@ use crate::error::{AgentsError, ModelError, UserError};
 use crate::run_context::RunContextWrapper;
 use crate::tool::FunctionTool;
 
-use super::{render_tool_result, McpConfig, McpServer, McpTool};
+use super::{render_tool_result, McpServer, McpTool};
 
-// ---------------------------------------------------------------------------------------------
-// Turning MCP tools into function tools
+/// How an agent turns MCP tools into function tools (Python: `MCPConfig`).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct McpConfig {
+    /// Rewrite each tool's input schema into OpenAI's strict form. A schema that cannot be made
+    /// strict is used as it is.
+    pub convert_schemas_to_strict: bool,
+}
 
 /// A tool call must provide every property the schema marks as required (Python:
 /// `_validate_required_parameters`), which gives the model a clearer error than the server's.

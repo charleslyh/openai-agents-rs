@@ -48,7 +48,8 @@ jobs:
       # Layer 1: ScriptedModel behavior, no HTTP client in the build.
       - name: Behavior tests (no default features)
         run: cargo test --no-default-features
-      # Layer 2: OpenAI HTTP contracts through wiremock, plus MCP and the parity scenarios.
+      # Layer 2: OpenAI HTTP contracts through wiremock and the parity scenarios. The MCP client is
+      # off by default, so it is only built by the all-features run below.
       - name: Tests (default features)
         run: cargo test
       - name: Tests (all features, incl. SQLite sessions)
@@ -74,6 +75,7 @@ jobs:
         run: cargo test --test parity_scenarios
       # Layer 3b: two independent implementations over the wire (real Python MCP server).
       - name: MCP interoperability
-        run: cargo test --test mcp_interop
+        # `mcp` is off by default: without the flag this compiles to zero tests and still passes.
+        run: cargo test --features mcp --test mcp_interop
       - name: Chat Completions converter parity
         run: cargo test --test chat_convert_parity

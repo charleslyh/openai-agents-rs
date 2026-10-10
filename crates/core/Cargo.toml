@@ -7,10 +7,8 @@ license = "MIT"
 repository = "https://github.com/charleslyh/openai-agents-rs"
 
 [features]
-default = ["openai", "mcp"]
+default = ["openai"]
 openai = ["dep:async-openai", "dep:reqwest"]
-# MCP client transports: stdio (child process) and streamable HTTP.
-mcp = ["dep:reqwest", "tokio/process", "tokio/io-util"]
 
 # Inherits the lint config (including the tracked clippy backlog) from `[workspace.lints]`.
 [lints]

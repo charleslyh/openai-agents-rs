@@ -9,15 +9,16 @@ use std::time::Duration;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-use super::rpc::{Connector, Transport};
-use crate::agent::Agent;
-use crate::error::AgentsError;
-use crate::run_context::RunContextWrapper;
-use crate::tool::FunctionTool;
-use crate::tool::NeedsApproval;
+use openai_agents_core::agent::Agent;
+use openai_agents_core::error::AgentsError;
+use openai_agents_core::run_context::RunContextWrapper;
+use openai_agents_core::tool::{FunctionTool, NeedsApproval, ToolContext};
+use openai_agents_core::{
+    mcp_function_tools, render_tool_result, McpCallToolResult, McpConfig, McpServer,
+};
 
-use super::*;
-use crate::tool::ToolContext;
+use super::rpc::{Connector, Transport};
+use super::{McpClient, McpError, RequireApproval, ToolFilter};
 
 /// A scripted server: `tools/list` pages in order, `tools/call` answers with its arguments.
 #[derive(Default)]
