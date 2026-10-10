@@ -65,11 +65,11 @@ jobs:
           python-version: "3.12"
       - uses: Swatinem/rust-cache@v2
       - name: Oracle venv
-        run: bash scripts/setup_venv.sh
+        run: bash conformance/setup_venv.sh
       # Layer 3a: fail if a committed golden no longer matches what the Python SDK does.
       # Regenerating is a separate, deliberate step (--write-golden), never part of CI.
       - name: Parity goldens match the Python SDK
-        run: .venv/bin/python scripts/run_parity.py --check
+        run: .venv/bin/python conformance/run_parity.py --check
       - name: Parity scenarios in Rust
         run: cargo test --test parity_scenarios
       # Layer 3b: two independent implementations over the wire (real Python MCP server).

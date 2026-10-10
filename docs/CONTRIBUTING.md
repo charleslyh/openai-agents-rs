@@ -38,15 +38,15 @@ cargo test --all-features
 Python oracle (parity scenarios; needs Python >= 3.10 and [uv](https://docs.astral.sh/uv/)):
 
 ```bash
-bash scripts/setup_venv.sh                       # .venv with the vendored SDK, Python 3.12
-.venv/bin/python scripts/run_parity.py --check   # fail on drift; never overwrites
+bash conformance/setup_venv.sh                       # .venv with the vendored SDK, Python 3.12
+.venv/bin/python conformance/run_parity.py --check   # fail on drift; never overwrites
 cargo test --test parity_scenarios
 ```
 
 Regenerating a golden is a deliberate act, never part of `check`:
 
 ```bash
-.venv/bin/python scripts/run_parity.py --write-golden
+.venv/bin/python conformance/run_parity.py --write-golden
 ```
 
 ### Layers
@@ -79,7 +79,7 @@ when the gate was added live in `[workspace.lints]` in `Cargo.toml`, each with a
 reason. That list must only ever shrink; when you clear one, delete its line and re-run to make
 sure nothing else was hiding behind it.
 
-A scenario is a JSON file in `tests/parity/scenarios/`. It may script handoff targets
+A scenario is a JSON file in `conformance/scenarios/`. It may script handoff targets
 (`agent.handoffs`), failing tools (`tools[].error`) and expect a Python exception class
 (`expect.error`). Every behavior fix should add a scenario that both sides run.
 

@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 VENDOR = ROOT / "vendor" / "openai-agents-python" / "src"
-SCENARIO_DIR = ROOT / "tests" / "parity" / "scenarios"
+SCENARIO_DIR = ROOT / "conformance" / "scenarios"
 
 
 def _ensure_import() -> None:
@@ -196,7 +196,7 @@ async def main() -> int:
     parser.add_argument(
         "--write-golden",
         action="store_true",
-        help="Write tests/parity/scenarios/<name>.golden.json",
+        help="Write conformance/scenarios/<name>.golden.json",
     )
     parser.add_argument(
         "--check",

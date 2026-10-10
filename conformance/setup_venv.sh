@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Create .venv with the vendored Python SDK so scripts/run_parity.py can act as the oracle.
+# Create .venv with the vendored Python SDK so conformance/run_parity.py can act as the oracle.
 # Requires uv (https://docs.astral.sh/uv/) and a vendored tree (bash scripts/sync_vendor.sh).
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -14,4 +14,4 @@ command -v uv >/dev/null || { echo "uv is required: https://docs.astral.sh/uv/" 
 uv venv --python 3.12 .venv
 uv pip install --python .venv/bin/python -e vendor/openai-agents-python
 .venv/bin/python -c "import agents; print('agents', agents.__file__)"
-echo "Done. Run: .venv/bin/python scripts/run_parity.py --write-golden && cargo test --test parity_scenarios"
+echo "Done. Run: .venv/bin/python conformance/run_parity.py --write-golden && cargo test --test parity_scenarios"
