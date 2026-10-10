@@ -1,0 +1,44 @@
+[package]
+name = "openai-agents-core"
+version = "0.1.0"
+edition = "2021"
+description = "Core of the Rust port of the OpenAI Agents Python SDK: agents, tools, handoffs, HITL, guardrails, the run loop"
+license = "MIT"
+repository = "https://github.com/charleslyh/openai-agents-rs"
+
+[features]
+default = ["openai", "mcp"]
+openai = ["dep:async-openai", "dep:reqwest"]
+# MCP client transports: stdio (child process) and streamable HTTP.
+mcp = ["dep:reqwest", "tokio/process", "tokio/io-util"]
+# `SqliteSession`: file or in-memory conversation storage, same schema as the Python SDK.
+sqlite = ["dep:rusqlite"]
+
+# Inherits the lint config (including the tracked clippy backlog) from `[workspace.lints]`.
+[lints]
+workspace = true
+
+[dependencies]
+async-trait = "0.1"
+futures = "0.3"
+schemars = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+tracing = "0.1"
+uuid = { version = "1", features = ["v4"] }
+
+# Optional SQLite session backend
+rusqlite = { version = "0.32", optional = true, features = ["bundled"] }
+
+# Optional OpenAI HTTP client (third-party Rust client)
+async-openai = { version = "0.42", optional = true, default-features = false, features = ["chat-completion", "responses"] }
+reqwest = { version = "0.12", optional = true, default-features = false, features = ["json", "rustls-tls", "stream"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[package.metadata.docs.rs]
+all-features = true

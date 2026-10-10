@@ -19,7 +19,8 @@ pub struct ModelInputData {
     pub instructions: Option<String>,
 }
 
-/// Payload given to [`RunConfig::call_model_input_filter`] (Python: `CallModelData`).
+/// Payload given to [`RunConfig::call_model_input_filter`](crate::run::RunConfig::call_model_input_filter)
+/// (Python: `CallModelData`).
 #[derive(Clone)]
 pub struct CallModelData {
     /// The model input as prepared by the runner.

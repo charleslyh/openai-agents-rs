@@ -2,6 +2,8 @@
 //! file compatibility with the Python SDK's `SQLiteSession`.
 #![cfg(feature = "sqlite")]
 
+mod common;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -183,11 +185,9 @@ async fn runner_resumes_a_conversation_from_a_reopened_database() {
 /// oracle venv (`conformance/setup_venv.sh`) is not installed.
 #[tokio::test]
 async fn database_files_are_interchangeable_with_python() {
-    let python = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(".venv/bin/python");
-    if !python.exists() {
-        eprintln!("skipping: no .venv (run conformance/setup_venv.sh)");
+    let Some(python) = common::oracle_python() else {
         return;
-    }
+    };
     let db = TempDb::new();
     let script = r#"
 import asyncio, sys

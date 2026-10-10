@@ -173,10 +173,10 @@ pub fn function_tool(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let returns_unit = matches!(sig.output, ReturnType::Default);
     let result_to_value = if returns_unit {
-        quote! { Ok(serde_json::Value::Null) }
+        quote! { Ok(openai_agents::serde_json::Value::Null) }
     } else {
         quote! {
-            Ok(serde_json::to_value(__out)
+            Ok(openai_agents::serde_json::to_value(__out)
                 .map_err(|e| openai_agents::AgentsError::tool_with_source("could not serialize tool output", e))?)
         }
     };
@@ -187,12 +187,14 @@ pub fn function_tool(attr: TokenStream, item: TokenStream) -> TokenStream {
         #(#doc_attrs)*
         #vis fn #fn_ident() -> openai_agents::FunctionTool {
             #[derive(openai_agents::serde::Deserialize, openai_agents::schemars::JsonSchema)]
+            #[serde(crate = "openai_agents::serde")]
+            #[schemars(crate = "openai_agents::schemars")]
             #[allow(non_camel_case_types, dead_code)]
             struct #args_ident {
                 #(#fields),*
             }
 
-            let __raw_schema = serde_json::to_value(openai_agents::schemars::schema_for!(#args_ident))
+            let __raw_schema = openai_agents::serde_json::to_value(openai_agents::schemars::schema_for!(#args_ident))
                 .expect("function_tool: could not serialize the parameter JSON schema");
             let mut __schema =
                 openai_agents::strict_schema::ensure_strict_json_schema(&__raw_schema)
@@ -209,7 +211,7 @@ pub fn function_tool(attr: TokenStream, item: TokenStream) -> TokenStream {
                 __schema,
                 move |#ctx_pat, args| {
                     async move {
-                        let __parsed: #args_ident = serde_json::from_str(&args).map_err(|e| {
+                        let __parsed: #args_ident = openai_agents::serde_json::from_str(&args).map_err(|e| {
                             openai_agents::AgentsError::tool_with_source(
                                 format!("invalid arguments for tool `{}`", #tool_name),
                                 e,

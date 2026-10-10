@@ -22,8 +22,8 @@ struct State {
 ///
 /// ```no_run
 /// # use std::sync::Arc;
-/// # use openai_agents::{Agent, McpServer, McpServerManager};
-/// # async fn demo(servers: Vec<Arc<dyn McpServer>>) -> Result<(), openai_agents::AgentsError> {
+/// # use openai_agents_core::{Agent, McpServer, McpServerManager};
+/// # async fn demo(servers: Vec<Arc<dyn McpServer>>) -> Result<(), openai_agents_core::AgentsError> {
 /// let manager = McpServerManager::new(servers);
 /// let active = manager.connect_all().await?;
 /// let agent = Agent::new("assistant").mcp_servers(active);

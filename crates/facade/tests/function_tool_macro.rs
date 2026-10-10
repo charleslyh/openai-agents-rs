@@ -7,6 +7,8 @@ use openai_agents::{function_tool, Agent, RunOptions, Runner};
 
 /// Nested parameter type: must produce a complete nested JSON Schema (B2).
 #[derive(openai_agents::serde::Deserialize, openai_agents::schemars::JsonSchema)]
+#[serde(crate = "openai_agents::serde")]
+#[schemars(crate = "openai_agents::schemars")]
 #[allow(dead_code)]
 struct Address {
     /// City name.

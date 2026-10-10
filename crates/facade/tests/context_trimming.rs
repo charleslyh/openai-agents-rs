@@ -1,6 +1,8 @@
 //! Context trimming filters: `ToolOutputTrimmer` (checked against Python's) and
 //! `ContextWindowTrimmer` (new, provider-neutral).
 
+mod common;
+
 use std::sync::Arc;
 
 use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
@@ -117,11 +119,9 @@ fn tool_output_trimmer_matches_python() {
     use std::io::Write;
     use std::process::{Command, Stdio};
 
-    let python = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(".venv/bin/python");
-    if !python.exists() {
-        eprintln!("skipping: no .venv (run conformance/setup_venv.sh)");
+    let Some(python) = common::oracle_python() else {
         return;
-    }
+    };
     let items = sample_conversation();
     let cases = [
         (
