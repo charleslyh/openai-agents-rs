@@ -1,8 +1,8 @@
 //! The Chat Completions converters give the same results as Python's `chatcmpl_converter`.
 //!
-//! `tests/parity/chat_convert_cases.json` holds shared inputs; `scripts/chat_convert_oracle.py`
+//! `conformance/chat_convert_cases.json` holds shared inputs; `conformance/chat_convert_oracle.py`
 //! runs them through the Python SDK. Skipped when the oracle venv is missing
-//! (`scripts/setup_venv.sh`).
+//! (`conformance/setup_venv.sh`).
 #![cfg(feature = "openai")]
 
 use std::path::PathBuf;
@@ -18,20 +18,19 @@ fn root() -> PathBuf {
 }
 
 fn cases() -> Value {
-    let text =
-        std::fs::read_to_string(root().join("tests/parity/chat_convert_cases.json")).unwrap();
+    let text = std::fs::read_to_string(root().join("conformance/chat_convert_cases.json")).unwrap();
     serde_json::from_str(&text).expect("cases json")
 }
 
 fn python_results() -> Option<Value> {
     let python = root().join(".venv/bin/python");
     if !python.exists() {
-        eprintln!("skipping: no .venv (run scripts/setup_venv.sh)");
+        eprintln!("skipping: no .venv (run conformance/setup_venv.sh)");
         return None;
     }
     let out = Command::new(python)
-        .arg(root().join("scripts/chat_convert_oracle.py"))
-        .arg(root().join("tests/parity/chat_convert_cases.json"))
+        .arg(root().join("conformance/chat_convert_oracle.py"))
+        .arg(root().join("conformance/chat_convert_cases.json"))
         .output()
         .expect("python");
     assert!(

@@ -1,6 +1,6 @@
 """Run the shared Chat Completions conversion cases through the Python SDK.
 
-Reads `tests/parity/chat_convert_cases.json` and prints, as JSON, what the Python converter
+Reads `conformance/chat_convert_cases.json` and prints, as JSON, what the Python converter
 produces for each case so the Rust test (`tests/chat_convert_parity.rs`) can compare. A case that
 makes Python raise is reported as `{"error": "<ExceptionName>"}`.
 """

@@ -1,5 +1,5 @@
 //! The MCP client against a real server: the official Python `mcp` package, run from the oracle
-//! venv (`scripts/setup_venv.sh`). Tests skip themselves when the venv is missing.
+//! venv (`conformance/setup_venv.sh`). Tests skip themselves when the venv is missing.
 //!
 //! Two independent implementations talking to each other is the point: it checks the wire format
 //! (framing, handshake, SSE, sessions), not just our reading of the spec.
@@ -68,13 +68,13 @@ fn python() -> Option<Python> {
             _serial: serial,
         })
     } else {
-        eprintln!("skipping: no .venv (run scripts/setup_venv.sh)");
+        eprintln!("skipping: no .venv (run conformance/setup_venv.sh)");
         None
     }
 }
 
 fn server_script() -> PathBuf {
-    root().join("tests/mcp/server.py")
+    root().join("conformance/mcp_server.py")
 }
 
 fn stdio_client(python: &Path) -> McpClient {
@@ -202,7 +202,7 @@ async fn stdio_lists_tools_and_calls_them() {
 async fn function_tools_match_what_the_python_sdk_builds() {
     let Some(python) = python() else { return };
     let output = Command::new(&python)
-        .arg(root().join("scripts/mcp_oracle.py"))
+        .arg(root().join("conformance/mcp_oracle.py"))
         .arg(&python)
         .arg(server_script())
         .output()

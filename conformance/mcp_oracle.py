@@ -1,6 +1,6 @@
 """Describe what the Python SDK makes of the shared MCP test server.
 
-    python scripts/mcp_oracle.py <python> <server.py>
+    python conformance/mcp_oracle.py <python> <server.py>
 
 Prints a JSON list of the function tools `MCPUtil` builds from the server (name, description,
 parameters, strict flag), so `tests/mcp_interop.rs` can compare the Rust conversion with it.

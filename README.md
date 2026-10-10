@@ -109,15 +109,15 @@ bash scripts/sync_vendor.sh --check
 | 2.5 Whole request bodies (insta snapshots) | `cargo test --test openai_wiremock` |
 | SQLite sessions | `cargo test --features sqlite` |
 | MCP interoperability (real Python MCP server) | `cargo test --test mcp_interop` (needs the venv, skips without it) |
-| 3. Python oracle parity | `.venv/bin/python scripts/run_parity.py --check` then `cargo test --test parity_scenarios` |
+| 3. Python oracle parity | `.venv/bin/python conformance/run_parity.py --check` then `cargo test --test parity_scenarios` |
 | 4. Live endpoint smoke (nightly, non-blocking) | `.github/workflows/nightly.yml` |
 | 5. Latency benchmarks | `cargo bench` |
 | 6. Line coverage ratchet | `.github/workflows/coverage.yml` |
 
-Shared scenarios live in [`tests/parity/scenarios/`](./tests/parity/scenarios/). A scenario only
+Shared scenarios live in [`conformance/scenarios/`](./conformance/scenarios/). A scenario only
 needs `expect` to run; the `.golden.json` produced by the Python oracle is optional and compared
 when present. `--check` fails on drift and never overwrites; regenerate deliberately with
-`.venv/bin/python scripts/run_parity.py --write-golden` on a machine that has
+`.venv/bin/python conformance/run_parity.py --write-golden` on a machine that has
 `openai-agents==0.23.1` installed.
 
 CI runs every layer on Linux and macOS — see `.github/workflows/ci.yml` and

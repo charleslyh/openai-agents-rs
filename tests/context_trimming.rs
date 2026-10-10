@@ -111,7 +111,7 @@ print(json.dumps(out.input, ensure_ascii=False))
 "#;
 
 /// Rust and Python produce identical trimmed lists for the same input and settings. Skipped
-/// when the Python oracle venv is not installed (`scripts/setup_venv.sh`).
+/// when the Python oracle venv is not installed (`conformance/setup_venv.sh`).
 #[test]
 fn tool_output_trimmer_matches_python() {
     use std::io::Write;
@@ -119,7 +119,7 @@ fn tool_output_trimmer_matches_python() {
 
     let python = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(".venv/bin/python");
     if !python.exists() {
-        eprintln!("skipping: no .venv (run scripts/setup_venv.sh)");
+        eprintln!("skipping: no .venv (run conformance/setup_venv.sh)");
         return;
     }
     let items = sample_conversation();

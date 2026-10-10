@@ -1,6 +1,6 @@
 //! Rust side of parity scenarios (compares against Python golden files).
 //!
-//! Each `tests/parity/scenarios/<name>.json` is run here and by `scripts/run_parity.py`; the
+//! Each `conformance/scenarios/<name>.json` is run here and by `conformance/run_parity.py`; the
 //! Python run writes `<name>.golden.json`, which this test then compares against.
 
 use std::fs;
@@ -128,7 +128,7 @@ struct Golden {
 }
 
 fn scenario_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/parity/scenarios")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("conformance/scenarios")
 }
 
 fn load_scenarios() -> Vec<(PathBuf, Scenario)> {

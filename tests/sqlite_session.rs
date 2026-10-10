@@ -180,12 +180,12 @@ async fn runner_resumes_a_conversation_from_a_reopened_database() {
 }
 
 /// The schema matches Python's, so each SDK reads what the other wrote. Skipped when the Python
-/// oracle venv (`scripts/setup_venv.sh`) is not installed.
+/// oracle venv (`conformance/setup_venv.sh`) is not installed.
 #[tokio::test]
 async fn database_files_are_interchangeable_with_python() {
     let python = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(".venv/bin/python");
     if !python.exists() {
-        eprintln!("skipping: no .venv (run scripts/setup_venv.sh)");
+        eprintln!("skipping: no .venv (run conformance/setup_venv.sh)");
         return;
     }
     let db = TempDb::new();
