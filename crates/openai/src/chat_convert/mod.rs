@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
-use crate::error::ModelError;
+use openai_agents_core::error::ModelError;
 
 /// Stand-in for a tool output that has no text (Python: `_OMITTED_TOOL_OUTPUT_PLACEHOLDER`).
 pub const OMITTED_TOOL_OUTPUT_PLACEHOLDER: &str = "[tool output omitted]";

@@ -188,7 +188,7 @@ pub struct RunConfig {
     pub model: Option<ModelRef>,
     /// Provider used to resolve string model names (Python: `RunConfig.model_provider`).
     ///
-    /// When unset, names go through [`crate::model::default_model_provider`].
+    /// When unset, names go through the default set with [`crate::set_default_model_provider_factory`].
     pub model_provider: Option<Arc<dyn ModelProvider>>,
     /// Override model settings (merged over agent settings).
     pub model_settings: Option<ModelSettings>,

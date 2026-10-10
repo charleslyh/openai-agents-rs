@@ -14,7 +14,7 @@ name = "openai_agents"
 
 [features]
 default = ["openai"]
-openai = ["openai-agents-core/openai"]
+openai = ["dep:openai-agents-openai"]
 # MCP client: stdio (child process) and streamable HTTP transports. Off by default, so a build
 # that does not talk to MCP servers compiles neither the client nor its process/HTTP code.
 mcp = ["dep:openai-agents-mcp"]
@@ -26,9 +26,11 @@ sqlite = ["dep:openai-agents-sqlite"]
 workspace = true
 
 [dependencies]
-openai-agents-core = { path = "../core", version = "0.1.0", default-features = false }
+tokio = { version = "1", features = ["rt"] }
+openai-agents-core = { path = "../core", version = "0.1.0" }
 openai-agents-macros = { path = "../macros", version = "0.1.0" }
 openai-agents-testing = { path = "../testing", version = "0.1.0" }
+openai-agents-openai = { path = "../openai", version = "0.1.0", optional = true }
 openai-agents-mcp = { path = "../mcp", version = "0.1.0", optional = true }
 openai-agents-sqlite = { path = "../sqlite", version = "0.1.0", optional = true }
 

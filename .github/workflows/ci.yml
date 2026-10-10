@@ -23,6 +23,10 @@ jobs:
         # The tier map and the tracked upward edges live in the script; the exception list must
         # only ever shrink. See docs/refactor/01-principles.md.
         run: python3 scripts/check_module_deps.py
+      - name: Facade Runner mirrors the core Runner
+        # The facade wraps every `Runner` method to install the default model provider; this fails
+        # when core gains, loses or changes a method without the wrapper following.
+        run: python3 scripts/check_runner_api.py
       - name: Clippy (all features, all targets)
         # `-D warnings` blocks every lint that is not part of the tracked backlog declared in
         # `[workspace.lints]` in Cargo.toml. That list must only ever shrink.

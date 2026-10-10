@@ -1,7 +1,7 @@
 //! OpenAI-specific retry advice (Python: `get_openai_retry_advice`).
 
-use crate::error::ModelError;
-use crate::retry::{
+use openai_agents_core::error::ModelError;
+use openai_agents_core::retry::{
     ModelRetryAdvice, ModelRetryAdviceRequest, ModelRetryNormalizedError, ReplaySafety,
 };
 

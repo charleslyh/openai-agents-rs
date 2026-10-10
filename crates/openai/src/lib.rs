@@ -1,7 +1,15 @@
-//! OpenAI model adapters built on `async-openai` config + HTTP.
+//! OpenAI and OpenAI-compatible model adapters for the Rust OpenAI Agents SDK.
+//!
+//! Chat Completions and Responses models over HTTP (`async-openai` config plus `reqwest`), the
+//! providers that turn model names into them, and the conversion between Responses items and
+//! Chat Completions messages. The core crate knows none of this: it only defines the `Model`
+//! and `ModelProvider` contracts these types implement.
+
+#![deny(missing_docs)]
 
 mod chat_completions;
 pub mod chat_convert;
+mod default_api;
 mod provider;
 mod request;
 mod responses;
@@ -9,6 +17,7 @@ pub mod retry_advice;
 mod transport;
 
 pub use chat_completions::OpenAIChatCompletionsModel;
+pub use default_api::{get_default_openai_api, set_default_openai_api, DefaultOpenAiApi};
 pub use provider::{CompatibleProvider, OpenAIProvider};
 pub use responses::OpenAIResponsesModel;
 

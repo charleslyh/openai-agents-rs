@@ -49,8 +49,8 @@ impl MultiProvider {
 
     /// Register a provider under `prefix`.
     ///
-    /// Built-in prefixes are `openai` (Responses or Chat Completions, depending on
-    /// [`crate::set_default_openai_api`]) and `openai_chat_completions`.
+    /// A router starts empty; names without a prefix go to the provider registered under the
+    /// default prefix (`openai`, as in Python).
     pub fn register(mut self, prefix: impl Into<String>, provider: Arc<dyn ModelProvider>) -> Self {
         self.providers.insert(prefix.into(), provider);
         self
@@ -98,9 +98,10 @@ pub struct MissingProvider;
 impl ModelProvider for MissingProvider {
     fn get_model(&self, model_name: Option<&str>) -> Result<Arc<dyn Model>, UserError> {
         Err(UserError::new(format!(
-            "No ModelProvider can resolve `{}`. Set `OPENAI_API_KEY` or `OPENAI_BASE_URL` for \
-             the default provider (needs the `openai` feature), or set \
-             `RunConfig.model_provider` (for example to a `CompatibleProvider`).",
+            "No ModelProvider can resolve `{}`. Set `RunConfig.model_provider`, or install a \
+             process-wide default with `set_default_model_provider_factory`. The `openai-agents` crate \
+             installs an OpenAI one when its `openai` feature is on and `OPENAI_API_KEY` or \
+             `OPENAI_BASE_URL` is set.",
             model_name.unwrap_or("<default>")
         )))
     }

@@ -10,21 +10,12 @@ use crate::items::{ModelResponse, ResponseInputItem};
 use crate::model_settings::ModelSettings;
 use crate::tool::FunctionTool;
 
-#[cfg(feature = "openai")]
-pub mod default_api;
 pub mod input;
-#[cfg(feature = "openai")]
-pub mod openai;
 pub mod provider;
-pub(crate) mod wire_events;
+pub mod wire_events;
 
-#[cfg(feature = "openai")]
-pub use default_api::{get_default_openai_api, set_default_openai_api, DefaultOpenAiApi};
 pub use input::{CallModelData, CallModelInputFilter, ModelInputData};
 pub use provider::{MissingProvider, ModelProvider, MultiProvider};
-
-#[cfg(feature = "openai")]
-pub(crate) use default_api::explicit_default_openai_api;
 
 /// A model reference: either a ready instance or a name resolved by a [`ModelProvider`].
 #[derive(Clone)]
@@ -59,41 +50,6 @@ impl From<&str> for ModelRef {
 impl From<String> for ModelRef {
     fn from(value: String) -> Self {
         Self::Name(value)
-    }
-}
-
-/// The provider used when `RunConfig.model_provider` is not set.
-///
-/// With the `openai` feature this routes `openai/...` (and unprefixed) names to the OpenAI
-/// protocol (Chat Completions unless changed), `openai_responses/...` to Responses, honouring [`crate::get_default_openai_api`]. Without it, name resolution fails with an
-/// actionable error.
-pub fn default_model_provider() -> Arc<dyn ModelProvider> {
-    #[cfg(feature = "openai")]
-    {
-        match openai::OpenAIProvider::from_env() {
-            Ok(provider) => {
-                let router = MultiProvider::new()
-                    .register("openai", Arc::new(provider.clone()))
-                    .register(
-                        "openai_chat_completions",
-                        Arc::new(provider.clone().always_chat_completions()),
-                    )
-                    .register(
-                        "openai_responses",
-                        Arc::new(
-                            provider
-                                .clone()
-                                .api(crate::model::DefaultOpenAiApi::Responses),
-                        ),
-                    );
-                Arc::new(router)
-            }
-            Err(_) => Arc::new(MissingProvider),
-        }
-    }
-    #[cfg(not(feature = "openai"))]
-    {
-        Arc::new(MissingProvider)
     }
 }
 

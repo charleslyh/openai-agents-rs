@@ -29,6 +29,7 @@ This convention is also enforced for agents via [`.cursor/rules/commit-messages.
 ```bash
 bash scripts/sync_vendor.sh --check
 python3 scripts/check_module_deps.py
+python3 scripts/check_runner_api.py
 cargo fmt --all
 cargo clippy --all-features --all-targets -- -D warnings
 cargo test --no-default-features
@@ -53,7 +54,7 @@ Regenerating a golden is a deliberate act, never part of `check`:
 
 | Layer | What it guards | Command |
 |-------|----------------|---------|
-| 0 | Module dependency direction, format, lints, intra-doc links, vendor pin | `python3 scripts/check_module_deps.py`, `cargo fmt --all -- --check`, `cargo clippy --all-features --all-targets -- -D warnings`, `RUSTDOCFLAGS=-D warnings cargo doc --no-deps --all-features`, `bash scripts/sync_vendor.sh --check` |
+| 0 | Module dependency direction, facade `Runner` mirror, format, lints, intra-doc links, vendor pin | `python3 scripts/check_module_deps.py`, `python3 scripts/check_runner_api.py`, `cargo fmt --all -- --check`, `cargo clippy --all-features --all-targets -- -D warnings`, `RUSTDOCFLAGS=-D warnings cargo doc --no-deps --all-features`, `bash scripts/sync_vendor.sh --check` |
 | 1 | `ScriptedModel` behavior, no HTTP client in the build | `cargo test --no-default-features` |
 | 1.5 | Invariants over generated inputs | `cargo test --test property_core` |
 | 2 | OpenAI HTTP contracts via wiremock | `cargo test` / `cargo test --all-features` |

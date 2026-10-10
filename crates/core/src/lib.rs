@@ -71,11 +71,9 @@ pub use memory::{
     SessionSettings, Summarizer, DEFAULT_TRIGGER_TOKENS,
 };
 pub use model::{
-    default_model_provider, CallModelData, CallModelInputFilter, MissingProvider, Model,
-    ModelInputData, ModelProvider, ModelRef, ModelRequest, ModelTracing, MultiProvider,
+    CallModelData, CallModelInputFilter, MissingProvider, Model, ModelInputData, ModelProvider,
+    ModelRef, ModelRequest, ModelTracing, MultiProvider,
 };
-#[cfg(feature = "openai")]
-pub use model::{get_default_openai_api, set_default_openai_api, DefaultOpenAiApi};
 pub use model_settings::{ModelSettings, ToolChoice, Truncation, Verbosity};
 pub use result::{CancelMode, RunResult, RunResultStreaming, StreamingSnapshot};
 pub use retry::{
@@ -83,6 +81,7 @@ pub use retry::{
     ModelRetryNormalizedError, ModelRetrySettings, ReplaySafety, RetryDecision, RetryPolicy,
     RetryPolicyContext,
 };
+pub use run::{default_provider, set_default_model_provider_factory};
 pub use run::{
     default_trace_include_sensitive_data, AsToolConfig, OutputGuardrailBlockedMessage,
     OutputGuardrailBlockedMessageArgs, RunConfig, RunErrorData, RunErrorHandler,
@@ -115,11 +114,6 @@ pub use tool_guardrails::{
 };
 pub use tracing::TracingConfig;
 pub use usage::{InputTokensDetails, OutputTokensDetails, RequestUsage, Usage};
-
-#[cfg(feature = "openai")]
-pub use model::openai::{
-    CompatibleProvider, OpenAIChatCompletionsModel, OpenAIProvider, OpenAIResponsesModel,
-};
 
 /// Crate version.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

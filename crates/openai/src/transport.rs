@@ -1,6 +1,6 @@
 //! HTTP transport helpers: error mapping and the SSE reader.
 
-use crate::error::ModelError;
+use openai_agents_core::error::ModelError;
 
 pub(crate) fn map_transport(err: impl std::fmt::Display) -> ModelError {
     ModelError::Transport(err.to_string())
@@ -10,13 +10,13 @@ pub(crate) fn map_transport(err: impl std::fmt::Display) -> ModelError {
 /// policy may replay; an undecodable body is not (Python: `APIConnectionError` / `APITimeoutError`).
 pub(crate) fn map_reqwest(err: reqwest::Error) -> ModelError {
     if err.is_timeout() {
-        return ModelError::Connection(crate::error::ModelConnectionError {
+        return ModelError::Connection(openai_agents_core::error::ModelConnectionError {
             message: err.to_string(),
             is_timeout: true,
         });
     }
     if err.is_connect() || err.is_request() || err.is_body() {
-        return ModelError::Connection(crate::error::ModelConnectionError {
+        return ModelError::Connection(openai_agents_core::error::ModelConnectionError {
             message: err.to_string(),
             is_timeout: false,
         });
@@ -46,7 +46,7 @@ pub(crate) async fn status_error(label: &str, resp: reqwest::Response) -> ModelE
             serde_json::Value::String(text)
         }
     });
-    ModelError::Status(crate::error::ModelStatusError {
+    ModelError::Status(openai_agents_core::error::ModelStatusError {
         status_code: status.as_u16(),
         message: format!("{label} status={status} body={body}"),
         body,

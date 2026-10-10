@@ -3,9 +3,9 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use crate::error::UserError;
-use crate::model::provider::ModelProvider;
-use crate::model::Model;
+use openai_agents_core::error::UserError;
+use openai_agents_core::model::provider::ModelProvider;
+use openai_agents_core::model::Model;
 
 use super::{OpenAIChatCompletionsModel, OpenAIResponsesModel};
 
@@ -18,7 +18,7 @@ pub struct OpenAIProvider {
     api_key: String,
     base_url: Option<String>,
     default_model: Option<String>,
-    api: Option<crate::model::DefaultOpenAiApi>,
+    api: Option<crate::DefaultOpenAiApi>,
     cache: Arc<Mutex<HashMap<String, Arc<dyn Model>>>>,
 }
 
@@ -74,20 +74,20 @@ impl OpenAIProvider {
 
     /// Always resolve to Chat Completions models regardless of the global default.
     pub fn always_chat_completions(self) -> Self {
-        self.api(crate::model::DefaultOpenAiApi::ChatCompletions)
+        self.api(crate::DefaultOpenAiApi::ChatCompletions)
     }
 
     /// Use this API for every model of the provider, whatever the global default says.
-    pub fn api(mut self, api: crate::model::DefaultOpenAiApi) -> Self {
+    pub fn api(mut self, api: crate::DefaultOpenAiApi) -> Self {
         self.api = Some(api);
         self
     }
 
     /// The API a model gets (D-I): the provider's own choice, else `set_default_openai_api`,
     /// else Chat Completions.
-    fn resolve_api(&self) -> crate::model::DefaultOpenAiApi {
+    fn resolve_api(&self) -> crate::DefaultOpenAiApi {
         self.api
-            .or_else(crate::model::explicit_default_openai_api)
+            .or_else(crate::default_api::explicit_default_openai_api)
             .unwrap_or_default()
     }
 }
@@ -100,7 +100,8 @@ impl OpenAIProvider {
 ///
 /// ```no_run
 /// use std::sync::Arc;
-/// use openai_agents_core::{CompatibleProvider, DefaultOpenAiApi, MultiProvider};
+/// use openai_agents_core::MultiProvider;
+/// use openai_agents_openai::{CompatibleProvider, DefaultOpenAiApi};
 ///
 /// let router = MultiProvider::new()
 ///     .register("local", Arc::new(CompatibleProvider::new("http://localhost:8000/v1")))
@@ -124,7 +125,7 @@ impl CompatibleProvider {
     pub fn new(base_url: impl AsRef<str>) -> Self {
         Self {
             inner: OpenAIProvider::new("", Some(base_url.as_ref()), None)
-                .api(crate::model::DefaultOpenAiApi::ChatCompletions),
+                .api(crate::DefaultOpenAiApi::ChatCompletions),
         }
     }
 
@@ -135,7 +136,7 @@ impl CompatibleProvider {
     }
 
     /// The protocol to speak (default: Chat Completions).
-    pub fn api(mut self, api: crate::model::DefaultOpenAiApi) -> Self {
+    pub fn api(mut self, api: crate::DefaultOpenAiApi) -> Self {
         self.inner.api = Some(api);
         self
     }
@@ -171,10 +172,7 @@ impl ModelProvider for OpenAIProvider {
             }
         }
 
-        let use_responses = matches!(
-            self.resolve_api(),
-            crate::model::DefaultOpenAiApi::Responses
-        );
+        let use_responses = matches!(self.resolve_api(), crate::DefaultOpenAiApi::Responses);
         let model: Arc<dyn Model> = if use_responses {
             Arc::new(OpenAIResponsesModel::new(
                 name.clone(),
@@ -199,7 +197,7 @@ impl ModelProvider for OpenAIProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::DefaultOpenAiApi::{ChatCompletions, Responses};
+    use crate::DefaultOpenAiApi::{ChatCompletions, Responses};
 
     /// D-I: Chat Completions unless the provider (or `set_default_openai_api`) says otherwise,
     /// whatever the host. (These cases never touch the process-global setting.)

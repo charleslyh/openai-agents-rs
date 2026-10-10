@@ -5,7 +5,7 @@ use std::sync::{Arc, OnceLock};
 
 use crate::agent::Agent;
 use crate::error::{AgentsError, UserError};
-use crate::model::{default_model_provider, Model, ModelProvider, ModelRef};
+use crate::model::{MissingProvider, Model, ModelProvider, ModelRef};
 
 use super::config::RunConfig;
 
@@ -37,11 +37,40 @@ pub(crate) fn resolve_agent_by_name(root: &Agent, name: &str) -> Result<Agent, A
     Err(UserError::new(format!("Agent `{name}` not found in starting agent graph")).into())
 }
 
-static DEFAULT_MODEL_PROVIDER: OnceLock<Arc<dyn ModelProvider>> = OnceLock::new();
+type ProviderFactory = Box<dyn Fn() -> Arc<dyn ModelProvider> + Send + Sync>;
 
-/// Lazily-created default provider (Python: `RunConfig.model_provider` fallback).
+static DEFAULT_PROVIDER_FACTORY: OnceLock<ProviderFactory> = OnceLock::new();
+static DEFAULT_MODEL_PROVIDER: OnceLock<Arc<dyn ModelProvider>> = OnceLock::new();
+static MISSING_PROVIDER: OnceLock<Arc<dyn ModelProvider>> = OnceLock::new();
+
+/// Register how to build the process-wide default [`ModelProvider`], used when
+/// `RunConfig.model_provider` is not set (Python: the default `MultiProvider` behind `RunConfig`).
+///
+/// Core knows no concrete provider. A crate that does (the `openai-agents` crate with its
+/// `openai` feature) registers a factory here, and core calls it once, the first time a model
+/// name has to be resolved without an explicit provider. Registering a factory rather than a
+/// provider keeps that moment lazy: configuration such as environment variables is read when it
+/// is first needed, not when the factory is registered.
+///
+/// The default can be registered once per process. Returns `false`, leaving the earlier one in
+/// place, if there already is one. Choose a provider for a single run with
+/// `RunConfig.model_provider` instead.
+pub fn set_default_model_provider_factory(
+    factory: impl Fn() -> Arc<dyn ModelProvider> + Send + Sync + 'static,
+) -> bool {
+    DEFAULT_PROVIDER_FACTORY.set(Box::new(factory)).is_ok()
+}
+
+/// The default provider: the one the registered factory builds, or, when none is registered, one
+/// that fails with an actionable message.
 pub fn default_provider() -> &'static Arc<dyn ModelProvider> {
-    DEFAULT_MODEL_PROVIDER.get_or_init(default_model_provider)
+    if let Some(provider) = DEFAULT_MODEL_PROVIDER.get() {
+        return provider;
+    }
+    match DEFAULT_PROVIDER_FACTORY.get() {
+        Some(factory) => DEFAULT_MODEL_PROVIDER.get_or_init(|| factory()),
+        None => MISSING_PROVIDER.get_or_init(|| Arc::new(MissingProvider)),
+    }
 }
 
 /// Resolve the model for a turn.
@@ -72,7 +101,8 @@ pub(crate) fn resolve_model(
     Err(UserError::new(
         "No model configured. Bind a Model (e.g. ScriptedModel) via `Agent::model`, set \
          `Agent::model_name` / `RunConfig.model` to a name resolvable by a ModelProvider, or \
-         enable the `openai` feature with OPENAI_API_KEY set.",
+         install a default with `set_default_model_provider_factory` (the `openai-agents` crate does so \
+         for OpenAI when its `openai` feature is on and OPENAI_API_KEY is set).",
     )
     .into())
 }

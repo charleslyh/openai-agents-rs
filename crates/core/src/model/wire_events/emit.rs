@@ -6,14 +6,14 @@ use tokio::sync::mpsc::Sender;
 use super::{SequenceNumber, FAKE_RESPONSES_ID};
 
 /// Sends wire events, numbering them in emission order.
-pub(crate) struct WireEventEmitter<'a> {
+pub struct WireEventEmitter<'a> {
     tx: &'a Sender<Value>,
     seq: SequenceNumber,
 }
 
 impl<'a> WireEventEmitter<'a> {
     /// Bind the emitter to a raw-event channel.
-    pub(crate) fn new(tx: &'a Sender<Value>) -> Self {
+    pub fn new(tx: &'a Sender<Value>) -> Self {
         Self {
             tx,
             seq: SequenceNumber::new(),
@@ -31,13 +31,13 @@ impl<'a> WireEventEmitter<'a> {
     }
 
     /// `response.created` — emitted once, before any output item.
-    pub(crate) async fn created(&mut self, response: Value) {
+    pub async fn created(&mut self, response: Value) {
         self.send("response.created", json!({"response": response}))
             .await;
     }
 
     /// `response.output_item.added`.
-    pub(crate) async fn output_item_added(&mut self, output_index: usize, item: Value) {
+    pub async fn output_item_added(&mut self, output_index: usize, item: Value) {
         self.send(
             "response.output_item.added",
             json!({"output_index": output_index, "item": item}),
@@ -46,7 +46,7 @@ impl<'a> WireEventEmitter<'a> {
     }
 
     /// `response.output_item.done`.
-    pub(crate) async fn output_item_done(&mut self, output_index: usize, item: Value) {
+    pub async fn output_item_done(&mut self, output_index: usize, item: Value) {
         self.send(
             "response.output_item.done",
             json!({"output_index": output_index, "item": item}),
@@ -55,7 +55,7 @@ impl<'a> WireEventEmitter<'a> {
     }
 
     /// `response.content_part.added`.
-    pub(crate) async fn content_part_added(
+    pub async fn content_part_added(
         &mut self,
         item_id: &str,
         output_index: usize,
@@ -75,7 +75,7 @@ impl<'a> WireEventEmitter<'a> {
     }
 
     /// `response.content_part.done`.
-    pub(crate) async fn content_part_done(
+    pub async fn content_part_done(
         &mut self,
         item_id: &str,
         output_index: usize,
@@ -95,7 +95,7 @@ impl<'a> WireEventEmitter<'a> {
     }
 
     /// `response.output_text.delta`.
-    pub(crate) async fn text_delta(
+    pub async fn text_delta(
         &mut self,
         item_id: &str,
         output_index: usize,
@@ -116,8 +116,7 @@ impl<'a> WireEventEmitter<'a> {
     }
 
     /// `response.refusal.delta`.
-    #[cfg_attr(not(feature = "openai"), allow(dead_code))]
-    pub(crate) async fn refusal_delta(
+    pub async fn refusal_delta(
         &mut self,
         item_id: &str,
         output_index: usize,
@@ -137,8 +136,7 @@ impl<'a> WireEventEmitter<'a> {
     }
 
     /// `response.refusal.done`.
-    #[cfg_attr(not(feature = "openai"), allow(dead_code))]
-    pub(crate) async fn refusal_done(
+    pub async fn refusal_done(
         &mut self,
         item_id: &str,
         output_index: usize,
@@ -158,7 +156,7 @@ impl<'a> WireEventEmitter<'a> {
     }
 
     /// `response.output_text.done`.
-    pub(crate) async fn text_done(
+    pub async fn text_done(
         &mut self,
         item_id: &str,
         output_index: usize,
@@ -178,7 +176,7 @@ impl<'a> WireEventEmitter<'a> {
     }
 
     /// `response.reasoning_summary_part.added`.
-    pub(crate) async fn reasoning_summary_part_added(
+    pub async fn reasoning_summary_part_added(
         &mut self,
         item_id: &str,
         output_index: usize,
@@ -197,7 +195,7 @@ impl<'a> WireEventEmitter<'a> {
     }
 
     /// `response.reasoning_summary_text.delta`.
-    pub(crate) async fn reasoning_summary_text_delta(
+    pub async fn reasoning_summary_text_delta(
         &mut self,
         item_id: &str,
         output_index: usize,
@@ -217,7 +215,7 @@ impl<'a> WireEventEmitter<'a> {
     }
 
     /// `response.reasoning_summary_text.done`.
-    pub(crate) async fn reasoning_summary_text_done(
+    pub async fn reasoning_summary_text_done(
         &mut self,
         item_id: &str,
         output_index: usize,
@@ -237,7 +235,7 @@ impl<'a> WireEventEmitter<'a> {
     }
 
     /// `response.reasoning_summary_part.done`.
-    pub(crate) async fn reasoning_summary_part_done(
+    pub async fn reasoning_summary_part_done(
         &mut self,
         item_id: &str,
         output_index: usize,
@@ -257,7 +255,7 @@ impl<'a> WireEventEmitter<'a> {
     }
 
     /// `response.reasoning_text.delta`.
-    pub(crate) async fn reasoning_text_delta(
+    pub async fn reasoning_text_delta(
         &mut self,
         item_id: &str,
         output_index: usize,
@@ -277,7 +275,7 @@ impl<'a> WireEventEmitter<'a> {
     }
 
     /// `response.reasoning_text.done`.
-    pub(crate) async fn reasoning_text_done(
+    pub async fn reasoning_text_done(
         &mut self,
         item_id: &str,
         output_index: usize,
@@ -297,7 +295,7 @@ impl<'a> WireEventEmitter<'a> {
     }
 
     /// `response.function_call_arguments.delta`.
-    pub(crate) async fn function_call_arguments_delta(
+    pub async fn function_call_arguments_delta(
         &mut self,
         item_id: &str,
         output_index: usize,
@@ -311,7 +309,7 @@ impl<'a> WireEventEmitter<'a> {
     }
 
     /// `response.function_call_arguments.done`.
-    pub(crate) async fn function_call_arguments_done(
+    pub async fn function_call_arguments_done(
         &mut self,
         item_id: &str,
         output_index: usize,
@@ -331,7 +329,7 @@ impl<'a> WireEventEmitter<'a> {
     }
 
     /// `response.completed` — the terminal event, carrying the full response object.
-    pub(crate) async fn completed(&mut self, response: Value) {
+    pub async fn completed(&mut self, response: Value) {
         self.send("response.completed", json!({"response": response}))
             .await;
     }
@@ -340,8 +338,7 @@ impl<'a> WireEventEmitter<'a> {
 /// Emit a single terminal `response.completed`, continuing an existing sequence numbering.
 ///
 /// Used when a gateway streams output events but never sends `response.completed`.
-#[cfg(feature = "openai")]
-pub(crate) async fn emit_completed(tx: &Sender<Value>, response: Value, sequence_number: u64) {
+pub async fn emit_completed(tx: &Sender<Value>, response: Value, sequence_number: u64) {
     let _ = tx
         .send(json!({
             "type": "response.completed",
@@ -352,7 +349,7 @@ pub(crate) async fn emit_completed(tx: &Sender<Value>, response: Value, sequence
 }
 
 /// The id an event refers to: `id`, else `call_id`, else the synthesized placeholder.
-pub(crate) fn item_id(item: &Value) -> String {
+pub fn item_id(item: &Value) -> String {
     item.get("id")
         .or_else(|| item.get("call_id"))
         .and_then(|v| v.as_str())
@@ -362,7 +359,7 @@ pub(crate) fn item_id(item: &Value) -> String {
 }
 
 /// Copy of an item as announced by `output_item.added` (Python: `_in_progress_output_item`).
-pub(crate) fn in_progress_item(item: &Value) -> Value {
+pub fn in_progress_item(item: &Value) -> Value {
     let mut copy = item.clone();
     match item.get("type").and_then(|t| t.as_str()) {
         Some("message") => {
@@ -390,7 +387,7 @@ pub(crate) fn in_progress_item(item: &Value) -> Value {
 ///
 /// Used by `ScriptedModel`, by the default `Model::stream_response`, and by the OpenAI adapters
 /// when a gateway answers `stream: true` with a plain JSON body.
-pub(crate) async fn emit_response_stream(tx: &Sender<Value>, response: Value) {
+pub async fn emit_response_stream(tx: &Sender<Value>, response: Value) {
     let output: Vec<Value> = response
         .get("output")
         .and_then(|o| o.as_array())
