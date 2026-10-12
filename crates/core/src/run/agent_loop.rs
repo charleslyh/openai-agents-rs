@@ -6,45 +6,35 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use serde_json::{json, Value};
+use serde_json::Value;
 use tokio::sync::mpsc;
 
-use crate::agent::{Agent, FunctionToolResult, ToolUseBehavior};
-use crate::error::{
-    AgentsError, InputGuardrailTripwireTriggered, MaxTurnsExceeded, ModelError, ModelRefusalError,
-    UserError,
-};
+use crate::agent::Agent;
+use crate::error::{AgentsError, InputGuardrailTripwireTriggered};
 use crate::guardrail::{InputGuardrail, InputGuardrailResult};
-use crate::handoffs::{nest_handoff_history, Handoff, HandoffInputData};
+use crate::handoffs::Handoff;
 use crate::items::apply_reasoning_item_id_policy;
-use crate::items::{
-    extract_message_text, is_function_call, is_reasoning, required_function_call_parts,
-    HandoffCallItem, HandoffOutputItem, InputLike, ItemHelpers, MessageOutputItem, ModelResponse,
-    ReasoningItem, RunItem, ToolCallItem,
-};
+use crate::items::{required_function_call_parts, InputLike, ItemHelpers, ModelResponse, RunItem};
 use crate::memory::prepare_input_with_session;
 use crate::model::{CallModelData, Model, ModelInput, ModelInputData, ModelRequest, ModelTracing};
 use crate::result::{InterruptSnapshot, RunResult, StreamingSnapshot};
 use crate::run_context::RunContextWrapper;
 use crate::run_state::{ApprovalStore, RunState};
-use crate::stream_events::{RunItemStreamName, StreamEvent};
+use crate::stream_events::StreamEvent;
 use crate::tool_guardrails::{ToolInputGuardrailResult, ToolOutputGuardrailResult};
-use crate::tracing::{
-    agent_span, generation_span, handoff_span, task_span, turn_span, SpanGuard, TracingConfig,
-};
+use crate::tracing::{agent_span, generation_span, task_span, turn_span, SpanGuard, TracingConfig};
 use crate::usage::Usage;
 
-use super::config::{OutputGuardrailBlockedMessage, RunOptions};
-use super::errors::{
-    accept_handler_output, build_run_error_data, invoke_run_error_handler, RunHandledError,
-};
+use super::config::RunOptions;
+
 use super::finalize::{finalize_run, finished_result, interrupted_result};
 use super::resolve::{collect_agents, resolve_agent_by_name, resolve_model};
 use super::session_writer::SessionWriter;
-use super::tools::{
-    execute_planned_tools, finalize_tool_output, has_tool_output, plan_tool_calls,
-    push_tool_output, resolve_tool_name_collisions, tool_output_item, tools_for_agent,
-    validate_tool_timeout, value_to_tool_string, ToolPlan, MULTIPLE_HANDOFFS_MESSAGE,
+use super::tools::{plan_tool_calls, push_tool_output};
+use super::turn::{
+    execute_turn_tools, final_output_without_tools, handle_max_turns_exceeded, perform_handoff,
+    prepare_turn, record_response_items, record_turn_output, split_response_output,
+    tool_use_behavior_output, turn_was_cancelled, validate_run_options, TurnEnd, TurnOutput,
 };
 
 tokio::task_local! {
@@ -220,24 +210,7 @@ async fn run_loop_inner(
     // Python default of `Some(DEFAULT_MAX_TURNS)` (D-008), but an explicit `None` must mean
     // "run until the agent stops" (D-042), not "fall back to 10".
     let max_turns: Option<usize> = options.max_turns;
-    // Python raises `ValueError` when the config is built; Rust has no constructor to hook, so
-    // the run reports it as a `UserError` before doing any work.
-    let max_tool_concurrency = options
-        .run_config
-        .tool_execution
-        .and_then(|c| c.max_function_tool_concurrency);
-    if matches!(
-        &options.run_config.output_guardrail_blocked_message,
-        Some(OutputGuardrailBlockedMessage::Text(text)) if text.is_empty()
-    ) {
-        return Err(UserError::new("output_guardrail_blocked_message must be non-empty").into());
-    }
-    if max_tool_concurrency == Some(0) {
-        return Err(UserError::new(
-            "tool_execution.max_function_tool_concurrency must be at least 1",
-        )
-        .into());
-    }
+    let max_tool_concurrency = validate_run_options(&options)?;
     let workflow = options
         .run_config
         .workflow_name
@@ -388,65 +361,40 @@ async fn run_loop_inner(
             s.current_agent_name = current_agent.name.clone();
         }
         // Graceful cancel (`CancelMode::AfterTurn`): stop before a new turn begins.
-        if turn > 1 {
-            let cancelled = snapshot
-                .as_ref()
-                .map(|snap| snap.lock().expect("snapshot").cancel_after_turn)
-                .unwrap_or(false);
-            if cancelled {
-                return Ok(finished_result(
-                    input,
-                    generated_items,
-                    raw_responses,
-                    Value::Null,
-                    Arc::new(current_agent.clone()),
-                    max_turns,
-                    usage,
-                ));
-            }
+        if turn_was_cancelled(turn, snapshot.as_ref()) {
+            return Ok(finished_result(
+                input,
+                generated_items,
+                raw_responses,
+                Value::Null,
+                Arc::new(current_agent.clone()),
+                max_turns,
+                usage,
+            ));
         }
-        // Python (`run.py:1506-1507`): `current_turn += 1` first, then `if max_turns is not
-        // None and current_turn > max_turns`. With no limit the comparison is skipped entirely.
-        let exceeded = match max_turns {
-            Some(limit) if turn > limit => Some(limit),
-            _ => None,
-        };
-        if let Some(limit) = exceeded {
-            let error = MaxTurnsExceeded { max_turns: limit };
-            // Python (`run.py:1508`): `SpanError(message="Max turns exceeded", data={"max_turns": n})`
-            // on the current span, so a run that ran out of turns shows up on the timeline.
-            if let Some(guard) = task_guard.as_mut() {
-                guard.set_error(crate::tracing::SpanError {
-                    message: "Max turns exceeded".to_string(),
-                    data: Some(json!({ "max_turns": limit })),
-                });
-            }
-            // Python (`finalize_max_turns_handler_output`): validate the handler's output,
-            // record it as an assistant message, then run the end hooks and output guardrails.
-            let run_data = build_run_error_data(
-                &input,
-                &generated_items,
-                &raw_responses,
-                &current_agent,
-                options.run_config.reasoning_item_id_policy,
-            );
-            let Some(handled) = invoke_run_error_handler(
-                options.error_handlers.max_turns.clone(),
-                RunHandledError::MaxTurns(error.clone()),
-                &context,
-                run_data,
-            )
-            .await?
-            else {
-                return Err(error.into());
-            };
-            let final_output =
-                accept_handler_output(&current_agent, handled, &mut generated_items)?;
+        // Python (`run.py:1506-1507`): the turn counter is incremented first and only compared
+        // when `max_turns` is not `None`.
+        if let Some(output) = handle_max_turns_exceeded(
+            turn,
+            &TurnEnd {
+                input: &input,
+                raw_responses: &raw_responses,
+                agent: &current_agent,
+                max_turns,
+                options: &options,
+            },
+            &generated_items.clone(),
+            &mut generated_items,
+            &context,
+            task_guard.as_mut(),
+        )
+        .await?
+        {
             return finalize_run(
                 input,
                 generated_items,
                 raw_responses,
-                final_output,
+                output,
                 &current_agent,
                 max_turns,
                 usage,
@@ -487,29 +435,12 @@ async fn run_loop_inner(
             )));
         }
 
-        // Python recomputes model settings at the start of every turn
-        // (`get_model_settings` then `maybe_reset_tool_choice`), so `tool_choice` is cleared
-        // once the agent has used tools — including when the previous turn ended early via
-        // `stop_on_first_tool` / `StopAtTools`.
-        let mut model_settings = current_agent
-            .model_settings
-            .resolve(options.run_config.model_settings.as_ref());
-        if current_agent.reset_tool_choice && agents_used_tools.contains(&current_agent.name) {
-            model_settings.tool_choice = None;
-        }
+        let setup = prepare_turn(&current_agent, &agents_used_tools, &options, &context).await?;
+        let model_settings = setup.model_settings;
+        let enabled_handoffs = setup.enabled_handoffs;
+        let tools = setup.tools;
 
         let model = resolve_model(&current_agent, &options.run_config)?;
-        // Python re-evaluates `is_enabled` every turn; disabled tools and handoffs are hidden
-        // from the model and calls to them are treated as unknown.
-        let (enabled_tools, enabled_handoffs) = resolve_tool_name_collisions(
-            current_agent.all_function_tools(&context).await?,
-            current_agent.enabled_handoffs(&context).await,
-            options.run_config.tool_name_collision_policy,
-        )?;
-        for tool in &enabled_tools {
-            validate_tool_timeout(tool)?;
-        }
-        let tools = tools_for_agent(enabled_tools, &enabled_handoffs);
 
         let (response, approvals_map, from_resume) = if let Some((pending, approvals)) =
             resume_pending.take()
@@ -705,207 +636,73 @@ async fn run_loop_inner(
             input_guardrail_results.extend(results);
         }
 
-        let mut function_calls: Vec<Value> = Vec::new();
-        let mut reasoning_items: Vec<Value> = Vec::new();
-        let mut messages: Vec<Value> = Vec::new();
-        for item in response.output.iter().cloned() {
-            if is_function_call(&item) {
-                function_calls.push(item);
-            } else if is_reasoning(&item) {
-                reasoning_items.push(item);
-            } else {
-                messages.push(item);
-            }
-        }
-
+        let parts = split_response_output(&response);
+        // Python separates handoff tool calls from plain ones while recording, so the names the
+        // turn enabled have to be known before the items are built.
+        let handoff_names: Vec<String> = enabled_handoffs
+            .iter()
+            .map(|h| h.tool_name.clone())
+            .collect();
         if !from_resume {
-            for reason in &reasoning_items {
-                let item = RunItem::Reasoning(ReasoningItem {
-                    agent_name: current_agent.name.clone(),
-                    raw_item: reason.clone(),
-                });
-                emit(
-                    &events,
-                    StreamEvent::RunItem {
-                        name: RunItemStreamName::ReasoningItemCreated,
-                        item: item.clone(),
-                    },
-                )
-                .await;
-                generated_items.push(item);
-            }
-            for msg in &messages {
-                let item = RunItem::Message(MessageOutputItem {
-                    agent_name: current_agent.name.clone(),
-                    raw_item: msg.clone(),
-                });
-                emit(
-                    &events,
-                    StreamEvent::RunItem {
-                        name: RunItemStreamName::MessageOutputCreated,
-                        item: item.clone(),
-                    },
-                )
-                .await;
-                generated_items.push(item);
-            }
-            for call in &function_calls {
-                let (tool_name, _, _) = required_function_call_parts(call)?;
-                let is_handoff = enabled_handoffs.iter().any(|h| h.tool_name == tool_name);
-                // Python separates handoff tool calls into `HandoffCallItem` during
-                // `process_model_response`, so `new_items` distinguishes them from plain tools.
-                let item = if is_handoff {
-                    RunItem::HandoffCall(HandoffCallItem {
-                        agent_name: current_agent.name.clone(),
-                        raw_item: call.clone(),
-                    })
-                } else {
-                    RunItem::ToolCall(ToolCallItem {
-                        agent_name: current_agent.name.clone(),
-                        raw_item: call.clone(),
-                    })
-                };
-                emit(
-                    &events,
-                    StreamEvent::RunItem {
-                        name: if is_handoff {
-                            RunItemStreamName::HandoffRequested
-                        } else {
-                            RunItemStreamName::ToolCalled
-                        },
-                        item: item.clone(),
-                    },
-                )
-                .await;
-                generated_items.push(item);
-            }
+            record_response_items(
+                &parts,
+                &handoff_names,
+                &current_agent.name,
+                &events,
+                &mut generated_items,
+            )
+            .await?;
         }
 
-        if function_calls.is_empty() {
-            let last_message = messages
-                .iter()
-                .rev()
-                .find(|m| m.get("type").and_then(Value::as_str) == Some("message"));
-            let final_text = messages
-                .iter()
-                .filter_map(extract_message_text)
-                .collect::<Vec<_>>()
-                .join("");
-            // Only this response is reported to `model_refusal` / `invalid_final_output`
-            // handlers, like Python (`raw_responses=[new_response]`).
-            let error_data = |generated: &[RunItem]| {
-                build_run_error_data(
-                    &input,
-                    generated,
-                    std::slice::from_ref(&response),
-                    &current_agent,
-                    options.run_config.reasoning_item_id_policy,
-                )
-            };
-            // Python (`execute_tools_and_side_effects`): a refusal ends the turn with
-            // `ModelRefusalError` unless a `model_refusal` handler supplies the output.
-            let refusal = last_message.and_then(crate::items::extract_message_refusal);
-            let final_output = if let Some(refusal) = refusal {
-                let error = ModelRefusalError { refusal };
-                let handled = invoke_run_error_handler(
-                    options.error_handlers.model_refusal.clone(),
-                    RunHandledError::ModelRefusal(error.clone()),
-                    &context,
-                    error_data(&generated_items),
-                )
-                .await?;
-                let Some(handled) = handled else {
-                    return Err(error.into());
-                };
-                accept_handler_output(&current_agent, handled, &mut generated_items)?
-            } else {
-                match current_agent.output_type.as_deref() {
-                    Some(schema) if !schema.is_plain_text() => {
-                        let invalid = if final_text.is_empty() {
-                            ModelError::Behavior(
-                                "Model returned no final output for the structured output type."
-                                    .into(),
-                            )
-                        } else {
-                            match schema.validate_json(&final_text) {
-                                Ok(value) => {
-                                    return finalize_run(
-                                        input,
-                                        generated_items,
-                                        raw_responses,
-                                        value,
-                                        &current_agent,
-                                        max_turns,
-                                        usage,
-                                        &context,
-                                        options.hooks.as_ref(),
-                                        &options.run_config.output_guardrails,
-                                        input_guardrail_results,
-                                        None,
-                                        session_writer.as_deref_mut(),
-                                    )
-                                    .await;
-                                }
-                                Err(error) => error,
-                            }
-                        };
-                        let handled = invoke_run_error_handler(
-                            options.error_handlers.invalid_final_output.clone(),
-                            RunHandledError::InvalidFinalOutput(invalid.clone()),
-                            &context,
-                            error_data(&generated_items),
-                        )
-                        .await?;
-                        match handled {
-                            Some(handled) => accept_handler_output(
-                                &current_agent,
-                                handled,
-                                &mut generated_items,
-                            )?,
-                            // Python: an empty structured answer that no handler fixes asks the
-                            // model again; an unparsable one raises.
-                            None if final_text.is_empty() => {
-                                for item in &response.output {
-                                    current_input_items.push(apply_reasoning_item_id_policy(
-                                        item,
-                                        options.run_config.reasoning_item_id_policy,
-                                    ));
-                                }
-                                continue;
-                            }
-                            None => return Err(invalid.into()),
-                        }
-                    }
-                    _ => Value::String(final_text),
-                }
-            };
-            return finalize_run(
-                input,
-                generated_items,
-                raw_responses,
-                final_output,
+        if parts.function_calls.is_empty() {
+            match final_output_without_tools(
+                &parts,
+                &response,
+                &input,
+                &mut generated_items,
                 &current_agent,
-                max_turns,
-                usage,
+                &options,
                 &context,
-                options.hooks.as_ref(),
-                &options.run_config.output_guardrails,
-                input_guardrail_results,
-                None,
-                session_writer.as_deref_mut(),
             )
-            .await;
+            .await?
+            {
+                TurnOutput::Final(final_output) => {
+                    return finalize_run(
+                        input,
+                        generated_items,
+                        raw_responses,
+                        final_output,
+                        &current_agent,
+                        max_turns,
+                        usage,
+                        &context,
+                        options.hooks.as_ref(),
+                        &options.run_config.output_guardrails,
+                        input_guardrail_results,
+                        None,
+                        session_writer.as_deref_mut(),
+                    )
+                    .await;
+                }
+                TurnOutput::Again => {
+                    for item in &response.output {
+                        current_input_items.push(apply_reasoning_item_id_policy(
+                            item,
+                            options.run_config.reasoning_item_id_policy,
+                        ));
+                    }
+                    continue;
+                }
+            }
         }
 
         // Python records tool usage for the turn so `tool_choice` can be reset on the next
         // turn (`AgentToolUseTracker.record_processed_response`).
         agents_used_tools.insert(current_agent.name.clone());
 
-        // Python (`execute_tools_and_side_effects`) runs the function tools of the turn first and
-        // then performs the first handoff; extra handoffs are answered but ignored.
         let mut handoff_calls: Vec<(Handoff, Value, String)> = Vec::new();
         let mut tool_calls: Vec<Value> = Vec::new();
-        for call in &function_calls {
+        for call in &parts.function_calls {
             let (name, _args, call_id) = required_function_call_parts(call)?;
             match enabled_handoffs.iter().find(|h| h.tool_name == name) {
                 Some(h) => handoff_calls.push((h.clone(), call.clone(), call_id)),
@@ -913,124 +710,33 @@ async fn run_loop_inner(
             }
         }
 
-        let tool_plan = plan_tool_calls(
+        let (tool_results, interrupted) = execute_turn_tools(
+            plan_tool_calls(
+                &current_agent,
+                &tools,
+                &tool_calls,
+                &approvals_map,
+                &generated_items,
+                &options.run_config,
+                &context,
+            )
+            .await?,
             &current_agent,
-            &tools,
-            &tool_calls,
-            &approvals_map,
-            &generated_items,
-            &options.run_config,
             &context,
-        )
-        .await?;
-
-        if !tool_plan.interruptions.is_empty() {
-            // Execute tools that do not need approval in this turn before pausing.
-            if !tool_plan.to_invoke.is_empty() {
-                let auto_plan = ToolPlan {
-                    interruptions: Vec::new(),
-                    ready_outputs: Vec::new(),
-                    to_invoke: tool_plan.to_invoke.clone(),
-                    already_done: Vec::new(),
-                };
-                let (auto_results, nested_interruptions, nested_states) = execute_planned_tools(
-                    &auto_plan,
-                    &nested_agent_runs,
-                    &current_agent,
-                    &context,
-                    options.hooks.as_ref(),
-                    max_tool_concurrency,
-                    &tool_guardrail_log,
-                )
-                .await?;
-                for (_tool, output, call_id) in &auto_results {
-                    let out_item = tool_output_item(&current_agent.name, call_id, output);
-                    emit(
-                        &events,
-                        StreamEvent::RunItem {
-                            name: RunItemStreamName::ToolOutput,
-                            item: out_item.clone(),
-                        },
-                    )
-                    .await;
-                    if !has_tool_output(&generated_items, call_id) {
-                        generated_items.push(out_item);
-                    }
-                }
-                if !nested_interruptions.is_empty() {
-                    for (call_id, state) in nested_states {
-                        nested_agent_runs.insert(call_id, state);
-                    }
-                    for approval in &nested_interruptions {
-                        generated_items.push(RunItem::ToolApproval(approval.clone()));
-                    }
-                    return Ok(interrupted_result(
-                        input,
-                        generated_items,
-                        raw_responses,
-                        Arc::new(current_agent.clone()),
-                        max_turns,
-                        usage,
-                        nested_interruptions,
-                        InterruptSnapshot {
-                            starting_agent_name,
-                            current_input_items,
-                            turn,
-                            previous_response_id,
-                            model_settings,
-                            pending_response: response,
-                            approvals: live_approvals,
-                            nested_agent_runs,
-                            session_saved_items: 0,
-                            session_input_saved: false,
-                            input_guardrail_results: input_guardrail_results.clone(),
-                        },
-                    ));
-                }
-            }
-            for approval in &tool_plan.interruptions {
-                generated_items.push(RunItem::ToolApproval(approval.clone()));
-            }
-            return Ok(interrupted_result(
-                input,
-                generated_items,
-                raw_responses,
-                Arc::new(current_agent.clone()),
-                max_turns,
-                usage,
-                tool_plan.interruptions,
-                InterruptSnapshot {
-                    starting_agent_name,
-                    current_input_items,
-                    turn,
-                    previous_response_id,
-                    model_settings,
-                    pending_response: response,
-                    approvals: live_approvals,
-                    nested_agent_runs,
-                    session_saved_items: 0,
-                    session_input_saved: false,
-                    input_guardrail_results: input_guardrail_results.clone(),
-                },
-            ));
-        }
-
-        // All calls decided — execute remaining tools (rejections already resolved to outputs).
-        let (tool_results, nested_interruptions, nested_states) = execute_planned_tools(
-            &tool_plan,
+            &options,
+            &mut generated_items,
             &nested_agent_runs,
-            &current_agent,
-            &context,
-            options.hooks.as_ref(),
             max_tool_concurrency,
             &tool_guardrail_log,
+            &events,
         )
-        .await?;
-        if !nested_interruptions.is_empty() {
-            for (call_id, state) in nested_states {
+        .await?
+        .expect("execute_turn_tools always reports a result");
+        if let Some(signal) = interrupted {
+            for (call_id, state) in signal.nested_states {
                 nested_agent_runs.insert(call_id, state);
             }
-            for approval in &nested_interruptions {
+            for approval in &signal.interruptions {
                 generated_items.push(RunItem::ToolApproval(approval.clone()));
             }
             return Ok(interrupted_result(
@@ -1040,7 +746,7 @@ async fn run_loop_inner(
                 Arc::new(current_agent.clone()),
                 max_turns,
                 usage,
-                nested_interruptions,
+                signal.interruptions,
                 InterruptSnapshot {
                     starting_agent_name,
                     current_input_items,
@@ -1076,270 +782,59 @@ async fn run_loop_inner(
             .await;
         }
 
-        if !handoff_calls.is_empty() {
-            let turn_start_len = current_input_items.len();
-            for item in &response.output {
-                current_input_items.push(apply_reasoning_item_id_policy(
-                    item,
-                    options.run_config.reasoning_item_id_policy,
-                ));
-            }
-            for (_tool, output, call_id) in &tool_results {
-                current_input_items.push(ItemHelpers::function_call_output(
-                    call_id,
-                    value_to_tool_string(output),
-                ));
-            }
-            // Python: every handoff after the first gets a plain tool output.
-            for (_h, _call, call_id) in handoff_calls.iter().skip(1) {
-                let message = Value::String(MULTIPLE_HANDOFFS_MESSAGE.to_string());
-                push_tool_output(
-                    &events,
-                    &mut generated_items,
-                    &current_agent.name,
-                    call_id,
-                    &message,
-                )
-                .await;
-                current_input_items.push(ItemHelpers::function_call_output(
-                    call_id,
-                    MULTIPLE_HANDOFFS_MESSAGE.to_string(),
-                ));
-            }
-
-            let (h, call, call_id) = handoff_calls[0].clone();
-            let _handoff_span = handoff_span(&current_agent.name, &h.agent.name);
-
-            // Python (`on_invoke_handoff`): validate the arguments, then run `on_handoff`
-            // before the handoff output is recorded.
-            if let Some(on_handoff) = &h.on_handoff {
-                let input = if h.input_json_schema.is_some() {
-                    let (_, args, _) = required_function_call_parts(&call)?;
-                    Some(serde_json::from_str::<Value>(&args).map_err(|e| {
-                        ModelError::Behavior(format!(
-                            "Invalid JSON input for handoff `{}`: {e}",
-                            h.tool_name
-                        ))
-                    })?)
-                } else {
-                    None
-                };
-                on_handoff(context.clone(), input).await?;
-            }
-
-            let transfer = crate::support::pyjson::dumps(&json!({"assistant": h.agent.name}));
-            let source_agent_name = current_agent.name.clone();
-            let target_agent_name = h.agent.name.clone();
-            let out_item = RunItem::HandoffOutput(HandoffOutputItem {
-                agent_name: source_agent_name.clone(),
-                raw_item: ItemHelpers::function_call_output(&call_id, transfer.clone()),
-                source_agent_name,
-                target_agent_name,
-            });
-            emit(
-                &events,
-                StreamEvent::RunItem {
-                    name: RunItemStreamName::HandoffOccured,
-                    item: out_item.clone(),
-                },
-            )
-            .await;
-            generated_items.push(out_item);
-            current_input_items.push(ItemHelpers::function_call_output(&call_id, transfer));
-
-            let source_agent = current_agent.clone();
-            current_agent = if h.late_bound {
-                known_agents.get(&h.agent.name).cloned().ok_or_else(|| {
-                    UserError::new(format!(
-                        "Handoff `{}` targets agent `{}`, which is not reachable from the \
-                         starting agent. Add it with `handoff(agent)` somewhere in the graph.",
-                        h.tool_name, h.agent.name
-                    ))
-                })?
-            } else {
-                (*h.agent).clone()
-            };
-            collect_agents(&current_agent, &mut known_agents);
-
-            // Python: `hooks.on_handoff(context, from_agent, to_agent)` and the agent-level
-            // `on_handoff(context, agent=new_agent, source=old_agent)`.
-            if let Some(hooks) = &options.hooks {
-                hooks
-                    .on_handoff(context.clone(), &source_agent, &current_agent)
-                    .await;
-            }
-            if let Some(ah) = &source_agent.hooks {
-                ah.on_handoff(context.clone(), &current_agent, &source_agent)
-                    .await;
-            }
-
-            // Python: the handoff's own filter wins over `RunConfig.handoff_input_filter`.
-            let input_filter = h
-                .input_filter
-                .clone()
-                .or_else(|| options.run_config.handoff_input_filter.clone());
-            let server_managed =
-                options.previous_response_id.is_some() || options.conversation_id.is_some();
-            let mut should_nest = h
-                .nest_handoff_history
-                .unwrap_or(options.run_config.nest_handoff_history);
-            if input_filter.is_some() && server_managed {
-                return Err(UserError::new(
-                    "Server-managed conversations do not support handoff input filters. \
-                     Remove Handoff.input_filter or RunConfig.handoff_input_filter, \
-                     or disable conversation_id and previous_response_id.",
-                )
-                .into());
-            }
-            if should_nest && server_managed {
-                ::tracing::warn!(
-                    "Server-managed conversations do not support nest_handoff_history for handoff \
-                     {} -> {}. Disabling nested handoff history.",
-                    source_agent.name,
-                    current_agent.name
-                );
-                should_nest = false;
-            }
-            if input_filter.is_some() || should_nest {
-                let original_len = original_input_len.min(turn_start_len);
-                let data = HandoffInputData {
-                    input_history: current_input_items[..original_len].to_vec(),
-                    pre_handoff_items: current_input_items[original_len..turn_start_len].to_vec(),
-                    new_items: current_input_items[turn_start_len..].to_vec(),
-                    run_context: context.clone(),
-                };
-                // Python: an explicit filter replaces automatic nesting.
-                let next = match input_filter {
-                    Some(filter) => filter(data).await?,
-                    None => nest_handoff_history(
-                        data,
-                        options.run_config.handoff_history_mapper.as_ref(),
-                    ),
-                };
-                current_input_items = next
-                    .input_history
-                    .into_iter()
-                    .chain(next.pre_handoff_items)
-                    .chain(next.new_items)
-                    .collect();
-            }
-
-            emit(
-                &events,
-                StreamEvent::AgentUpdated {
-                    agent_name: current_agent.name.clone(),
-                },
-            )
-            .await;
-            if let Some(hooks) = &options.hooks {
-                hooks.on_agent_start(context.clone(), &current_agent).await;
-            }
-            if let Some(ah) = &current_agent.hooks {
-                ah.on_start(context.clone(), &current_agent).await;
-            }
+        if perform_handoff(
+            &handoff_calls,
+            &response,
+            &tool_results,
+            &mut current_agent,
+            &mut known_agents,
+            &mut current_input_items,
+            &mut generated_items,
+            original_input_len,
+            &events,
+            &options,
+            &context,
+        )
+        .await?
+        {
+            // A handoff ended this agent's span; the new agent's starts with its first turn.
             agent_span_due = true;
             continue;
         }
 
-        match &current_agent.tool_use_behavior {
-            ToolUseBehavior::StopOnFirstTool => {
-                if let Some((_tool, output, _call_id)) = tool_results.first() {
-                    return finalize_run(
-                        input,
-                        generated_items,
-                        raw_responses,
-                        finalize_tool_output(&current_agent, output),
-                        &current_agent,
-                        max_turns,
-                        usage,
-                        &context,
-                        options.hooks.as_ref(),
-                        &options.run_config.output_guardrails,
-                        input_guardrail_results,
-                        Some(&options.run_config),
-                        session_writer.as_deref_mut(),
-                    )
-                    .await;
-                }
-            }
-            ToolUseBehavior::StopAtTools { stop_at_tool_names } => {
-                for (tool, output, _call_id) in &tool_results {
-                    if stop_at_tool_names.iter().any(|n| n == &tool.name) {
-                        return finalize_run(
-                            input,
-                            generated_items,
-                            raw_responses,
-                            finalize_tool_output(&current_agent, output),
-                            &current_agent,
-                            max_turns,
-                            usage,
-                            &context,
-                            options.hooks.as_ref(),
-                            &options.run_config.output_guardrails,
-                            input_guardrail_results,
-                            Some(&options.run_config),
-                            session_writer.as_deref_mut(),
-                        )
-                        .await;
-                    }
-                }
-            }
-            ToolUseBehavior::Custom(decide) => {
-                let results: Vec<FunctionToolResult> = tool_results
-                    .iter()
-                    .map(|(tool, output, call_id)| FunctionToolResult {
-                        tool_name: tool.name.clone(),
-                        call_id: call_id.clone(),
-                        output: output.clone(),
-                    })
-                    .collect();
-                let decision = decide(&context, &results);
-                if decision.is_final_output {
-                    let output = decision.final_output.unwrap_or(Value::Null);
-                    return finalize_run(
-                        input,
-                        generated_items,
-                        raw_responses,
-                        finalize_tool_output(&current_agent, &output),
-                        &current_agent,
-                        max_turns,
-                        usage,
-                        &context,
-                        options.hooks.as_ref(),
-                        &options.run_config.output_guardrails,
-                        input_guardrail_results,
-                        Some(&options.run_config),
-                        session_writer.as_deref_mut(),
-                    )
-                    .await;
-                }
-            }
-            ToolUseBehavior::RunLlmAgain => {}
+        if let Some(output) = tool_use_behavior_output(
+            &current_agent.tool_use_behavior,
+            &current_agent,
+            &tool_results,
+            &context,
+        ) {
+            return finalize_run(
+                input,
+                generated_items,
+                raw_responses,
+                output,
+                &current_agent,
+                max_turns,
+                usage,
+                &context,
+                options.hooks.as_ref(),
+                &options.run_config.output_guardrails,
+                input_guardrail_results,
+                Some(&options.run_config),
+                session_writer.as_deref_mut(),
+            )
+            .await;
         }
 
-        for item in &response.output {
-            current_input_items.push(apply_reasoning_item_id_policy(
-                item,
-                options.run_config.reasoning_item_id_policy,
-            ));
-        }
-        for (_tool, output, call_id) in &tool_results {
-            if !has_tool_output(&generated_items, call_id) {
-                let out_item = tool_output_item(&current_agent.name, call_id, output);
-                emit(
-                    &events,
-                    StreamEvent::RunItem {
-                        name: RunItemStreamName::ToolOutput,
-                        item: out_item.clone(),
-                    },
-                )
-                .await;
-                generated_items.push(out_item);
-            }
-            current_input_items.push(ItemHelpers::function_call_output(
-                call_id,
-                value_to_tool_string(output),
-            ));
-        }
+        record_turn_output(
+            &response,
+            &tool_results,
+            &current_agent.name,
+            &events,
+            &mut generated_items,
+            &mut current_input_items,
+            options.run_config.reasoning_item_id_policy,
+        )
+        .await;
     }
 }

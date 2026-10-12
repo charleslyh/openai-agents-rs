@@ -18,9 +18,11 @@ other crate depends on, and it depends on none of them.
 
 ## Layout notes
 
-- `src/run/agent_loop.rs` holds `run_loop_inner`, about 1137 lines in a single function. Splitting
-  it is the largest remaining refactor; do it by extracting phases with behaviour tests around
-  them, not by moving code between files.
+- `src/run/agent_loop.rs` holds `run_loop_inner` (642 lines: setup, then one iteration per model
+  call). `src/run/turn.rs` holds the phases it runs between two model calls. A new phase belongs in
+  `turn.rs` and answers one question; the loop stays the only place that decides what happens next.
+  The still-large part of the loop is the model call itself (retry plus streaming), whose body
+  closes over the request and the response.
 - `src/model/` is the `Model` / `ModelProvider` contract. The OpenAI implementation lives in
   `crates/openai`.
 - `src/context.rs` (trimmers) and `src/memory/` (`CompactingSession`) are here on purpose — see D13
