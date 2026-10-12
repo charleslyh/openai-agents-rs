@@ -214,9 +214,11 @@ let session = CompactingSession::new(
 - [`docs/MIGRATION-FROM-PYTHON.md`](./docs/MIGRATION-FROM-PYTHON.md) — Python → Rust API mapping and what to write yourself
 - [`docs/CONTRIBUTING.md`](./docs/CONTRIBUTING.md) — commit message format and verification
 
-HITL is supported: `needs_approval` (fixed or dynamic), `RunState` approve/reject, sticky
-`always_approve` / `always_reject`, and `Agent.as_tool` nested approvals. The Rust `RunState` JSON
-schema `openai-agents-rs/2` is a process-local snapshot format and is intentionally **not**
+HITL is supported as tool-call *resolution*: a call pauses when `needs_resolution` (Python:
+`needs_approval`; fixed or dynamic) says so, and the host resolves it on the `RunState` — approve /
+reject (with sticky `always_approve` / `always_reject`), or hand back a result produced elsewhere
+with `provide_output` (D-048) — including calls inside `Agent.as_tool` nested runs. The Rust
+`RunState` JSON schema `openai-agents-rs/4` is a process-local snapshot format and is intentionally **not**
 Python 1.18 wire-compatible (D-012) — use one language per durable state store.
 
 ## Still out of scope

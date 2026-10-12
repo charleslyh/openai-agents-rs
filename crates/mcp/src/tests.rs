@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 use openai_agents_core::agent::Agent;
 use openai_agents_core::error::AgentsError;
 use openai_agents_core::run_context::RunContextWrapper;
-use openai_agents_core::tool::{FunctionTool, NeedsApproval, ToolContext};
+use openai_agents_core::tool::{FunctionTool, NeedsResolution, ToolContext};
 use openai_agents_core::{
     mcp_function_tools, render_tool_result, McpCallToolResult, McpConfig, McpServer,
 };
@@ -262,8 +262,8 @@ async fn failed_requests_are_retried_with_backoff() {
 #[test]
 fn approval_policies_map_to_needs_approval() {
     let check = |policy: &RequireApproval, name: &str| match policy.for_tool(name) {
-        NeedsApproval::Fixed(value) => value,
-        NeedsApproval::Dynamic(_) => panic!("fixed expected"),
+        NeedsResolution::Fixed(value) => value,
+        NeedsResolution::Dynamic(_) => panic!("fixed expected"),
     };
     assert!(!check(&RequireApproval::Never, "a"));
     assert!(check(&RequireApproval::Always, "a"));
@@ -318,7 +318,7 @@ async fn function_tools_validate_arguments_and_render_results() {
         json!({}),
         "`properties` is added"
     );
-    assert!(matches!(a.needs_approval, NeedsApproval::Fixed(true)));
+    assert!(matches!(a.needs_resolution, NeedsResolution::Fixed(true)));
 
     assert_eq!(invoke(a, r#"{"x": 1}"#).await.unwrap(), json!("{\"x\":1}"));
     let missing = invoke(a, "{}").await.unwrap_err();

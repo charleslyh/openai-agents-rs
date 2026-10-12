@@ -38,7 +38,7 @@ The full support matrix is [COMPAT.md](./COMPAT.md); the reasoning behind each d
 | Default API is Responses | Default is **Chat Completions**; opt into Responses with `set_default_openai_api(Responses)` or the `openai_responses/<model>` prefix | D-I: nearly every compatible server speaks Chat Completions |
 | `AsyncOpenAI` client passed around | `OpenAIProvider::from_env()` / `CompatibleProvider::new(base_url)`; `MultiProvider` for `prefix/model` routing | D-013 |
 | Tool returns `str` or a structured output part | Tool returns one `serde_json::Value`, rendered as text | D-044: images / files cannot be handed back to the model |
-| `Agent.as_tool(...)` with ~18 keywords | `AsToolConfig { name, description, needs_approval, max_turns }` | D-043 |
+| `Agent.as_tool(...)` with ~18 keywords | `AsToolConfig { name, description, needs_resolution, max_turns }` | D-043 |
 | `enable_verbose_stdout_logging()` | the `tracing` crate | — |
 
 ## 3. What you must write yourself

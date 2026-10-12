@@ -11,7 +11,7 @@ use tokio::sync::Mutex as AsyncMutex;
 use openai_agents_core::agent::Agent;
 use openai_agents_core::error::AgentsError;
 use openai_agents_core::run_context::RunContextWrapper;
-use openai_agents_core::tool::NeedsApproval;
+use openai_agents_core::tool::NeedsResolution;
 
 use super::http::StreamableHttpParams;
 use super::rpc::{Connector, McpError, Transport};
@@ -306,7 +306,7 @@ impl McpServer for McpClient {
         *self.cached_tools.lock().expect("cache") = None;
     }
 
-    fn needs_approval_for(&self, tool: &McpTool) -> NeedsApproval {
+    fn needs_approval_for(&self, tool: &McpTool) -> NeedsResolution {
         self.require_approval.for_tool(&tool.name)
     }
 

@@ -8,7 +8,7 @@ use crate::agent::Agent;
 use crate::error::AgentsError;
 use crate::error::OutputGuardrailTripwireTriggered;
 use crate::guardrail::{InputGuardrailResult, OutputGuardrail};
-use crate::items::{InputLike, ModelResponse, RunItem, ToolApprovalItem};
+use crate::items::{InputLike, ModelResponse, RunItem, ToolInterruptionItem};
 use crate::lifecycle::RunHooks;
 use crate::result::{InterruptSnapshot, RunResult};
 use crate::run_context::RunContextWrapper;
@@ -134,7 +134,7 @@ pub(crate) fn interrupted_result(
     last_agent: Arc<Agent>,
     max_turns: Option<usize>,
     usage: Usage,
-    interruptions: Vec<ToolApprovalItem>,
+    interruptions: Vec<ToolInterruptionItem>,
     interrupt_state: InterruptSnapshot,
 ) -> RunResult {
     RunResult {

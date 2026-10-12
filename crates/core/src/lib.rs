@@ -60,7 +60,7 @@ pub use items::ReasoningItemIdPolicy;
 pub use items::{
     HandoffCallItem, HandoffOutputItem, InputLike, ItemHelpers, MessageOutputItem, ModelResponse,
     ReasoningItem, ResponseInputItem, ResponseOutputItem, RunItem, ToolApprovalItem, ToolCallItem,
-    ToolCallOutputItem,
+    ToolCallOutputItem, ToolInterruptionItem,
 };
 pub use lifecycle::{AgentHooks, RunHooks};
 pub use mcp::{
@@ -92,8 +92,8 @@ pub use run::{
 };
 pub use run_context::{ContextValue, RunContextWrapper};
 pub use run_state::{
-    ApprovalDecision, ApprovalStore, RunState, StickyDecision, RUN_STATE_SCHEMA_VERSION,
-    SUPPORTED_RUN_STATE_SCHEMAS,
+    ApprovalDecision, ApprovalStore, ResolutionStore, RunState, StickyDecision, ToolResolution,
+    RUN_STATE_SCHEMA_VERSION, SUPPORTED_RUN_STATE_SCHEMAS,
 };
 /// Re-exported so `#[function_tool]`-generated code does not require a direct dependency.
 pub use schemars;
@@ -103,8 +103,8 @@ pub use serde;
 pub use serde_json;
 pub use stream_events::{RunItemStreamName, StreamEvent};
 pub use tool::{
-    FunctionTool, IsEnabledFn, NeedsApproval, ToolContext, ToolEnabled, ToolFailureHandling,
-    ToolResult, ToolTimeoutBehavior, DEFAULT_APPROVAL_REJECTION_MESSAGE,
+    FunctionTool, IsEnabledFn, NeedsApproval, NeedsResolution, ToolContext, ToolEnabled,
+    ToolFailureHandling, ToolResult, ToolTimeoutBehavior, DEFAULT_APPROVAL_REJECTION_MESSAGE,
     DEFAULT_TOOL_ERROR_MESSAGE,
 };
 pub use tool_guardrails::{

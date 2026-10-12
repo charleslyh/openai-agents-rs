@@ -1,17 +1,20 @@
 //! Run state for HITL pause/resume (Python: `agents.run_state.RunState` subset).
 //!
-//! Supports in-memory sticky approvals and JSON round-trip (`to_json` / `from_json`).
-//! Schema id: `openai-agents-rs/3` (not the Python 1.18 wire format — see D-012).
+//! A run pauses when a tool call needs resolution ([`crate::tool::NeedsResolution`]); the host
+//! resolves each paused call ([`RunState::resolve`], or the Python-named `approve` / `reject`) and
+//! resumes the run. Supports sticky approvals and JSON round-trip (`to_json` / `from_json`).
+//! Schema id: `openai-agents-rs/4` (not the Python 1.18 wire format — see D-012).
 
 use std::collections::HashMap;
 
-mod approvals;
 mod codec;
+mod resolutions;
 
 use codec::{
-    deserialize_approval_item, deserialize_input, deserialize_model_response, deserialize_run_item,
-    deserialize_tool_guardrail_output, guardrail_results, serialize_approval_item, serialize_input,
-    serialize_model_response, serialize_run_item, serialize_tool_guardrail_output,
+    deserialize_input, deserialize_interruption_item, deserialize_model_response,
+    deserialize_run_item, deserialize_tool_guardrail_output, guardrail_results, serialize_input,
+    serialize_interruption_item, serialize_model_response, serialize_run_item,
+    serialize_tool_guardrail_output,
 };
 
 use serde_json::{json, Value};
@@ -20,12 +23,12 @@ use crate::error::{
     AgentsError, GuardrailFunctionOutput, InputGuardrailResult, ToolInputGuardrailResult,
     ToolOutputGuardrailResult, UserError, DEFAULT_APPROVAL_REJECTION_MESSAGE,
 };
-use crate::items::{InputLike, ModelResponse, ResponseInputItem, RunItem, ToolApprovalItem};
+use crate::items::{InputLike, ModelResponse, ResponseInputItem, RunItem, ToolInterruptionItem};
 use crate::model_settings::ModelSettings;
 use crate::usage::Usage;
 
 /// Schema version embedded in [`RunState::to_json`].
-pub const RUN_STATE_SCHEMA_VERSION: &str = "openai-agents-rs/3";
+pub const RUN_STATE_SCHEMA_VERSION: &str = "openai-agents-rs/4";
 
 /// Older schema ids that [`RunState::from_json`] still accepts.
 ///
@@ -33,16 +36,22 @@ pub const RUN_STATE_SCHEMA_VERSION: &str = "openai-agents-rs/3";
 /// `openai-agents-rs`; snapshots persisted by earlier versions carry them and must stay
 /// loadable. They are accepted but never re-emitted by [`RunState::to_json`].
 ///
-/// `openai-agents-rs/2` is the previous shape, where `max_turns` was always a number. It loads
-/// as `Some(n)`; only `/3` can carry `null` for an unlimited run (D-042).
+/// `openai-agents-rs/2` is the shape where `max_turns` was always a number. It loads as
+/// `Some(n)`; only `/3` and later can carry `null` for an unlimited run (D-042).
+///
+/// `openai-agents-rs/3` keeps call resolutions under `approvals` and has no output resolutions;
+/// `/4` keeps them under `resolutions`, where an entry may carry an `output` (D-048).
 pub const SUPPORTED_RUN_STATE_SCHEMAS: &[&str] = &[
     "openai-agents-rust/1",
     "openai-agents-rust/2",
     "openai-agents-rs/2",
+    "openai-agents-rs/3",
     RUN_STATE_SCHEMA_VERSION,
 ];
 
-pub use approvals::{ApprovalDecision, ApprovalStore, StickyDecision};
+pub use resolutions::{
+    ApprovalDecision, ApprovalStore, ResolutionStore, StickyDecision, ToolResolution,
+};
 
 /// Snapshot of a paused (or resumable) agent run (Python: `RunState`).
 #[derive(Debug, Clone)]
@@ -55,7 +64,7 @@ pub struct RunState {
     pub current_agent_name: String,
     /// Conversation items already sent / to send on the next model turn.
     pub current_input_items: Vec<ResponseInputItem>,
-    /// Items generated so far (includes pending [`ToolApprovalItem`]s).
+    /// Items generated so far (includes pending [`ToolInterruptionItem`]s).
     pub generated_items: Vec<RunItem>,
     /// Raw model responses so far.
     pub raw_responses: Vec<ModelResponse>,
@@ -69,16 +78,16 @@ pub struct RunState {
     pub previous_response_id: Option<String>,
     /// Model settings at the point of interruption.
     pub model_settings: ModelSettings,
-    /// Pending approvals for the interrupted turn.
-    pub interruptions: Vec<ToolApprovalItem>,
+    /// Tool calls of the interrupted turn that wait for a resolution.
+    pub interruptions: Vec<ToolInterruptionItem>,
     /// The model response that produced the pending tool calls.
     pub pending_response: ModelResponse,
-    /// Approval decisions (per-call + sticky).
-    pub(crate) approvals: ApprovalStore,
+    /// Call resolutions (per-call + sticky approvals).
+    pub(crate) resolutions: ResolutionStore,
     /// Nested `Agent.as_tool` run states keyed by outer tool call_id.
     pub(crate) nested_agent_runs: HashMap<String, RunState>,
     /// How many of `generated_items` a session already holds. A run with a session saves its
-    /// items at the end of every turn, so a run paused for approval has saved the turns before
+    /// items at the end of every turn, so a paused run has saved the turns before
     /// the paused one, and resuming with the same session must not save them again.
     pub session_saved_items: usize,
     /// Whether the run's input was already saved to the session.
@@ -93,20 +102,35 @@ pub struct RunState {
 
 impl RunState {
     /// Pending interruptions (Python: `get_interruptions`).
-    pub fn get_interruptions(&self) -> Vec<ToolApprovalItem> {
+    pub fn get_interruptions(&self) -> Vec<ToolInterruptionItem> {
         self.interruptions.clone()
+    }
+
+    /// Resolve a pending tool call: run it, reject it, or hand back its result.
+    pub fn resolve(&mut self, item: &ToolInterruptionItem, resolution: ToolResolution) {
+        if let Some(nested) = self.find_nested_mut(item) {
+            nested.resolve(item, resolution);
+            return;
+        }
+        self.resolutions.resolve(&item.call_id, resolution);
+    }
+
+    /// Resolve a pending tool call with a result produced outside the run; the tool is not run
+    /// and the model receives `output` as the call's result.
+    pub fn provide_output(&mut self, item: &ToolInterruptionItem, output: Value) {
+        self.resolve(item, ToolResolution::Output { output });
     }
 
     /// Approve a pending tool call (Python: `RunState.approve`).
     ///
     /// When `always_approve` is true, future calls to the same tool on the same agent
     /// are auto-approved for the rest of this run (and survive JSON round-trip).
-    pub fn approve(&mut self, item: &ToolApprovalItem, always_approve: bool) {
+    pub fn approve(&mut self, item: &ToolInterruptionItem, always_approve: bool) {
         if let Some(nested) = self.find_nested_mut(item) {
             nested.approve(item, always_approve);
             return;
         }
-        self.approvals.approve(
+        self.resolutions.approve(
             &item.agent_name,
             &item.tool_name,
             &item.call_id,
@@ -117,7 +141,7 @@ impl RunState {
     /// Reject a pending tool call (Python: `RunState.reject`).
     pub fn reject(
         &mut self,
-        item: &ToolApprovalItem,
+        item: &ToolInterruptionItem,
         always_reject: bool,
         rejection_message: Option<&str>,
     ) {
@@ -128,7 +152,7 @@ impl RunState {
         let message = rejection_message
             .unwrap_or(DEFAULT_APPROVAL_REJECTION_MESSAGE)
             .to_string();
-        self.approvals.reject(
+        self.resolutions.reject(
             &item.agent_name,
             &item.tool_name,
             &item.call_id,
@@ -137,17 +161,27 @@ impl RunState {
         );
     }
 
-    /// Look up a decision by call id (and sticky fallback needs agent/tool — prefer [`ApprovalStore::status`]).
+    /// Look up how a call is resolved (exact call id, then the sticky approval of agent/tool).
+    pub fn resolution_status(
+        &self,
+        agent_name: &str,
+        tool_name: &str,
+        call_id: &str,
+    ) -> Option<ToolResolution> {
+        if let Some(nested) = self.find_nested_ref_by_call(call_id) {
+            return nested.resolution_status(agent_name, tool_name, call_id);
+        }
+        self.resolutions.status(agent_name, tool_name, call_id)
+    }
+
+    /// Python name of [`Self::resolution_status`].
     pub fn approval_status(
         &self,
         agent_name: &str,
         tool_name: &str,
         call_id: &str,
-    ) -> Option<ApprovalDecision> {
-        if let Some(nested) = self.find_nested_ref_by_call(call_id) {
-            return nested.approval_status(agent_name, tool_name, call_id);
-        }
-        self.approvals.status(agent_name, tool_name, call_id)
+    ) -> Option<ToolResolution> {
+        self.resolution_status(agent_name, tool_name, call_id)
     }
 
     #[allow(dead_code)]
@@ -155,7 +189,7 @@ impl RunState {
         &self.nested_agent_runs
     }
 
-    fn find_nested_mut(&mut self, item: &ToolApprovalItem) -> Option<&mut RunState> {
+    fn find_nested_mut(&mut self, item: &ToolInterruptionItem) -> Option<&mut RunState> {
         let owned_key = self.nested_agent_runs.iter().find_map(|(k, nested)| {
             if nested.contains_call(item.call_id.as_str()) {
                 Some(k.clone())
@@ -177,7 +211,7 @@ impl RunState {
 
     fn contains_call(&self, call_id: &str) -> bool {
         self.interruptions.iter().any(|i| i.call_id == call_id)
-            || self.approvals.by_call.contains_key(call_id)
+            || self.resolutions.by_call.contains_key(call_id)
             || self
                 .nested_agent_runs
                 .values()
@@ -188,7 +222,7 @@ impl RunState {
         for nested in self.nested_agent_runs.values() {
             if nested.contains_call(call_id) {
                 if nested.interruptions.iter().any(|i| i.call_id == call_id)
-                    || nested.approvals.by_call.contains_key(call_id)
+                    || nested.resolutions.by_call.contains_key(call_id)
                 {
                     return Some(nested);
                 }
@@ -213,9 +247,9 @@ impl RunState {
             "turn": self.turn,
             "previous_response_id": self.previous_response_id,
             "model_settings": self.model_settings,
-            "interruptions": self.interruptions.iter().map(serialize_approval_item).collect::<Vec<_>>(),
+            "interruptions": self.interruptions.iter().map(serialize_interruption_item).collect::<Vec<_>>(),
             "pending_response": serialize_model_response(&self.pending_response),
-            "approvals": self.approvals.to_json(),
+            "resolutions": self.resolutions.to_json(),
             "nested_agent_runs": self.nested_agent_runs.iter().map(|(k, v)| (k.clone(), v.to_json())).collect::<serde_json::Map<_,_>>(),
             "session_saved_items": self.session_saved_items,
             "session_input_saved": self.session_input_saved,
@@ -332,7 +366,7 @@ impl RunState {
                 .and_then(|v| v.as_array())
                 .map(|arr| {
                     arr.iter()
-                        .map(deserialize_approval_item)
+                        .map(deserialize_interruption_item)
                         .collect::<Result<Vec<_>, _>>()
                 })
                 .transpose()?
@@ -342,7 +376,12 @@ impl RunState {
                     .get("pending_response")
                     .ok_or_else(|| UserError::new("RunState missing pending_response"))?,
             )?,
-            approvals: ApprovalStore::from_json(value.get("approvals").unwrap_or(&json!({})))?,
+            resolutions: ResolutionStore::from_json(
+                value
+                    .get("resolutions")
+                    .or_else(|| value.get("approvals"))
+                    .unwrap_or(&json!({})),
+            )?,
             nested_agent_runs,
             // Absent in states written before turn-by-turn session saving: nothing was saved.
             session_saved_items: value

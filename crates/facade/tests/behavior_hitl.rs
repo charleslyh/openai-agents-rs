@@ -390,7 +390,7 @@ async fn agent_as_tool_nested_approval_bubbles_to_outer() {
     let agent_tool = nested_agent.as_tool(openai_agents::AsToolConfig {
         name: Some("call_helper".into()),
         description: Some("Call helper".into()),
-        needs_approval: false,
+        needs_resolution: false,
         max_turns: Some(5),
     });
 
