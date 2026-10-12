@@ -116,7 +116,7 @@
 | 测试(全特性) | `cargo test --all-features` | 262 passed / 0 failed |
 | 文档 | `RUSTDOCFLAGS=-D warnings cargo doc --no-deps --all-features` | 通过 |
 | vendor | `bash scripts/sync_vendor.sh --check` | `vendor ok: openai-agents-python 0.23.1 (pin v0.23.1)` |
-| oracle | `.venv/bin/python scripts/run_parity.py --check` | 未采集(需 `.venv`;运行前先 `bash scripts/setup_venv.sh`) |
+| oracle | `.venv/bin/python conformance/run_parity.py --check` | 13 项 golden 全部 unchanged(补采于 P3 之后;脚本已随 D8 迁到 `conformance/`) |
 | 示例体积(默认) | `cargo build --release --example 01_hello` | 6 924 880 B |
 | 示例体积(仅 openai) | `cargo build --release --no-default-features --features openai --example 01_hello` | 6 882 304 B |
 

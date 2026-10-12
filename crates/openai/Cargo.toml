@@ -13,13 +13,13 @@ workspace = true
 [dependencies]
 openai-agents-core = { path = "../core", version = "0.1.0" }
 async-openai = { version = "0.42", default-features = false, features = ["chat-completion", "responses"] }
-async-trait = "0.1"
-futures = "0.3"
+async-trait = { workspace = true }
+futures = { workspace = true }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
-serde_json = { version = "1", features = ["preserve_order"] }
+serde_json = { workspace = true }
 tokio = { version = "1", features = ["sync", "time"] }
-tracing = "0.1"
-uuid = { version = "1", features = ["v4"] }
+tracing = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util"] }
