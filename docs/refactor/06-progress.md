@@ -162,9 +162,71 @@ feature 矩阵(每个扩展单独开/关)要能编译;fmt、两种 feature 的 c
 
 - 拆 `run_loop_inner`(约 1140 行的单函数)。**未做。** P1.4 只把它周围的代码拆了出去,函数
   本身仍是约 1140 行,含在 `run/agent_loop.rs`(1345 行)里。
-- tests 按领域分组:决定不做,理由见下文;分布问题已随 crate 边界一并解决。
+- tests 按领域分组:决定不做,理由见下文。
+- 集成测试按 crate 分散:**未做。** 23 个 `tests/*.rs` 目标全部仍在 `crates/facade/tests/`,
+  其他 crate 只有单元内联测试。原因是它们大多跨 crate(一个 `behavior_*` 会同时用到 core、
+  openai、testing),留在 facade 才能一次装配齐全。这条与 P3 前"分布问题留给 P3 随 crate 边界
+  一并解决"的打算不符,登记为偏差(见下)。
 - C10:`default_model_provider` 对 openai 的装配上移(D1 已决)。**已在 P3.5 完成。**
-- examples / docs / scripts 整理:docs 里与 crate 相关的部分已同步,见下。
+- examples / docs / scripts 整理:docs 里与 crate 相关的部分已同步(README、COMPAT、
+  CONTRIBUTING、DEVIATIONS、CI、七个 `AGENTS.md`)。
+
+## 计划与实际的偏差
+
+对照 `04-roadmap.md`。这张表是"这次重构离原计划有多远"的直接答案。
+
+### 做了,且与原计划一致
+
+| 计划 | 实际 |
+| --- | --- |
+| P0 安全网 | 完成。基线 197 / 262 |
+| P1.1-P1.5 零语义整理 | 完成 |
+| P1 大文件拆分(7 个文件) | 完成,每项一个 commit |
+| P2.0 `wire_events` 拆分 | 完成 |
+| P2 依赖方向检查脚本 + CI | 完成,`43d3b72` |
+| P3.0 workspace + facade | 完成,`735f6a5` |
+| P3.1 macros(C11) | 完成,同上 |
+| P3.2 testing(D2) | 完成,`1b80a89` |
+| P3.3 sqlite | 完成,`4b53a59` |
+| P3.4 mcp(D6) | 完成,`f8cb825` |
+| P3.5 openai(C10 / D1) | 完成,`67487eb` |
+| D8 `conformance/` | 完成,`d086e1f` |
+
+### 计划里有、但按决议不做的
+
+| 计划 | 决议 | 理由 |
+| --- | --- | --- |
+| P3b:抽出 `types`、`tracing`,core 与 runtime 分离 | 取消 | D9 选粗粒度方案 A;D3 选 T1,tracing 留 core 内 |
+| P3a 里的 `context` crate | 取消 | D13:无可剥离的外部依赖,且 run loop 无条件使用它 |
+| D7(retry 独立归属) | 降级 | D9:retry 留 core,只移出 `openai_retry_advice` |
+| D11 / C4(`RunState` 与 `tool`) | 失效 | 同在 core,无需处理 |
+| C3(`as_tool` 与 run) | 失效 | D12 + 同在 core |
+| P4 的发布配置(`exclude`、发布顺序) | 取消 | D10 不发布到 crates.io |
+
+### 计划里有、仍未做的
+
+| 计划 | 状态 |
+| --- | --- |
+| 拆 `run_loop_inner`(约 1137 行单函数) | **未做**,仍是最大的单项 |
+| `stream_response`(392 行单方法,`crates/openai/src/chat_completions/mod.rs`) | 未做 |
+| 集成测试按 crate 分散 | **未做**:23 个测试目标全在 `crates/facade/tests/`,因为它们大多跨 crate |
+| CI 分 crate 矩阵 | 未做:仍是两个 OS × 三个 feature 档,没有 per-crate 矩阵 |
+| tests 按领域分组 | 决定不做(`tests/` 子目录不会被 Cargo 自动发现,见下) |
+| examples 整理 | 未整理 |
+
+### 计划里没有、实际新增的
+
+| 项 | 原因 |
+| --- | --- |
+| `scripts/check_runner_api.py` | facade 重新实现了 `Runner`,需要防止它的方法与 core 漂移 |
+| `check_module_deps.py` 的 crate 级规则 | 拆 crate 后,模块级 tier 检查管不到跨 crate 的依赖 |
+| `mcp` 默认关闭带来的 CI / 文档改动 | D6 的连带影响:不加 `--features mcp` 时测试目标会静默编译成零个测试 |
+| 增量编译变慢(1.5s -> 5.1s) | 拆 crate 后 core 变动会触发下游每个 crate 重新链接。降到 `line-tables-only` 可回到 1.8s,**未采纳** |
+
+### 数字上的偏差
+
+`--no-default-features` 从 197 变成 200,三项都能点名,见上文 P3 的验收小节。
+`--all-features` 262 不变。
 
 ## conformance/(D8,已完成)
 
