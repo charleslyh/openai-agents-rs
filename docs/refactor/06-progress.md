@@ -79,7 +79,7 @@
 
 | 文件 | 行数 | 原因 | 处理 |
 | --- | --- | --- | --- |
-| `run/agent_loop.rs` | 1345 | `run_loop_inner` 一个函数约 1140 行 | 需要按阶段拆函数,不是切文件;风险最高,单独安排 |
+| `run/agent_loop.rs` | 841 | 模型调用本身(重试 + 流式)仍内联在一轮里 | 已按阶段抽出 10 个 phase 到 `run/turn.rs`;模型调用体的闭包捕获请求与响应,继续拆的收益低于风险 |
 | `model/openai/chat_completions/mod.rs` | 530 | `stream_response` 一个方法约 395 行 | 同上,是单方法问题 |
 | `model/openai/chat_convert/to_chat.rs` | 500 | 恰好在软上限,且内部按 `items_to_chat_messages` 一个主流程组织 | 暂不处理 |
 
@@ -160,8 +160,8 @@ feature 矩阵(每个扩展单独开/关)要能编译;fmt、两种 feature 的 c
 
 ## 剩余 P1 / P2 项
 
-- 拆 `run_loop_inner`(约 1140 行的单函数)。**未做。** P1.4 只把它周围的代码拆了出去,函数
-  本身仍是约 1140 行,含在 `run/agent_loop.rs`(1345 行)里。
+- ~~拆 `run_loop_inner`(约 1140 行的单函数)~~ **已完成**:1137 -> 642 行。见下文“拆
+  `run_loop_inner`”。
 - tests 按领域分组:决定不做,理由见下文。
 - 集成测试按 crate 分散:**未做。** 23 个 `tests/*.rs` 目标全部仍在 `crates/facade/tests/`,
   其他 crate 只有单元内联测试。原因是它们大多跨 crate(一个 `behavior_*` 会同时用到 core、
@@ -170,6 +170,62 @@ feature 矩阵(每个扩展单独开/关)要能编译;fmt、两种 feature 的 c
 - C10:`default_model_provider` 对 openai 的装配上移(D1 已决)。**已在 P3.5 完成。**
 - examples / docs / scripts 整理:docs 里与 crate 相关的部分已同步(README、COMPAT、
   CONTRIBUTING、DEVIATIONS、CI、七个 `AGENTS.md`)。
+
+## 拆 `run_loop_inner`(P2 剩余项,已完成)
+
+`crates/core/src/run/agent_loop.rs` 的 `run_loop_inner` 从 1137 行降到 642 行,
+`agent_loop.rs` 从 1345 行降到 841 行。抽出的 phase 放在新增的 `crates/core/src/run/turn.rs`
+(750 行)。
+
+### 拆法
+
+按“一次模型调用之间做了什么”切成 phase,而不是按代码形状随便切:
+
+| phase | 作用 |
+| --- | --- |
+| `validate_run_options` | 校验 Python 在建 `RunConfig` 时就拒绝的组合,并返回 tool 并发上限 |
+| `prepare_turn` | 每轮重算 model settings 与工具集(`is_enabled` 每轮重估) |
+| `turn_was_cancelled` | `CancelMode::AfterTurn` 是否在下一轮开始前叫停 |
+| `handle_max_turns_exceeded` | 超 `max_turns`:记 span error,交给 handler |
+| `split_response_output` | 把响应输出分成 function call / reasoning / message |
+| `record_response_items` | 记录本轮产生的 item(handoff 调用与工具调用分开) |
+| `final_output_without_tools` | 无工具调用时收尾:拒绝、结构化输出校验、handler |
+| `execute_turn_tools` | 规划并执行本轮工具;三种中断路径合并为一个出口 |
+| `perform_handoff` | 执行本轮第一个 handoff 并切换 agent |
+| `tool_use_behavior_output` | `tool_use_behavior` 是否把某个工具结果当最终输出 |
+| `record_turn_output` | 把响应与工具结果回填进下一轮输入 |
+
+两条约束保证这些不是"随便抽出来的函数":
+
+- 一个 phase 只**报告**结论,不自己收尾。收尾需要几乎全部循环状态,所以能结束 run 的 phase
+  返回枚举(`TurnOutput`、`Option<Value>`、`InterruptSignal`),由循环去调 `finalize_run` /
+  `interrupted_result`。
+- 三处原本各自构造一遍 `interrupted_result` 的中断分支,现在由 `execute_turn_tools` 统一报告、
+  循环统一收尾,消除了三份重复的转移逻辑。
+
+### 风险与应对
+
+这是全项目风险最高的一处,所以:
+
+- 每抽一批就跑一次 `cargo test --workspace --all-features`(262)、`run_parity.py --check`
+  (13 项 golden)、`check_module_deps.py`,共五批,每批都是绿灯后才继续。
+- 依赖的测试覆盖:`behavior_runner`、`behavior_hitl`、`behavior_tool_errors`、
+  `behavior_structured_output`、`parity_scenarios`(26 个 Python 场景)覆盖了 max_turns、
+  取消、handoff、`ToolUseBehavior` 全部四种变体、结构化输出与 handler。
+
+### 过程中的两个判断
+
+- clippy 的 `too_many_arguments` 报了 `check_turn_budget`(10/7)。没有加 `#[allow]` 掩盖,
+  而是拆成 `turn_was_cancelled` 与 `handle_max_turns_exceeded`,并把只读的收尾状态装进
+  `TurnEnd`,参数自然降到合法范围。只有 `execute_turn_tools` 保留了 `#[allow]`,因为它只在
+  一处调用。
+- 最初设计了 `TurnOutcome` 枚举,发现只有一个使用点,删掉了 —— 一个 phase 能直接返回
+  `Option<Value>` 就不需要多一层类型。
+
+### 剩下的
+
+`run_loop_inner` 里最大的一块是模型调用本身(重试 + 流式,约 180 行),它的闭包捕获请求与
+响应、`from_resume` 与 `live_approvals` 三个返回值交织。继续拆的收益低于出错风险,停在这里。
 
 ## 计划与实际的偏差
 
@@ -207,7 +263,7 @@ feature 矩阵(每个扩展单独开/关)要能编译;fmt、两种 feature 的 c
 
 | 计划 | 状态 |
 | --- | --- |
-| 拆 `run_loop_inner`(约 1137 行单函数) | **未做**,仍是最大的单项 |
+| 拆 `run_loop_inner` | **已完成**:1137 -> 642 行 |
 | `stream_response`(392 行单方法,`crates/openai/src/chat_completions/mod.rs`) | 未做 |
 | 集成测试按 crate 分散 | **未做**:23 个测试目标全在 `crates/facade/tests/`,因为它们大多跨 crate |
 | CI 分 crate 矩阵 | 未做:仍是两个 OS × 三个 feature 档,没有 per-crate 矩阵 |
