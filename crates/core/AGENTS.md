@@ -19,7 +19,8 @@ other crate depends on, and it depends on none of them.
 ## Layout notes
 
 - `src/run/agent_loop.rs` holds `run_loop_inner` (642 lines: setup, then one iteration per model
-  call). `src/run/turn.rs` holds the phases it runs between two model calls. A new phase belongs in
+  call). `src/run/turn/` holds the phases it runs between two model calls: `mod.rs` for a turn's
+  bookkeeping, `tools.rs` for everything about tools, `handoff.rs` for switching agents. A new phase belongs in
   `turn.rs` and answers one question; the loop stays the only place that decides what happens next.
   The still-large part of the loop is the model call itself (retry plus streaming), whose body
   closes over the request and the response.

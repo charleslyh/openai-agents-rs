@@ -83,7 +83,7 @@
 | 文件 | 行数 | 原因 | 处理 |
 | --- | --- | --- | --- |
 | `core/src/run/agent_loop.rs` | 840 | 模型调用本身(重试 + 流式)仍内联在一轮里 | 已按阶段抽出 11 个 phase 到 `run/turn.rs`;模型调用体的闭包捕获请求与响应,继续拆的收益低于风险 |
-| `core/src/run/turn.rs` | 749 | 11 个 phase 共处一文件,彼此几乎无耦合 | `perform_handoff` 一个就占 174 行,单独成文件即可回到上限内(未做) |
+| — | — | — | — |
 | `openai/src/chat_completions/mod.rs` | 530 | `stream_response` 一个方法 392 行 | 同上,是单方法问题(未做) |
 | `openai/src/chat_convert/to_chat.rs` | 500 | 恰好在软上限,且内部按 `items_to_chat_messages` 一个主流程组织 | 暂不处理 |
 
@@ -215,8 +215,15 @@ crate 内可共享的泛型实例现在各自实例化),但这只是猜测,没�
 ## 拆 `run_loop_inner`(P2 剩余项,已完成)
 
 `crates/core/src/run/agent_loop.rs` 的 `run_loop_inner` 从 1137 行降到 642 行,
-`agent_loop.rs` 从 1345 行降到 841 行。抽出的 phase 放在新增的 `crates/core/src/run/turn.rs`
-(750 行)。
+`agent_loop.rs` 从 1345 行降到 840 行。抽出的 phase 放在新增的 `crates/core/src/run/turn/`:
+
+| 文件 | 行数 | 内容 |
+| --- | --- | --- |
+| `turn/mod.rs` | 315 | 一轮的簿记:校验、取消与超预算、响应拆分与记录、无工具调用的收尾、回合输出回填 |
+| `turn/tools.rs` | 290 | 工具:准备工具集、执行本轮工具、把工具结果读成最终输出 |
+| `turn/handoff.rs` | 198 | handoff:切换 agent 并改写会话 |
+
+三个文件都在 500 行软上限内。
 
 ### 拆法
 
