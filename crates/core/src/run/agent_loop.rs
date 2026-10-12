@@ -19,7 +19,7 @@ use crate::memory::prepare_input_with_session;
 use crate::model::{CallModelData, Model, ModelInput, ModelInputData, ModelRequest, ModelTracing};
 use crate::result::{InterruptSnapshot, RunResult, StreamingSnapshot};
 use crate::run_context::RunContextWrapper;
-use crate::run_state::{ApprovalStore, RunState};
+use crate::run_state::{ResolutionStore, RunState};
 use crate::stream_events::StreamEvent;
 use crate::tool_guardrails::{ToolInputGuardrailResult, ToolOutputGuardrailResult};
 use crate::tracing::{agent_span, generation_span, task_span, turn_span, SpanGuard, TracingConfig};
@@ -182,7 +182,7 @@ pub(crate) async fn run_loop(
             crate::tracing::with_run_tracing_disabled(true, writer.flush(&result.new_items))
                 .await?;
         } else if let Some(snapshot) = result.interrupt_state.as_mut() {
-            // A run paused for approval keeps the turn in flight out of the session until it is
+            // A paused run keeps the turn in flight out of the session until it is
             // resumed; remember how far it got so the resume saves only the rest.
             snapshot.session_saved_items = writer.saved_items;
             snapshot.session_input_saved = writer.pending_input.is_none();
@@ -258,9 +258,9 @@ async fn run_loop_inner(
     let mut current_input_items: Vec<_>;
     let mut previous_response_id = options.previous_response_id.clone();
     let mut turn = 0usize;
-    let mut resume_pending: Option<(ModelResponse, ApprovalStore)> = None;
+    let mut resume_pending: Option<(ModelResponse, ResolutionStore)> = None;
     let mut nested_agent_runs: HashMap<String, RunState> = HashMap::new();
-    let mut live_approvals = ApprovalStore::default();
+    let mut live_resolutions = ResolutionStore::default();
     let context = RunContextWrapper::new(options.context.clone());
     let mut input_guardrail_results: Vec<InputGuardrailResult> = Vec::new();
 
@@ -281,8 +281,8 @@ async fn run_loop_inner(
             original_input_len = ItemHelpers::input_to_new_input_list(&input).len();
             current_agent = resolve_agent_by_name(&current_agent, &state.current_agent_name)?;
             generated_items = state.generated_items;
-            // Drop prior ToolApproval placeholders; resume will re-create if still pending.
-            generated_items.retain(|i| !matches!(i, RunItem::ToolApproval(_)));
+            // Drop prior ToolInterruption placeholders; resume will re-create if still pending.
+            generated_items.retain(|i| !matches!(i, RunItem::ToolInterruption(_)));
             raw_responses = state.raw_responses;
             input_guardrail_results = state.input_guardrail_results;
             usage = state.usage;
@@ -290,9 +290,9 @@ async fn run_loop_inner(
             previous_response_id = state.previous_response_id.or(previous_response_id);
             turn = state.turn.saturating_sub(1); // loop will increment
             nested_agent_runs = state.nested_agent_runs.clone();
-            live_approvals = state.approvals.clone();
+            live_resolutions = state.resolutions.clone();
             context.set_usage(usage.clone());
-            resume_pending = Some((state.pending_response, state.approvals));
+            resume_pending = Some((state.pending_response, state.resolutions));
         }
     }
 
@@ -442,10 +442,10 @@ async fn run_loop_inner(
 
         let model = resolve_model(&current_agent, &options.run_config)?;
 
-        let (response, approvals_map, from_resume) = if let Some((pending, approvals)) =
+        let (response, resolutions_map, from_resume) = if let Some((pending, resolutions)) =
             resume_pending.take()
         {
-            (pending, approvals, true)
+            (pending, resolutions, true)
         } else {
             let _gen_span =
                 generation_span(current_agent.model_name.as_deref().unwrap_or("scripted"));
@@ -620,7 +620,7 @@ async fn run_loop_inner(
                 ah.on_llm_end(context.clone(), &current_agent, &response)
                     .await;
             }
-            (response, live_approvals.clone(), false)
+            (response, live_resolutions.clone(), false)
         };
 
         // Input guardrails ran alongside the first turn; a tripwire aborts the run.
@@ -715,7 +715,7 @@ async fn run_loop_inner(
                 &current_agent,
                 &tools,
                 &tool_calls,
-                &approvals_map,
+                &resolutions_map,
                 &generated_items,
                 &options.run_config,
                 &context,
@@ -736,8 +736,8 @@ async fn run_loop_inner(
             for (call_id, state) in signal.nested_states {
                 nested_agent_runs.insert(call_id, state);
             }
-            for approval in &signal.interruptions {
-                generated_items.push(RunItem::ToolApproval(approval.clone()));
+            for interruption in &signal.interruptions {
+                generated_items.push(RunItem::ToolInterruption(interruption.clone()));
             }
             return Ok(interrupted_result(
                 input,
@@ -754,7 +754,7 @@ async fn run_loop_inner(
                     previous_response_id,
                     model_settings,
                     pending_response: response,
-                    approvals: live_approvals,
+                    resolutions: live_resolutions,
                     nested_agent_runs,
                     session_saved_items: 0,
                     session_input_saved: false,

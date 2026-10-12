@@ -41,7 +41,7 @@ Legend: **X** = out of scope (OpenAI-hosted) · **S** = supported · **P** = par
 | `Runner::run` / `run_blocking` / `run_state` | S | D-001 naming for the sync entry |
 | `RunResultStreaming.cancel(mode)` | S | `CancelMode::Immediate` / `AfterTurn` (D-031) |
 | `RunOptions.max_turns = None` (unbounded run) | S | `None` disables the limit; `RunOptions::default()` keeps `Some(10)` (D-042) |
-| `Agent.as_tool` keywords beyond `name` / `description` / `needs_approval` / `max_turns` | N | No `run_config` / `hooks` / `session` / `custom_output_extractor` / `on_stream` / structured `parameters` (D-043) |
+| `Agent.as_tool` keywords beyond `name` / `description` / `needs_approval` (`needs_resolution`) / `max_turns` | N | No `run_config` / `hooks` / `session` / `custom_output_extractor` / `on_stream` / structured `parameters` (D-043) |
 | Tool output parts (`ToolOutputText` / `ToolOutputImage` / `ToolOutputFileContent`) | N | A tool result is one JSON value rendered as text (D-044) |
 | `RunOptions.auto_previous_response_id` | N | No server conversation tracker (D-045) |
 | `error_handlers={"max_turns": ...}` | S | `RunOptions.error_handlers` (D-033); other kinds N |
@@ -138,7 +138,7 @@ dictionaries are merged (`model_settings.py:273`).
 
 | Item | Status |
 |------|--------|
-| `MessageOutputItem`, `ToolCallItem`, `ToolCallOutputItem`, `ToolApprovalItem` | S |
+| `MessageOutputItem`, `ToolCallItem`, `ToolCallOutputItem`, `ToolApprovalItem` (named `ToolInterruptionItem`, D-048) | S |
 | `HandoffCallItem`, `HandoffOutputItem` | S |
 | `ReasoningItem` | S |
 | `CompactionItem` | N |
@@ -159,8 +159,8 @@ dictionaries are merged (`model_settings.py:273`).
 
 | Capability | Status | Notes |
 |------------|--------|-------|
-| `needs_approval` (fixed or dynamic) | S | |
-| `interruptions`, `RunState` approve/reject | S | |
+| `needs_approval` (fixed or dynamic) | S | Named `needs_resolution`; the Python names are aliases (D-048) |
+| `interruptions`, `RunState` approve/reject | S | Plus `RunState::provide_output`, which Python lacks (D-048) |
 | Sticky `always_approve` / `always_reject` | S | |
 | `to_json` / `from_json` | S | Schema `openai-agents-rs/3` (D-012); `openai-agents-rs/2`, `openai-agents-rust/1` and `openai-agents-rust/2` payloads still load |
 | `Agent.as_tool` nested approvals | S | Bubbles to the outer `RunState` |
@@ -201,7 +201,7 @@ dictionaries are merged (`model_settings.py:273`).
 | Guardrail results on `RunResult` | S | |
 | `RunHooks` / `AgentHooks` | S | All methods default to no-op |
 | Tool input/output guardrails | S | Parity-checked; not persisted in `RunState` (D-029) |
-| Dynamic `is_enabled` (tools, handoffs) / `needs_approval` closures | S | `ToolEnabled::dynamic`; `NeedsApproval::Dynamic` |
+| Dynamic `is_enabled` (tools, handoffs) / `needs_approval` closures | S | `ToolEnabled::dynamic`; `NeedsResolution::Dynamic` |
 
 ## Tracing
 

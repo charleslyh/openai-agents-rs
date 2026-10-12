@@ -107,7 +107,7 @@ fn to_function_tool(
     };
     let mut function_tool = FunctionTool::new(tool.name.clone(), description, schema, invoker);
     function_tool.strict_json_schema = strict;
-    function_tool.needs_approval = needs_approval;
+    function_tool.needs_resolution = needs_approval;
     function_tool
 }
 

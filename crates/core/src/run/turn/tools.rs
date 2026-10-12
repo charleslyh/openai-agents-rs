@@ -11,7 +11,7 @@ use serde_json::Value;
 use crate::agent::{Agent, FunctionToolResult, ToolUseBehavior};
 use crate::error::{AgentsError, ModelError, ModelRefusalError};
 use crate::handoffs::Handoff;
-use crate::items::{InputLike, ModelResponse, RunItem, ToolApprovalItem};
+use crate::items::{InputLike, ModelResponse, RunItem, ToolInterruptionItem};
 use crate::run_context::RunContextWrapper;
 use crate::run_state::RunState;
 use crate::stream_events::{RunItemStreamName, StreamEvent};
@@ -39,7 +39,7 @@ pub(crate) struct TurnSetup {
 /// Why the run has to pause and wait for a human decision.
 pub(crate) struct InterruptSignal {
     /// The interruptions that paused the run.
-    pub(crate) interruptions: Vec<ToolApprovalItem>,
+    pub(crate) interruptions: Vec<ToolInterruptionItem>,
     /// Nested run states to carry over, keyed by outer tool call id.
     pub(crate) nested_states: HashMap<String, RunState>,
 }
@@ -160,8 +160,8 @@ pub(crate) async fn prepare_turn(
 /// Plans and executes this turn's function tools.
 ///
 /// Python (`execute_tools_and_side_effects`) runs the function tools first and then performs the
-/// first handoff. Three paths can pause the run for approval — an interrupted plan, its
-/// approval-free subset, and a nested agent run — and all three end the run the same way, so this
+/// first handoff. Three paths can pause the run for a resolution — an interrupted plan, its
+/// resolution-free subset, and a nested agent run — and all three end the run the same way, so this
 /// reports which one fired and the loop builds the single `interrupted_result`.
 ///
 /// Returns `Ok(None)` when the turn ran to completion.
@@ -178,7 +178,7 @@ pub(crate) async fn execute_turn_tools(
     events: &Option<EventTx>,
 ) -> Result<Option<(Vec<(FunctionTool, Value, String)>, Option<InterruptSignal>)>, AgentsError> {
     if !plan.interruptions.is_empty() {
-        // Execute tools that do not need approval in this turn before pausing.
+        // Execute tools that do not need a resolution in this turn before pausing.
         if !plan.to_invoke.is_empty() {
             let auto_plan = ToolPlan {
                 interruptions: Vec::new(),

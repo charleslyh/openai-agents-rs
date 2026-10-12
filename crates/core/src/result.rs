@@ -8,10 +8,10 @@ use crate::agent::Agent;
 use crate::error::AgentsError;
 use crate::guardrail::{InputGuardrailResult, OutputGuardrailResult};
 use crate::items::{
-    InputLike, ItemHelpers, ModelResponse, ResponseInputItem, RunItem, ToolApprovalItem,
+    InputLike, ItemHelpers, ModelResponse, ResponseInputItem, RunItem, ToolInterruptionItem,
 };
 use crate::model_settings::ModelSettings;
-use crate::run_state::{ApprovalStore, RunState};
+use crate::run_state::{ResolutionStore, RunState};
 use crate::stream_events::StreamEvent;
 use crate::tool_guardrails::{ToolInputGuardrailResult, ToolOutputGuardrailResult};
 use crate::usage::Usage;
@@ -25,7 +25,7 @@ pub struct RunResult {
     pub new_items: Vec<RunItem>,
     /// Raw model responses.
     pub raw_responses: Vec<ModelResponse>,
-    /// Final output (string or JSON value). `Null` when interrupted pending approval.
+    /// Final output (string or JSON value). `Null` when interrupted pending a resolution.
     pub final_output: serde_json::Value,
     /// Last agent that ran (Python: `RunResult.last_agent`).
     pub last_agent: Arc<Agent>,
@@ -35,8 +35,8 @@ pub struct RunResult {
     pub max_turns: Option<usize>,
     /// Aggregated usage across raw responses.
     pub usage: Usage,
-    /// Pending tool approvals (Python: `interruptions`). Empty when the run finished.
-    pub interruptions: Vec<ToolApprovalItem>,
+    /// Tool calls waiting for a resolution (Python: `interruptions`). Empty when the run finished.
+    pub interruptions: Vec<ToolInterruptionItem>,
     /// Results of the input guardrails that ran (Python: `input_guardrail_results`).
     pub input_guardrail_results: Vec<InputGuardrailResult>,
     /// Results of the output guardrails that ran (Python: `output_guardrail_results`).
@@ -60,7 +60,7 @@ pub(crate) struct InterruptSnapshot {
     pub(crate) previous_response_id: Option<String>,
     pub(crate) model_settings: ModelSettings,
     pub(crate) pending_response: ModelResponse,
-    pub(crate) approvals: ApprovalStore,
+    pub(crate) resolutions: ResolutionStore,
     pub(crate) nested_agent_runs: std::collections::HashMap<String, RunState>,
     /// How many `generated_items` the session already holds (see [`RunState`]).
     pub session_saved_items: usize,
@@ -89,7 +89,7 @@ impl RunResult {
         })
     }
 
-    /// Whether the run paused for human approval.
+    /// Whether the run paused with tool calls waiting for a resolution.
     pub fn is_interrupted(&self) -> bool {
         !self.interruptions.is_empty()
     }
@@ -103,7 +103,7 @@ impl RunResult {
 
     /// Build a continuation input list (Python: `to_input_list`).
     ///
-    /// Skips [`RunItem::ToolApproval`] entries (they are not model inputs).
+    /// Skips [`RunItem::ToolInterruption`] entries (they are not model inputs).
     pub fn to_input_list(&self) -> Vec<ResponseInputItem> {
         let mut items = ItemHelpers::input_to_new_input_list(&self.input);
         for item in &self.new_items {
@@ -148,7 +148,7 @@ impl RunResult {
             model_settings: snap.model_settings.clone(),
             interruptions: self.interruptions.clone(),
             pending_response: snap.pending_response.clone(),
-            approvals: snap.approvals.clone(),
+            resolutions: snap.resolutions.clone(),
             nested_agent_runs: snap.nested_agent_runs.clone(),
             session_saved_items: snap.session_saved_items,
             session_input_saved: snap.session_input_saved,
@@ -177,7 +177,7 @@ pub struct StreamingSnapshot {
     /// Usage so far.
     pub usage: Usage,
     /// Pending interruptions when the stream paused for HITL.
-    pub interruptions: Vec<ToolApprovalItem>,
+    pub interruptions: Vec<ToolInterruptionItem>,
     /// Error if the background task failed after events stopped.
     pub error: Option<String>,
     /// A graceful cancel was requested: stop before the next turn begins.

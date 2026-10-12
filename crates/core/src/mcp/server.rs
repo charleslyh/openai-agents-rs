@@ -6,7 +6,7 @@ use serde_json::Value;
 use crate::agent::Agent;
 use crate::error::AgentsError;
 use crate::run_context::RunContextWrapper;
-use crate::tool::NeedsApproval;
+use crate::tool::NeedsResolution;
 
 use super::{McpCallToolResult, McpTool};
 
@@ -45,8 +45,8 @@ pub trait McpServer: std::fmt::Debug + Send + Sync {
     fn invalidate_tools_cache(&self) {}
 
     /// Whether calls of `tool` need approval.
-    fn needs_approval_for(&self, _tool: &McpTool) -> NeedsApproval {
-        NeedsApproval::Fixed(false)
+    fn needs_approval_for(&self, _tool: &McpTool) -> NeedsResolution {
+        NeedsResolution::Fixed(false)
     }
 
     /// Send `structuredContent` instead of the content blocks when a result has it.

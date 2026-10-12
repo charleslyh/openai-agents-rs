@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 use crate::error::{AgentsError, ToolGuardrailBehavior, ToolGuardrailFunctionOutput, UserError};
 use crate::items::{
     HandoffCallItem, HandoffOutputItem, InputLike, MessageOutputItem, ModelResponse, ReasoningItem,
-    RunItem, ToolApprovalItem, ToolCallItem, ToolCallOutputItem,
+    RunItem, ToolCallItem, ToolCallOutputItem, ToolInterruptionItem,
 };
 
 pub(super) fn serialize_input(input: &InputLike) -> Value {
@@ -113,9 +113,9 @@ pub(super) fn deserialize_tool_guardrail_output(value: &Value) -> ToolGuardrailF
     }
 }
 
-pub(super) fn serialize_approval_item(item: &ToolApprovalItem) -> Value {
+pub(super) fn serialize_interruption_item(item: &ToolInterruptionItem) -> Value {
     json!({
-        "type": "tool_approval_item",
+        "type": "tool_interruption_item",
         "agent_name": item.agent_name,
         "tool_name": item.tool_name,
         "call_id": item.call_id,
@@ -124,8 +124,10 @@ pub(super) fn serialize_approval_item(item: &ToolApprovalItem) -> Value {
     })
 }
 
-pub(super) fn deserialize_approval_item(value: &Value) -> Result<ToolApprovalItem, AgentsError> {
-    Ok(ToolApprovalItem {
+pub(super) fn deserialize_interruption_item(
+    value: &Value,
+) -> Result<ToolInterruptionItem, AgentsError> {
+    Ok(ToolInterruptionItem {
         agent_name: value
             .get("agent_name")
             .and_then(|v| v.as_str())
@@ -168,9 +170,9 @@ pub(super) fn serialize_run_item(item: &RunItem) -> Value {
             "raw_item": o.raw_item,
             "output": o.output,
         }),
-        RunItem::ToolApproval(a) => json!({
-            "kind": "tool_approval",
-            "item": serialize_approval_item(a),
+        RunItem::ToolInterruption(a) => json!({
+            "kind": "tool_interruption",
+            "item": serialize_interruption_item(a),
         }),
         RunItem::HandoffCall(h) => json!({
             "kind": "handoff_call",
@@ -231,11 +233,13 @@ pub(super) fn deserialize_run_item(value: &Value) -> Result<RunItem, AgentsError
             raw_item: value.get("raw_item").cloned().unwrap_or(Value::Null),
             output: value.get("output").cloned().unwrap_or(Value::Null),
         })),
-        Some("tool_approval") => Ok(RunItem::ToolApproval(deserialize_approval_item(
-            value
-                .get("item")
-                .ok_or_else(|| UserError::new("tool_approval missing item"))?,
-        )?)),
+        Some("tool_interruption" | "tool_approval") => {
+            Ok(RunItem::ToolInterruption(deserialize_interruption_item(
+                value
+                    .get("item")
+                    .ok_or_else(|| UserError::new("tool_interruption missing item"))?,
+            )?))
+        }
         Some("handoff_call") => Ok(RunItem::HandoffCall(HandoffCallItem {
             agent_name: agent_name_field(value),
             raw_item: raw_item_field(value),

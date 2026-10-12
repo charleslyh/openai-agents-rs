@@ -9,7 +9,7 @@ use serde_json::Value;
 use crate::error::AgentsError;
 
 pub use crate::error::{default_tool_timeout_error_message, DEFAULT_APPROVAL_REJECTION_MESSAGE};
-use crate::items::ToolApprovalItem;
+use crate::items::ToolInterruptionItem;
 use crate::run_context::RunContextWrapper;
 
 pub use crate::run_context::ToolContext;
@@ -67,8 +67,8 @@ pub enum ToolTimeoutBehavior {
 pub struct ToolResult {
     /// Tool output when the call completed (absent when interrupted).
     pub output: Option<Value>,
-    /// Nested / bubbled approval interruptions.
-    pub interruptions: Vec<ToolApprovalItem>,
+    /// Nested / bubbled interruptions waiting for a resolution.
+    pub interruptions: Vec<ToolInterruptionItem>,
     /// Nested agent run state when `Agent.as_tool` paused for HITL.
     pub nested_state: Option<Box<RunState>>,
 }
@@ -83,8 +83,8 @@ impl ToolResult {
         }
     }
 
-    /// Paused for nested approvals.
-    pub fn interrupted(interruptions: Vec<ToolApprovalItem>, nested_state: RunState) -> Self {
+    /// Paused for nested interruptions.
+    pub fn interrupted(interruptions: Vec<ToolInterruptionItem>, nested_state: RunState) -> Self {
         Self {
             output: None,
             interruptions,
@@ -103,35 +103,46 @@ pub type ToolInvoker = Arc<
         + Sync,
 >;
 
-/// Dynamic approval policy (Python: `needs_approval` callable).
+/// Per-call pause policy (Python: `needs_approval` callable).
 ///
-/// Arguments: parsed JSON params object, tool call id → whether approval is required.
-pub type NeedsApprovalFn =
+/// Arguments: parsed JSON params object, tool call id → whether the call pauses.
+pub type NeedsResolutionFn =
     Arc<dyn Fn(Value, String) -> Pin<Box<dyn Future<Output = bool> + Send>> + Send + Sync>;
 
-/// When a function tool requires human approval (Python: `FunctionTool.needs_approval`).
+/// Python name of [`NeedsResolutionFn`].
+pub type NeedsApprovalFn = NeedsResolutionFn;
+
+/// When a function tool call pauses before it runs, so the host can resolve it
+/// (Python: `FunctionTool.needs_approval`).
+///
+/// The run stops with the call in `interruptions`; the host resolves it on the
+/// [`RunState`] — approve or reject it (human approval), or hand back a result it produced
+/// elsewhere ([`RunState::provide_output`]) — and resumes the run.
 #[derive(Clone)]
-pub enum NeedsApproval {
+pub enum NeedsResolution {
     /// Fixed always / never.
     Fixed(bool),
     /// Per-call policy.
-    Dynamic(NeedsApprovalFn),
+    Dynamic(NeedsResolutionFn),
 }
 
-impl Default for NeedsApproval {
+impl Default for NeedsResolution {
     fn default() -> Self {
         Self::Fixed(false)
     }
 }
 
-impl From<bool> for NeedsApproval {
+impl From<bool> for NeedsResolution {
     fn from(value: bool) -> Self {
         Self::Fixed(value)
     }
 }
 
-impl NeedsApproval {
-    /// Evaluate whether this call needs approval.
+/// Python name of [`NeedsResolution`].
+pub type NeedsApproval = NeedsResolution;
+
+impl NeedsResolution {
+    /// Evaluate whether this call pauses for resolution.
     pub async fn requires(&self, arguments_json: &str, call_id: &str) -> bool {
         match self {
             Self::Fixed(v) => *v,
@@ -218,8 +229,9 @@ pub struct FunctionTool {
     pub strict_json_schema: bool,
     /// Whether the tool is enabled.
     pub is_enabled: ToolEnabled,
-    /// Whether / when the tool pauses for human approval before invoke.
-    pub needs_approval: NeedsApproval,
+    /// Whether / when a call pauses before invoke so the host can resolve it
+    /// (Python: `needs_approval`).
+    pub needs_resolution: NeedsResolution,
     /// How a returned error is surfaced (Python: `failure_error_function`).
     pub failure_error_function: ToolFailureHandling,
     /// Checks that run before the tool body (Python: `tool_input_guardrails`).
@@ -244,8 +256,8 @@ impl std::fmt::Debug for FunctionTool {
             .field("strict_json_schema", &self.strict_json_schema)
             .field("is_enabled", &self.is_enabled)
             .field(
-                "needs_approval",
-                &matches!(self.needs_approval, NeedsApproval::Fixed(true)),
+                "needs_resolution",
+                &matches!(self.needs_resolution, NeedsResolution::Fixed(true)),
             )
             .finish()
     }
@@ -292,7 +304,7 @@ impl FunctionTool {
             }),
             strict_json_schema: true,
             is_enabled: ToolEnabled::Fixed(true),
-            needs_approval: NeedsApproval::Fixed(false),
+            needs_resolution: NeedsResolution::Fixed(false),
             failure_error_function: ToolFailureHandling::Default,
             tool_input_guardrails: Vec::new(),
             tool_output_guardrails: Vec::new(),
@@ -358,24 +370,38 @@ impl FunctionTool {
         self
     }
 
-    /// Require approval before every invoke (Python: `needs_approval=True`).
-    pub fn with_needs_approval(mut self, needs: impl Into<NeedsApproval>) -> Self {
-        self.needs_approval = needs.into();
+    /// Pause every call (`true`) or none (`false`) for resolution before invoke.
+    pub fn with_needs_resolution(mut self, needs: impl Into<NeedsResolution>) -> Self {
+        self.needs_resolution = needs.into();
         self
     }
 
-    /// Dynamic approval policy from an async callback.
-    pub fn with_needs_approval_fn<F, Fut>(mut self, f: F) -> Self
+    /// Decide per call, from its arguments and call id, whether it pauses for resolution.
+    pub fn with_needs_resolution_fn<F, Fut>(mut self, f: F) -> Self
     where
         F: Fn(Value, String) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = bool> + Send + 'static,
     {
         let f = Arc::new(f);
-        self.needs_approval = NeedsApproval::Dynamic(Arc::new(move |params, call_id| {
+        self.needs_resolution = NeedsResolution::Dynamic(Arc::new(move |params, call_id| {
             let f = Arc::clone(&f);
             Box::pin(async move { f(params, call_id).await })
         }));
         self
+    }
+
+    /// Python name of [`Self::with_needs_resolution`] (`needs_approval=True`).
+    pub fn with_needs_approval(self, needs: impl Into<NeedsResolution>) -> Self {
+        self.with_needs_resolution(needs)
+    }
+
+    /// Python name of [`Self::with_needs_resolution_fn`] (`needs_approval=<callable>`).
+    pub fn with_needs_approval_fn<F, Fut>(self, f: F) -> Self
+    where
+        F: Fn(Value, String) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = bool> + Send + 'static,
+    {
+        self.with_needs_resolution_fn(f)
     }
 
     /// Create a tool that returns a constant JSON/string value (handy for tests).

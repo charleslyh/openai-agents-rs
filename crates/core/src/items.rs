@@ -43,8 +43,8 @@ pub enum RunItem {
     ToolCall(ToolCallItem),
     /// Tool call result sent back to the model.
     ToolCallOutput(ToolCallOutputItem),
-    /// Pending human approval for a tool call (not sent to the model as input).
-    ToolApproval(ToolApprovalItem),
+    /// Tool call paused for a resolution (not sent to the model as input).
+    ToolInterruption(ToolInterruptionItem),
     /// A handoff request from one agent to another (Python: `HandoffCallItem`).
     HandoffCall(HandoffCallItem),
     /// The result of a handoff (Python: `HandoffOutputItem`).
@@ -60,7 +60,7 @@ impl RunItem {
             Self::Message(i) => &i.agent_name,
             Self::ToolCall(i) => &i.agent_name,
             Self::ToolCallOutput(i) => &i.agent_name,
-            Self::ToolApproval(i) => &i.agent_name,
+            Self::ToolInterruption(i) => &i.agent_name,
             Self::HandoffCall(i) => &i.agent_name,
             Self::HandoffOutput(i) => &i.agent_name,
             Self::Reasoning(i) => &i.agent_name,
@@ -69,13 +69,13 @@ impl RunItem {
 
     /// Underlying Responses-format JSON.
     ///
-    /// For [`Self::ToolApproval`], returns the pending function_call raw item (not a model input).
+    /// For [`Self::ToolInterruption`], returns the pending function_call raw item (not a model input).
     pub fn raw_item(&self) -> &Value {
         match self {
             Self::Message(i) => &i.raw_item,
             Self::ToolCall(i) => &i.raw_item,
             Self::ToolCallOutput(i) => &i.raw_item,
-            Self::ToolApproval(i) => &i.raw_item,
+            Self::ToolInterruption(i) => &i.raw_item,
             Self::HandoffCall(i) => &i.raw_item,
             Self::HandoffOutput(i) => &i.raw_item,
             Self::Reasoning(i) => &i.raw_item,
@@ -87,7 +87,7 @@ impl RunItem {
     /// Python forwards every run item except `ToolApprovalItem`, which is a placeholder for a
     /// call that has not been decided yet.
     pub fn is_model_input(&self) -> bool {
-        !matches!(self, Self::ToolApproval(_))
+        !matches!(self, Self::ToolInterruption(_))
     }
 }
 
@@ -151,9 +151,9 @@ pub struct ToolCallOutputItem {
     pub output: Value,
 }
 
-/// Pending tool-approval interruption (Python: `ToolApprovalItem`).
+/// Tool call paused for a resolution (Python: `ToolApprovalItem`).
 #[derive(Debug, Clone)]
-pub struct ToolApprovalItem {
+pub struct ToolInterruptionItem {
     /// Agent that requested the tool call.
     pub agent_name: String,
     /// Tool name.
@@ -166,7 +166,10 @@ pub struct ToolApprovalItem {
     pub raw_item: ResponseOutputItem,
 }
 
-impl ToolApprovalItem {
+/// Python name of [`ToolInterruptionItem`].
+pub type ToolApprovalItem = ToolInterruptionItem;
+
+impl ToolInterruptionItem {
     /// Convenience alias for tool name (Python: `ToolApprovalItem.name`).
     pub fn name(&self) -> &str {
         &self.tool_name

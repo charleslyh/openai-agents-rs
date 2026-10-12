@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use openai_agents_core::agent::Agent;
 use openai_agents_core::run_context::RunContextWrapper;
-use openai_agents_core::tool::NeedsApproval;
+use openai_agents_core::tool::NeedsResolution;
 
 use openai_agents_core::McpTool;
 
@@ -108,8 +108,8 @@ pub enum RequireApproval {
 }
 
 impl RequireApproval {
-    pub(crate) fn for_tool(&self, name: &str) -> NeedsApproval {
-        NeedsApproval::Fixed(match self {
+    pub(crate) fn for_tool(&self, name: &str) -> NeedsResolution {
+        NeedsResolution::Fixed(match self {
             Self::Never => false,
             Self::Always => true,
             Self::PerTool { always, .. } => always.iter().any(|n| n == name),

@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 
 use crate::agent::Agent;
 use crate::error::{AgentsError, ToolTimeoutError};
-use crate::items::ToolApprovalItem;
+use crate::items::ToolInterruptionItem;
 use crate::lifecycle::RunHooks;
 use crate::run_context::RunContextWrapper;
 use crate::run_state::RunState;
@@ -35,7 +35,7 @@ pub(crate) async fn execute_planned_tools(
 ) -> Result<
     (
         Vec<(FunctionTool, Value, String)>,
-        Vec<ToolApprovalItem>,
+        Vec<ToolInterruptionItem>,
         HashMap<String, RunState>,
     ),
     AgentsError,
@@ -164,7 +164,7 @@ pub(crate) async fn execute_planned_tools(
                 };
                 let mut result = result;
                 // Python: output guardrails see the result (including an error message) unless the
-                // call paused for a nested approval.
+                // call paused for a nested resolution.
                 if result.interruptions.is_empty() {
                     let mut output_results = Vec::new();
                     let guarded = run_tool_output_guardrails(

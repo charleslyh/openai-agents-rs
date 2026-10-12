@@ -7,9 +7,11 @@ use serde_json::{json, Value};
 use crate::agent::Agent;
 use crate::error::{AgentsError, ModelError, UserError};
 use crate::handoffs::Handoff;
-use crate::items::{required_function_call_parts, ResponseOutputItem, RunItem, ToolApprovalItem};
+use crate::items::{
+    required_function_call_parts, ResponseOutputItem, RunItem, ToolInterruptionItem,
+};
 use crate::run_context::RunContextWrapper;
-use crate::run_state::{ApprovalDecision, ApprovalStore};
+use crate::run_state::{ResolutionStore, ToolResolution};
 use crate::tool::{FunctionTool, DEFAULT_APPROVAL_REJECTION_MESSAGE};
 
 use crate::run::config::{
@@ -144,9 +146,9 @@ pub(crate) fn handoff_as_tool(h: &Handoff) -> FunctionTool {
 }
 
 pub(crate) struct ToolPlan {
-    /// Still waiting on human decisions.
-    pub(crate) interruptions: Vec<ToolApprovalItem>,
-    /// Rejected calls: (tool, rejection output, call_id).
+    /// Still waiting for a resolution.
+    pub(crate) interruptions: Vec<ToolInterruptionItem>,
+    /// Calls resolved without running: (tool, rejection message or provided output, call_id).
     pub(crate) ready_outputs: Vec<(FunctionTool, Value, String)>,
     /// Tools that should be invoked now: (tool, arguments, call_id).
     pub(crate) to_invoke: Vec<(FunctionTool, String, String)>,
@@ -181,7 +183,7 @@ pub(crate) async fn plan_tool_calls(
     agent: &Agent,
     tools: &[FunctionTool],
     function_calls: &[ResponseOutputItem],
-    approvals: &ApprovalStore,
+    resolutions: &ResolutionStore,
     generated_items: &[RunItem],
     run_config: &RunConfig,
     context: &RunContextWrapper,
@@ -226,11 +228,11 @@ pub(crate) async fn plan_tool_calls(
             continue;
         }
 
-        match approvals.status(&agent.name, &name, &call_id) {
-            Some(ApprovalDecision::Approved) => {
+        match resolutions.status(&agent.name, &name, &call_id) {
+            Some(ToolResolution::Run) => {
                 plan.to_invoke.push((tool, arguments, call_id));
             }
-            Some(ApprovalDecision::Rejected { message }) => {
+            Some(ToolResolution::Reject { message }) => {
                 // Python: an explicit rejection message wins; the formatter only replaces the
                 // default one. The default is stored at reject time, so an explicit message
                 // equal to it is treated as the default.
@@ -250,9 +252,12 @@ pub(crate) async fn plan_tool_calls(
                 plan.ready_outputs
                     .push((tool, Value::String(message), call_id));
             }
+            Some(ToolResolution::Output { output }) => {
+                plan.ready_outputs.push((tool, output, call_id));
+            }
             None => {
-                if tool.needs_approval.requires(&arguments, &call_id).await {
-                    plan.interruptions.push(ToolApprovalItem {
+                if tool.needs_resolution.requires(&arguments, &call_id).await {
+                    plan.interruptions.push(ToolInterruptionItem {
                         agent_name: agent.name.clone(),
                         tool_name: name,
                         call_id,

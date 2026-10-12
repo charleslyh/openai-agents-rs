@@ -20,8 +20,9 @@ pub struct AsToolConfig {
     pub name: Option<String>,
     /// Tool description (default: handoff_description or agent name).
     pub description: Option<String>,
-    /// Whether the agent-tool itself needs approval before the nested run starts.
-    pub needs_approval: bool,
+    /// Whether a call of the agent-tool pauses for resolution before the nested run starts
+    /// (Python: `needs_approval`).
+    pub needs_resolution: bool,
     /// Max turns for the nested run.
     pub max_turns: Option<usize>,
 }
@@ -29,7 +30,7 @@ pub struct AsToolConfig {
 impl Agent {
     /// Expose this agent as a function tool (Python: `Agent.as_tool`).
     ///
-    /// Nested tool approvals surface on the outer run's `interruptions`; approve/reject on the
+    /// Nested tool interruptions surface on the outer run's `interruptions`; resolve them on the
     /// outer [`crate::RunState`], then resume with [`crate::Runner::run_state`].
     ///
     /// Lives next to the runner it calls, so `agent` stays independent of `run`.
@@ -51,7 +52,7 @@ fn build_agent_as_tool(agent: &Agent, config: AsToolConfig) -> FunctionTool {
             .unwrap_or_else(|| format!("Agent tool: {}", nested_agent.name))
     });
     let max_turns = config.max_turns;
-    let needs = config.needs_approval;
+    let needs = config.needs_resolution;
 
     FunctionTool::new_with_result(
         tool_name,
@@ -91,7 +92,7 @@ fn build_agent_as_tool(agent: &Agent, config: AsToolConfig) -> FunctionTool {
             }
         },
     )
-    .with_needs_approval(needs)
+    .with_needs_resolution(needs)
 }
 
 fn extract_as_tool_input(args: &str) -> Result<String, AgentsError> {

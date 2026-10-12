@@ -27,7 +27,7 @@ pub fn function_tool(attr: TokenStream, item: TokenStream) -> TokenStream {
     let args = parse_macro_input!(attr with Punctuated::<Meta, Token![,]>::parse_terminated);
     let mut name_override: Option<String> = None;
     let mut description_override: Option<String> = None;
-    let mut needs_approval = false;
+    let mut needs_resolution = false;
     for meta in args {
         match meta {
             Meta::NameValue(nv) if nv.path.is_ident("name") => {
@@ -36,11 +36,13 @@ pub fn function_tool(attr: TokenStream, item: TokenStream) -> TokenStream {
             Meta::NameValue(nv) if nv.path.is_ident("description") => {
                 description_override = lit_str(&nv.value);
             }
-            Meta::NameValue(nv) if nv.path.is_ident("needs_approval") => {
-                needs_approval = lit_bool(&nv.value).unwrap_or(false);
+            Meta::NameValue(nv)
+                if nv.path.is_ident("needs_resolution") || nv.path.is_ident("needs_approval") =>
+            {
+                needs_resolution = lit_bool(&nv.value).unwrap_or(false);
             }
-            Meta::Path(p) if p.is_ident("needs_approval") => {
-                needs_approval = true;
+            Meta::Path(p) if p.is_ident("needs_resolution") || p.is_ident("needs_approval") => {
+                needs_resolution = true;
             }
             _ => {}
         }
@@ -223,7 +225,7 @@ pub fn function_tool(attr: TokenStream, item: TokenStream) -> TokenStream {
                     }
                 },
             )
-            .with_needs_approval(#needs_approval)
+            .with_needs_resolution(#needs_resolution)
         }
     };
 

@@ -1,4 +1,9 @@
-//! Approval decisions recorded for pending tool calls, and the sticky policies on top of them.
+//! How paused tool calls are resolved, and the sticky approval policies on top of them.
+//!
+//! A tool whose [`crate::tool::NeedsResolution`] says so pauses before it runs; the host then
+//! resolves the call. Human approval is the common case (`approve` runs the tool, `reject` answers
+//! the model with a message), but a host can also run the work elsewhere and hand back its result
+//! ([`ToolResolution::Output`]).
 
 use std::collections::HashMap;
 
@@ -6,17 +11,27 @@ use serde_json::{json, Value};
 
 use crate::error::{AgentsError, UserError, DEFAULT_APPROVAL_REJECTION_MESSAGE};
 
-/// Decision recorded for a pending tool call.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ApprovalDecision {
-    /// Tool may execute.
-    Approved,
-    /// Tool must not execute; model receives `message`.
-    Rejected {
+/// How a paused tool call is resolved.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ToolResolution {
+    /// Run the tool (Python: approved).
+    Run,
+    /// Do not run the tool; the model receives `message` (Python: rejected).
+    Reject {
         /// Rejection text sent as `function_call_output`.
         message: String,
     },
+    /// Do not run the tool; the model receives `output` as the call's result.
+    ///
+    /// For work the host carried out itself, e.g. a long job finished outside the run.
+    Output {
+        /// The call's result, recorded like a tool return value.
+        output: Value,
+    },
 }
+
+/// Python name of [`ToolResolution`] (variants: `Approved` → `Run`, `Rejected` → `Reject`).
+pub type ApprovalDecision = ToolResolution;
 
 /// Sticky always-approve / always-reject for `(agent_name, tool_name)`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,43 +45,50 @@ pub enum StickyDecision {
     },
 }
 
-/// Approval table: per-call decisions + sticky tool policies (Python: context approvals subset).
+/// Resolution table: per-call resolutions + sticky approval policies.
 #[derive(Debug, Clone, Default)]
-pub struct ApprovalStore {
-    /// Exact call_id decisions (win over sticky).
-    pub by_call: HashMap<String, ApprovalDecision>,
+pub struct ResolutionStore {
+    /// Exact call_id resolutions (win over sticky).
+    pub by_call: HashMap<String, ToolResolution>,
     /// Sticky decisions keyed by `"agent_name\\0tool_name"`.
     pub sticky: HashMap<String, StickyDecision>,
 }
 
-impl ApprovalStore {
+/// Python name of [`ResolutionStore`].
+pub type ApprovalStore = ResolutionStore;
+
+impl ResolutionStore {
     fn sticky_key(agent_name: &str, tool_name: &str) -> String {
         format!("{agent_name}\0{tool_name}")
     }
 
-    /// Resolve approval for a call (exact call_id first, then sticky).
+    /// Resolution of a call (exact call_id first, then sticky).
     pub fn status(
         &self,
         agent_name: &str,
         tool_name: &str,
         call_id: &str,
-    ) -> Option<ApprovalDecision> {
+    ) -> Option<ToolResolution> {
         if let Some(d) = self.by_call.get(call_id) {
             return Some(d.clone());
         }
         match self.sticky.get(&Self::sticky_key(agent_name, tool_name)) {
-            Some(StickyDecision::AlwaysApprove) => Some(ApprovalDecision::Approved),
-            Some(StickyDecision::AlwaysReject { message }) => Some(ApprovalDecision::Rejected {
+            Some(StickyDecision::AlwaysApprove) => Some(ToolResolution::Run),
+            Some(StickyDecision::AlwaysReject { message }) => Some(ToolResolution::Reject {
                 message: message.clone(),
             }),
             None => None,
         }
     }
 
+    /// Record how a call is resolved.
+    pub fn resolve(&mut self, call_id: &str, resolution: ToolResolution) {
+        self.by_call.insert(call_id.to_string(), resolution);
+    }
+
     /// Record an approve decision.
     pub fn approve(&mut self, agent_name: &str, tool_name: &str, call_id: &str, always: bool) {
-        self.by_call
-            .insert(call_id.to_string(), ApprovalDecision::Approved);
+        self.resolve(call_id, ToolResolution::Run);
         if always {
             self.sticky.insert(
                 Self::sticky_key(agent_name, tool_name),
@@ -84,9 +106,9 @@ impl ApprovalStore {
         always: bool,
         message: String,
     ) {
-        self.by_call.insert(
-            call_id.to_string(),
-            ApprovalDecision::Rejected {
+        self.resolve(
+            call_id,
+            ToolResolution::Reject {
                 message: message.clone(),
             },
         );
@@ -104,10 +126,11 @@ impl ApprovalStore {
             .iter()
             .map(|(k, v)| {
                 let entry = match v {
-                    ApprovalDecision::Approved => json!({"approved": true}),
-                    ApprovalDecision::Rejected { message } => {
+                    ToolResolution::Run => json!({"approved": true}),
+                    ToolResolution::Reject { message } => {
                         json!({"approved": false, "message": message})
                     }
+                    ToolResolution::Output { output } => json!({"output": output}),
                 };
                 (k.clone(), entry)
             })
@@ -144,24 +167,9 @@ impl ApprovalStore {
         let mut store = Self::default();
         if let Some(map) = value.get("by_call").and_then(|v| v.as_object()) {
             for (call_id, entry) in map {
-                let approved = entry
-                    .get("approved")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-                if approved {
-                    store
-                        .by_call
-                        .insert(call_id.clone(), ApprovalDecision::Approved);
-                } else {
-                    let message = entry
-                        .get("message")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or(DEFAULT_APPROVAL_REJECTION_MESSAGE)
-                        .to_string();
-                    store
-                        .by_call
-                        .insert(call_id.clone(), ApprovalDecision::Rejected { message });
-                }
+                store
+                    .by_call
+                    .insert(call_id.clone(), resolution_from_json(entry));
             }
         }
         if let Some(arr) = value.get("sticky").and_then(|v| v.as_array()) {
@@ -174,27 +182,34 @@ impl ApprovalStore {
                     .get("tool")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| UserError::new("sticky approval missing tool"))?;
-                let approved = entry
-                    .get("approved")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-                if approved {
-                    store
-                        .sticky
-                        .insert(Self::sticky_key(agent, tool), StickyDecision::AlwaysApprove);
-                } else {
-                    let message = entry
-                        .get("message")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or(DEFAULT_APPROVAL_REJECTION_MESSAGE)
-                        .to_string();
-                    store.sticky.insert(
-                        Self::sticky_key(agent, tool),
-                        StickyDecision::AlwaysReject { message },
-                    );
-                }
+                let decision = match resolution_from_json(entry) {
+                    ToolResolution::Run => StickyDecision::AlwaysApprove,
+                    ToolResolution::Reject { message } => StickyDecision::AlwaysReject { message },
+                    ToolResolution::Output { .. } => {
+                        return Err(UserError::new("sticky approval cannot carry an output").into())
+                    }
+                };
+                store.sticky.insert(Self::sticky_key(agent, tool), decision);
             }
         }
         Ok(store)
+    }
+}
+
+fn resolution_from_json(entry: &Value) -> ToolResolution {
+    if let Some(output) = entry.get("output") {
+        return ToolResolution::Output {
+            output: output.clone(),
+        };
+    }
+    if entry.get("approved").and_then(|v| v.as_bool()) == Some(true) {
+        return ToolResolution::Run;
+    }
+    ToolResolution::Reject {
+        message: entry
+            .get("message")
+            .and_then(|v| v.as_str())
+            .unwrap_or(DEFAULT_APPROVAL_REJECTION_MESSAGE)
+            .to_string(),
     }
 }
