@@ -18,6 +18,30 @@ server-side prompts (`Agent.prompt`), the Conversations API and `responses.compa
 trace export. Anything that only needs a compatible *protocol* is in scope. See
 [`docs/DEVIATIONS.md`](./docs/DEVIATIONS.md#scope) for the full list.
 
+## Crates and features
+
+Depend on `openai-agents`; it re-exports everything below under the paths the SDK has always had.
+
+| Crate | What it holds | Pulled in by |
+| --- | --- | --- |
+| `openai-agents-core` | agents, tools, handoffs, guardrails, the run loop, sessions, tracing, and the `Model` / `ModelProvider` / `McpServer` contracts. No HTTP client, database or process spawning | always |
+| `openai-agents-macros` | `#[function_tool]` | always |
+| `openai-agents-testing` | `ScriptedModel` and item builders (`openai_agents::testing`) | always |
+| `openai-agents-openai` | Chat Completions and Responses adapters, `OpenAIProvider`, `CompatibleProvider` | feature `openai` (**default**) |
+| `openai-agents-mcp` | MCP client: stdio and streamable HTTP, tool filters, `McpServerManager` | feature `mcp` |
+| `openai-agents-sqlite` | `SqliteSession`, file-compatible with the Python SDK | feature `sqlite` |
+
+```toml
+openai-agents = "0.1"                                                        # core + OpenAI
+openai-agents = { version = "0.1", features = ["mcp", "sqlite"] }            # plus MCP and SQLite
+openai-agents = { version = "0.1", default-features = false }                # core only, bring your own Model
+```
+
+With `default-features = false` the build contains no HTTP client. A model *name* then needs a
+provider you set yourself (`RunConfig.model_provider`, or `set_default_model_provider_factory`).
+With `openai`, `Runner` installs the OpenAI provider on its first call, so `OPENAI_API_KEY`
+(or `OPENAI_BASE_URL`) is enough. See D-047 in [`docs/DEVIATIONS.md`](./docs/DEVIATIONS.md).
+
 ## Quick start
 
 ```rust
@@ -125,8 +149,8 @@ CI runs every layer on Linux and macOS — see `.github/workflows/ci.yml` and
 
 ## MCP tools
 
-Any [MCP](https://modelcontextprotocol.io) server's tools become tools of your agent, whichever
-model you use:
+Enable the `mcp` feature. Any [MCP](https://modelcontextprotocol.io) server's tools become tools of
+your agent, whichever model you use:
 
 ```rust
 let server = McpClient::stdio(
