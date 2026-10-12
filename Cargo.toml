@@ -2,6 +2,23 @@
 members = ["crates/*"]
 resolver = "2"
 
+# Dependencies every crate needs with the *same* features, so the version is declared once.
+#
+# Deliberately not here: `tokio`, `reqwest` and the path dependencies.
+#   - `tokio` / `reqwest` take different feature sets per crate (`tokio/process` only for the MCP
+#     stdio transport, `reqwest` only where HTTP is used). Cargo unions features across a build, so
+#     declaring them once here would pull the widest set into every crate that names them.
+#   - The `openai-agents-*` crates are path dependencies, and some are `optional` (a facade
+#     feature turns them on). Keeping those next to the feature that needs them reads better than
+#     splitting the declaration across two files.
+[workspace.dependencies]
+async-trait = "0.1"
+futures = "0.3"
+serde_json = { version = "1", features = ["preserve_order"] }
+thiserror = "2"
+tracing = "0.1"
+uuid = { version = "1", features = ["v4"] }
+
 # Lints every member inherits with `[lints] workspace = true`.
 #
 # These three are a *known, tracked backlog*, not a preference: `-D warnings` in CI blocks every

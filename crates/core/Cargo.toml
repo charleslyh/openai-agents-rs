@@ -11,15 +11,15 @@ repository = "https://github.com/charleslyh/openai-agents-rs"
 workspace = true
 
 [dependencies]
-async-trait = "0.1"
-futures = "0.3"
+async-trait = { workspace = true }
+futures = { workspace = true }
 schemars = "1"
 serde = { version = "1", features = ["derive"] }
-serde_json = { version = "1", features = ["preserve_order"] }
-thiserror = "2"
+serde_json = { workspace = true }
+thiserror = { workspace = true }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
-tracing = "0.1"
-uuid = { version = "1", features = ["v4"] }
+tracing = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util"] }

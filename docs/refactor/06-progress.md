@@ -77,16 +77,27 @@
 
 ### 仍超过 500 行的文件
 
+(路径已随 P3 更新:前两个现在在 `crates/openai/src/` 下。软上限 500 行只约束源码,测试文件
+不计。)
+
 | 文件 | 行数 | 原因 | 处理 |
 | --- | --- | --- | --- |
-| `run/agent_loop.rs` | 841 | 模型调用本身(重试 + 流式)仍内联在一轮里 | 已按阶段抽出 10 个 phase 到 `run/turn.rs`;模型调用体的闭包捕获请求与响应,继续拆的收益低于风险 |
-| `model/openai/chat_completions/mod.rs` | 530 | `stream_response` 一个方法约 395 行 | 同上,是单方法问题 |
-| `model/openai/chat_convert/to_chat.rs` | 500 | 恰好在软上限,且内部按 `items_to_chat_messages` 一个主流程组织 | 暂不处理 |
+| `core/src/run/agent_loop.rs` | 840 | 模型调用本身(重试 + 流式)仍内联在一轮里 | 已按阶段抽出 11 个 phase 到 `run/turn.rs`;模型调用体的闭包捕获请求与响应,继续拆的收益低于风险 |
+| `core/src/run/turn.rs` | 749 | 11 个 phase 共处一文件,彼此几乎无耦合 | `perform_handoff` 一个就占 174 行,单独成文件即可回到上限内(未做) |
+| `openai/src/chat_completions/mod.rs` | 530 | `stream_response` 一个方法 392 行 | 同上,是单方法问题(未做) |
+| `openai/src/chat_convert/to_chat.rs` | 500 | 恰好在软上限,且内部按 `items_to_chat_messages` 一个主流程组织 | 暂不处理 |
 
 ## P3 物理拆 crate(主体完成)
 
-仓库改为 virtual workspace(`members = ["crates/*"]`,`resolver = "2"`),版本与 lint 由
-`[workspace.dependencies]` / `[workspace.lints]` 统一。
+仓库改为 virtual workspace(`members = ["crates/*"]`,`resolver = "2"`)。
+
+- `[workspace.lints]` 统一:每个 crate 用 `[lints] workspace = true` 继承。
+- `[workspace.dependencies]` 只放六个各 crate 特性完全一致的依赖(`async-trait`、`futures`、
+  `serde_json`、`thiserror`、`tracing`、`uuid`)。`tokio`、`reqwest` 与路径依赖**故意不放在
+  这里**:前两者在各 crate 的特性集不同(只有 MCP 的 stdio 传输需要 `tokio/process`),而
+  Cargo 会对特性取并集,统一声明会把最宽的特性集带进每个 crate;路径依赖里有的是 facade
+  的可选依赖,放在开启它的 feature 旁边更好读。
+- 各 crate 的 `version` 都是 `0.1.0`,目前靠手工保持一致。
 
 | 步骤 | 内容 | commit |
 | --- | --- | --- |
@@ -139,11 +150,31 @@ feature 矩阵(每个扩展单独开/关)要能编译;fmt、两种 feature 的 c
 
 ### 体积与编译时间
 
-- 冷启动(清空 `target/` 后构建全量测试)约 67 秒 -> 约 40 秒。
-- 增量编译**变差**:默认调试信息下,改 `core` 后重编一个测试目标约 1.5 秒 -> 约 5.1 秒。原因是
-  core 变动后下游每个 crate 都要重新链接。
-- 把调试信息降到 `line-tables-only` 后回到约 1.8 秒。**这只是一次实验,没有写进仓库配置**;
-  若要采纳需单独决定。
+**冷启动变快**:清空 `target/` 后构建全量测试,约 67 秒 -> 约 40 秒。
+
+**增量编译变差**:默认调试信息下,改 `core` 后重编一个测试目标约 1.5 秒 -> 约 5.1 秒。原因是
+core 变动后下游每个 crate 都要重新链接。把调试信息降到 `line-tables-only` 后回到约 1.8 秒
+——**这只是一次实验,没有写进仓库配置**,若要采纳需单独决定。
+
+**体积涨了约 1.9%,这是一处回归。** 用 `git worktree` 在 P3 前的 `d086e1f` 上重建同一个示例
+对比:`cargo build --release --example 01_hello` 的二进制 **6 951 472 B -> 7 080 560 B**,多约
+129 KB。P0 基线第 6 节写着"体积不应显著上升",而这条此前从未测过,所以直到这次对账才发现。
+
+按 feature 组合实测 `01_hello` 的 release 体积:
+
+| 组合 | 体积(B) |
+| --- | --- |
+| 默认(`openai`) | 7 080 560 |
+| `--no-default-features --features openai` | 7 080 528 |
+| `--no-default-features --features openai,sqlite` | 7 080 560 |
+
+三个数字几乎相同,不是 feature 隔离失效,而是**这个示例没有调用 MCP 与 SQLite 的代码路径,
+链接器把未用到的部分丢掉了**。要用示例测出某个扩展的真实体积贡献,得先有一个真正用到它的
+示例 —— 目前 10 个示例里没有一个使用 `SqliteSession`。这一点记在这里,免得下次照着这张表
+得出"feature 不影响体积"的结论。
+
+129 KB 的来源没有继续追。合理猜测是 crate 边界让单态化产物不再能跨 crate 合并(原先同一个
+crate 内可共享的泛型实例现在各自实例化),但这只是猜测,没有验证。
 
 ### 可观察的行为变化
 
