@@ -24,7 +24,36 @@ docs(deviations): record D-010 vendor tarball pin because GitHub submodule clone
 
 This convention is also enforced for agents via [`.cursor/rules/commit-messages.mdc`](../.cursor/rules/commit-messages.mdc).
 
+## Workspace structure
+
+The repo is a Cargo workspace. Do not add to `openai-agents-core` what belongs in an extension
+crate, and do not reach from one extension crate into another.
+
+| crate | holds |
+| --- | --- |
+| `openai-agents-core` | agents, tools, handoffs, guardrails, the run loop, sessions, tracing, context trimmers. No HTTP, no database, no child processes, and **no features** |
+| `openai-agents-openai` | the OpenAI provider and the Responses / Chat Completions adapters (facade feature `openai`, on by default) |
+| `openai-agents-mcp` | the MCP client and its two transports (facade feature `mcp`, **off** by default) |
+| `openai-agents-sqlite` | `SqliteSession` (facade feature `sqlite`) |
+| `openai-agents-testing` | `ScriptedModel` and item builders |
+| `openai-agents-macros` | `#[function_tool]` |
+| `openai-agents` (facade) | re-exports everything, installs the default model provider |
+
+Two traps worth knowing:
+
+- `mcp` is off by default, so `cargo test --test mcp_interop` compiles to zero tests and **still
+  passes**. Always pass `--features mcp` explicitly.
+- `#[function_tool]` expands to `openai_agents::…` paths and emits
+  `#[serde(crate = "openai_agents::serde")]`. Inside the workspace that path does not resolve, so
+  tests there must pass the macro's `crate = "..."` override.
+
+Each crate carries an `AGENTS.md` with its own boundary rules and traps
+(`crates/*/AGENTS.md`) — read it before changing that crate.
+
 ## Verification before PR
+
+Before changing a crate, read its `AGENTS.md` (`crates/*/AGENTS.md`): it records that crate's
+boundary rules and the non-obvious traps.
 
 ```bash
 bash scripts/sync_vendor.sh --check

@@ -37,6 +37,9 @@ openai-agents = { version = "0.1", features = ["mcp", "sqlite"] }            # p
 openai-agents = { version = "0.1", default-features = false }                # core only, bring your own Model
 ```
 
+Contributors: each crate carries an `AGENTS.md` with its boundary rules and the traps worth
+knowing before you change it (`crates/core/AGENTS.md`, `crates/mcp/AGENTS.md`, and so on).
+
 With `default-features = false` the build contains no HTTP client. A model *name* then needs a
 provider you set yourself (`RunConfig.model_provider`, or `set_default_model_provider_factory`).
 With `openai`, `Runner` installs the OpenAI provider on its first call, so `OPENAI_API_KEY`

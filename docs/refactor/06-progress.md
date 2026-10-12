@@ -150,11 +150,21 @@ feature 矩阵(每个扩展单独开/关)要能编译;fmt、两种 feature 的 c
 
 ### 体积与编译时间
 
-**冷启动变快**:清空 `target/` 后构建全量测试,约 67 秒 -> 约 40 秒。
+用 `git worktree` 在 P3 前的 `d086e1f` 上做同口径对照,每个数字跑三次。
 
-**增量编译变差**:默认调试信息下,改 `core` 后重编一个测试目标约 1.5 秒 -> 约 5.1 秒。原因是
-core 变动后下游每个 crate 都要重新链接。把调试信息降到 `line-tables-only` 后回到约 1.8 秒
-——**这只是一次实验,没有写进仓库配置**,若要采纳需单独决定。
+早期在这里记过"冷启动 67 -> 40 秒"与"增量 1.5 -> 5.1 秒",**两者都无法复现,已作废**:当时
+没有固定"依赖是否已编译"这个前提,而它才是耗时的大头。
+
+| 场景 | P3 前 | 现在 | 结论 |
+| --- | --- | --- | --- |
+| 冷启动(依赖也一起编,清 `target/debug`) | 21.8 s | 24.3 s | 略慢约 12% |
+| 冷启动(只编 lib) | 20.3 s | 18.5 s | 略快 |
+| 只重编自有 crate(依赖已编译) | 4 s | 4-5 s | 持平 |
+| 增量:改 `core/src/lib.rs` 后重编一个测试目标 | 1.13 / 1.20 s | 1.20 / 1.25 / 1.42 s | 持平 |
+
+结论:**拆分没有带来编译速度的改善,也没有明显恶化**。此前"冷启动快了近一半"的说法不成立,
+一并作废的还有"降到 `line-tables-only` 可回到 1.8 秒"——增量本来就在 1.2 秒量级,那个实验
+针对的是一个不存在的问题。
 
 **体积涨了约 1.9%,这是一处回归。** 用 `git worktree` 在 P3 前的 `d086e1f` 上重建同一个示例
 对比:`cargo build --release --example 01_hello` 的二进制 **6 951 472 B -> 7 080 560 B**,多约
@@ -297,7 +307,11 @@ crate 内可共享的泛型实例现在各自实例化),但这只是猜测,没�
 | 拆 `run_loop_inner` | **已完成**:1137 -> 642 行 |
 | `stream_response`(392 行单方法,`crates/openai/src/chat_completions/mod.rs`) | 未做 |
 | 集成测试按 crate 分散 | **未做**:23 个测试目标全在 `crates/facade/tests/`,因为它们大多跨 crate |
-| CI 分 crate 矩阵 | 未做:仍是两个 OS × 三个 feature 档,没有 per-crate 矩阵 |
+| CI 分 crate 矩阵 | **不做**:两个 OS × 三个 feature 档已能拦住回归,加 per-crate 矩阵只增加分钟数 |
+| `.cursor/rules` | **已完成**:新增 `.cursor/rules/crate-layout.mdc` |
+| 各 crate `AGENTS.md` | **已完成**:7 个文件,并在 README、CONTRIBUTING、crate-layout 里指向它们 |
+| 体积对比 | **已完成**:见 P3 验收小节(三个 feature 组合 + 与 P3 前的对照) |
+| `--timings` | 未产出报告文件。改为上表四个场景的实测对照,比单次 `--timings` 更有可比性 |
 | tests 按领域分组 | 决定不做(`tests/` 子目录不会被 Cargo 自动发现,见下) |
 | examples 整理 | 未整理 |
 
@@ -308,7 +322,7 @@ crate 内可共享的泛型实例现在各自实例化),但这只是猜测,没�
 | `scripts/check_runner_api.py` | facade 重新实现了 `Runner`,需要防止它的方法与 core 漂移 |
 | `check_module_deps.py` 的 crate 级规则 | 拆 crate 后,模块级 tier 检查管不到跨 crate 的依赖 |
 | `mcp` 默认关闭带来的 CI / 文档改动 | D6 的连带影响:不加 `--features mcp` 时测试目标会静默编译成零个测试 |
-| 增量编译变慢(1.5s -> 5.1s) | 拆 crate 后 core 变动会触发下游每个 crate 重新链接。降到 `line-tables-only` 可回到 1.8s,**未采纳** |
+| 体积 +1.9%(约 129 KB) | 见 P3 验收小节。不是计划内的取舍,是这次对账才测出来的回归 |
 
 ### 数字上的偏差
 
