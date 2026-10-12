@@ -122,3 +122,40 @@ async fn streamed_stop_on_first_tool() {
         Some("final".into())
     );
 }
+
+/// Streamed HITL keeps a resumable `RunState` (drain first, then `to_state`).
+#[tokio::test]
+async fn streamed_hitl_to_state_then_run_state_streamed() {
+    let model = Arc::new(ScriptedModel::new([
+        ModelStep::from(ItemHelpers::function_tool_call("delete_file", "{}", "c1")),
+        ModelStep::from(ItemHelpers::text_message("deleted")),
+    ]));
+    let agent = Agent::new("assistant")
+        .model(model)
+        .tools(vec![FunctionTool::constant(
+            "delete_file",
+            "delete",
+            "deleted",
+        )
+        .with_needs_approval(true)]);
+
+    let mut streamed = Runner::run_streamed(agent.clone(), "go", RunOptions::default());
+    let _ = streamed.collect_events().await.expect("events");
+    assert!(streamed.is_interrupted());
+    assert!(streamed.final_output().is_none());
+
+    let mut state = streamed.to_state().expect("to_state");
+    let item = state.interruptions[0].clone();
+    state.approve(&item, false);
+
+    let mut resumed = Runner::run_state_streamed(agent, state, RunOptions::default())
+        .expect("run_state_streamed");
+    let _ = resumed.collect_events().await.expect("resume events");
+    assert!(!resumed.is_interrupted());
+    assert_eq!(
+        resumed
+            .final_output()
+            .and_then(|v| v.as_str().map(str::to_string)),
+        Some("deleted".into())
+    );
+}

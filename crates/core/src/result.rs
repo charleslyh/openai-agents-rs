@@ -178,6 +178,8 @@ pub struct StreamingSnapshot {
     pub usage: Usage,
     /// Pending interruptions when the stream paused for HITL.
     pub interruptions: Vec<ToolInterruptionItem>,
+    /// Resumable state when the stream paused for HITL ([`RunResultStreaming::to_state`]).
+    pub(crate) paused_state: Option<RunState>,
     /// Error if the background task failed after events stopped.
     pub error: Option<String>,
     /// A graceful cancel was requested: stop before the next turn begins.
@@ -288,6 +290,31 @@ impl RunResultStreaming {
     /// Final output once available.
     pub fn final_output(&self) -> Option<serde_json::Value> {
         self.snapshot.lock().expect("snapshot").final_output.clone()
+    }
+
+    /// Whether the run paused with tool calls waiting for a resolution.
+    ///
+    /// Drain the stream (or wait until [`Self::is_complete`]) before relying on this; the
+    /// background task writes interruptions only after the loop returns.
+    pub fn is_interrupted(&self) -> bool {
+        !self
+            .snapshot
+            .lock()
+            .expect("snapshot")
+            .interruptions
+            .is_empty()
+    }
+
+    /// Convert an interrupted streamed run into a resumable [`RunState`].
+    ///
+    /// Drain the stream first so the background task has stored the paused state.
+    pub fn to_state(&self) -> Result<RunState, AgentsError> {
+        let snap = self.snapshot.lock().expect("snapshot");
+        snap.paused_state.clone().ok_or_else(|| {
+            AgentsError::User(crate::error::UserError::new(
+                "RunResultStreaming.to_state() requires a paused run with interruptions",
+            ))
+        })
     }
 
     /// Receive the next stream event.

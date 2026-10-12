@@ -93,62 +93,45 @@ impl Runner {
     }
 
     /// Run in streaming mode (Python: `Runner.run_streamed`).
+    ///
+    /// When the run pauses for tool resolution, drain the stream and call
+    /// [`RunResultStreaming::to_state`] to resume with [`Self::run_state`] or
+    /// [`Self::run_state_streamed`].
     pub fn run_streamed(
         starting_agent: Agent,
         input: impl Into<InputLike>,
         options: RunOptions,
     ) -> RunResultStreaming {
-        let input = input.into();
-        let max_turns = options.max_turns;
-        let (tx, rx) = mpsc::channel(64);
-        let snapshot = Arc::new(Mutex::new(StreamingSnapshot {
-            current_agent_name: starting_agent.name.clone(),
-            ..Default::default()
-        }));
-        let snap = Arc::clone(&snapshot);
-        let task = tokio::spawn(async move {
-            let result = run_loop(
-                starting_agent,
-                LoopStart::Fresh {
-                    input,
-                    prepared: None,
-                },
-                options,
-                Some(tx.clone()),
-                Some(Arc::clone(&snap)),
-            )
-            .await;
-            match result {
-                Ok(r) => {
-                    let mut s = snap.lock().expect("snapshot");
-                    s.is_complete = true;
-                    // A graceful cancel returns a result without a real final output.
-                    let stopped_early = s.cancel_after_turn;
-                    if stopped_early {
-                        s.is_cancelled = true;
-                    }
-                    s.final_output = if r.interruptions.is_empty() && !stopped_early {
-                        Some(r.final_output.clone())
-                    } else {
-                        None
-                    };
-                    s.interruptions = r.interruptions.clone();
-                    s.new_items = r.new_items;
-                    s.raw_responses = r.raw_responses;
-                    s.usage = r.usage;
-                    s.current_agent_name = r.last_agent_name;
-                }
-                Err(e) => {
-                    {
-                        let mut s = snap.lock().expect("snapshot");
-                        s.error = Some(e.to_string());
-                        s.is_complete = true;
-                    }
-                    let _ = tx.send(Err(e)).await;
-                }
-            }
-        });
-        RunResultStreaming::new(snapshot, max_turns, rx).with_task(task)
+        spawn_streamed(
+            starting_agent,
+            LoopStart::Fresh {
+                input: input.into(),
+                prepared: None,
+            },
+            options,
+        )
+    }
+
+    /// Resume a paused run in streaming mode (counterpart of [`Self::run_state`]).
+    pub fn run_state_streamed(
+        starting_agent: Agent,
+        state: RunState,
+        options: RunOptions,
+    ) -> Result<RunResultStreaming, AgentsError> {
+        if state.starting_agent_name != starting_agent.name {
+            return Err(UserError::new(format!(
+                "RunState starting agent `{}` does not match `{}`",
+                state.starting_agent_name, starting_agent.name
+            ))
+            .into());
+        }
+        Ok(spawn_streamed(
+            starting_agent,
+            LoopStart::Resume {
+                state: Box::new(state),
+            },
+            options,
+        ))
     }
 
     /// Blocking wrapper (Python: `run_sync` → Rust `run_blocking`, see D-001).
@@ -189,6 +172,61 @@ impl Runner {
             Self::run(starting_agent, input, options)
         })?
     }
+}
+
+fn spawn_streamed(
+    starting_agent: Agent,
+    start: LoopStart,
+    options: RunOptions,
+) -> RunResultStreaming {
+    let max_turns = options.max_turns;
+    let (tx, rx) = mpsc::channel(64);
+    let snapshot = Arc::new(Mutex::new(StreamingSnapshot {
+        current_agent_name: starting_agent.name.clone(),
+        ..Default::default()
+    }));
+    let snap = Arc::clone(&snapshot);
+    let task = tokio::spawn(async move {
+        let result = run_loop(
+            starting_agent,
+            start,
+            options,
+            Some(tx.clone()),
+            Some(Arc::clone(&snap)),
+        )
+        .await;
+        match result {
+            Ok(r) => {
+                let mut s = snap.lock().expect("snapshot");
+                s.is_complete = true;
+                // A graceful cancel returns a result without a real final output.
+                let stopped_early = s.cancel_after_turn;
+                if stopped_early {
+                    s.is_cancelled = true;
+                }
+                s.final_output = if r.interruptions.is_empty() && !stopped_early {
+                    Some(r.final_output.clone())
+                } else {
+                    None
+                };
+                s.interruptions = r.interruptions.clone();
+                s.paused_state = r.to_state().ok();
+                s.new_items = r.new_items;
+                s.raw_responses = r.raw_responses;
+                s.usage = r.usage;
+                s.current_agent_name = r.last_agent_name;
+            }
+            Err(e) => {
+                {
+                    let mut s = snap.lock().expect("snapshot");
+                    s.error = Some(e.to_string());
+                    s.is_complete = true;
+                }
+                let _ = tx.send(Err(e)).await;
+            }
+        }
+    });
+    RunResultStreaming::new(snapshot, max_turns, rx).with_task(task)
 }
 
 /// The runtime behind `run_blocking` when the caller has none of its own.
