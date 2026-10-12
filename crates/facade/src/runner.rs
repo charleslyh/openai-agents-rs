@@ -49,6 +49,16 @@ impl Runner {
         openai_agents_core::Runner::run_streamed(starting_agent, input, options)
     }
 
+    /// See `openai_agents_core::Runner::run_state_streamed`.
+    pub fn run_state_streamed(
+        starting_agent: Agent,
+        state: RunState,
+        options: RunOptions,
+    ) -> Result<RunResultStreaming, AgentsError> {
+        install_default_provider();
+        openai_agents_core::Runner::run_state_streamed(starting_agent, state, options)
+    }
+
     /// See `openai_agents_core::Runner::run_blocking`.
     pub fn run_blocking(
         starting_agent: &Agent,
