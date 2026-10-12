@@ -308,7 +308,7 @@ crate 内可共享的泛型实例现在各自实例化),但这只是猜测,没�
 | `stream_response`(392 行单方法,`crates/openai/src/chat_completions/mod.rs`) | 未做 |
 | 集成测试按 crate 分散 | **未做**:23 个测试目标全在 `crates/facade/tests/`,因为它们大多跨 crate |
 | CI 分 crate 矩阵 | **不做**:两个 OS × 三个 feature 档已能拦住回归,加 per-crate 矩阵只增加分钟数 |
-| `.cursor/rules` | **已完成**:新增 `.cursor/rules/crate-layout.mdc` |
+| `.cursor/rules` | **改为写进 `docs/CONTRIBUTING.md`**:`.cursor` 被仓库外的全局 gitignore 忽略,写在那里无法与他人共享 |
 | 各 crate `AGENTS.md` | **已完成**:7 个文件,并在 README、CONTRIBUTING、crate-layout 里指向它们 |
 | 体积对比 | **已完成**:见 P3 验收小节(三个 feature 组合 + 与 P3 前的对照) |
 | `--timings` | 未产出报告文件。改为上表四个场景的实测对照,比单次 `--timings` 更有可比性 |
