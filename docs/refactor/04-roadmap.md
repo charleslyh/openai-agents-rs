@@ -44,7 +44,8 @@ parity 阶段额外:`bash scripts/setup_venv.sh`、`.venv/bin/python scripts/run
 **P3a:达成方案 A**
 1. 迁入 `crates/`,根改为 virtual workspace,`[workspace.dependencies]` 统一版本;保留 `[workspace.lints]`。
 2. 单体改名 core,新建 facade。
-3. 依次抽出:macros(含 `crate = "..."` 覆盖,C11)-> sqlite -> mcp -> openai -> context -> testing。
+3. 依次抽出:macros(含 `crate = "..."` 覆盖,C11)-> sqlite -> mcp -> openai -> testing。
+   (`context` 不抽,见 D13。)
 
 **P3b:达成方案 B**
 - 抽出 types、tracing;core 与 runtime 分离。
