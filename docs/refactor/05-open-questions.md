@@ -14,6 +14,7 @@
 | D9 | 方案 A:粗粒度,常用功能合并在同一 crate,避免过细拆分 | 取代原先 B 的推荐 |
 | D10 | 不发布到 crates.io | P4 的发布配置(`exclude`、发布顺序)取消;package name 前缀保留 |
 | D12 | `as_tool` 保持在 core,不引入新 trait | 见下方分析 |
+| D13 | `context` 不抽 crate,`ContextWindowTrimmer` / `ToolOutputTrimmer` / `CompactingSession` 留在 core | 见下方分析 |
 
 ## 受 D9 影响而失效或降级的项
 
@@ -61,3 +62,29 @@
 | T3 | 再加一个 `types` crate | 与 D9 冲突,不推荐 |
 
 决议:T1。P2 的依赖检查脚本中加入规则:`tracing` 模块只允许 `use crate::usage`(及外部 crate),反向依赖不受限。
+## D13 分析:`context` 要不要抽 crate
+
+`02-options.md` 的方案 B 里有一个 `openai-agents-context` 扩展 crate,装
+`ContextWindowTrimmer`、`ToolOutputTrimmer`、`CompactingSession`,`04-roadmap.md` 的 P3a 也
+把它列在 openai 之后。P3 实际执行时没有抽,理由如下。
+
+**1. 它没有可剥离的依赖。** 抽 crate 的收益来自把某个重型依赖排除出默认构建:`rusqlite`
+(sqlite)、`reqwest` + `tokio/process`(mcp)、`async-openai`(openai)都属于这一类。而
+`context.rs` 只依赖 `crate::error` 与 `crate::model`,`default_token_counter` 是纯计算(按字符
+估算),不引入 `tiktoken` 之类的分词库。抽出它不会让默认构建少编译任何外部 crate。
+
+**2. 可剥离性测试不通过。** `memory/compaction.rs` 用 `crate::context`,`run/{agent_loop,
+session_writer,config}.rs` 也用 `crate::context`(输入过滤器与裁剪是 run loop 的一部分)。
+若要抽成可选 crate,这些调用点要么改成动态分发,要么在没有 `context` feature 时报错——而
+`ContextWindowTrimmer` 与 `CompactingSession` 是会话的常用能力,不是可选插件。
+
+**3. 与 D9 一致。** D9 定的是粗粒度、避免过细拆分。一个只装三个类型、无外部依赖的 crate,
+换来 facade 多一个 feature 与一层 re-export,收益为负。
+
+| 选项 | 做法 | 评价 |
+| --- | --- | --- |
+| X1 | 抽 `openai-agents-context`,facade 加 `context` feature | 无依赖收益,且要处理 run loop 的调用点 |
+| X2 | 留在 core,与 D3 对 tracing 的处理一致 | 与 D9 一致,推荐 |
+
+决议:X2。若以后 `context` 引入重型依赖(例如接入真实分词器),再按 D3 的"以后需要再抽"重开
+此议题。

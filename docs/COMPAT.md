@@ -1,5 +1,28 @@
 # Compatibility Matrix
 
+## Python module -> Rust crate
+
+The SDK is a Cargo workspace. `openai-agents` (the facade, `crates/facade`) re-exports
+`openai_agents_core::*` plus the optional crates, so every path below is reachable from
+`openai_agents::…` without naming the crate — except where a row says otherwise.
+
+| Python (`agents.*`) | Rust crate | Where |
+| --- | --- | --- |
+| `agent`, `agent_output`, `result`, `run`, `run_config`, `run_state`, `run_context` | `openai-agents-core` | `crates/core/src/{agent,agent_output,result,run_context}` 与 `crates/core/src/run/{mod,config}.rs`、`crates/core/src/run_state/` |
+| `tool`, `tool_context`, `tool_guardrails`, `function_schema`, `strict_schema` | `openai-agents-core` | `crates/core/src/{tool,tool_guardrails,strict_schema}` |
+| `items`, `handoffs`, `guardrail`, `lifecycle`, `usage`, `stream_events` | `openai-agents-core` | `crates/core/src/…` |
+| `model_settings`, `models` (the `Model` / `ModelProvider` contracts) | `openai-agents-core` | `crates/core/src/model` (contract only, no HTTP) |
+| `context` (trimmers), `memory` (`CompactingSession`) | `openai-agents-core` | `crates/core/src/{context,memory}`; see D13 for why this is not its own crate |
+| `tracing` | `openai-agents-core` | `crates/core/src/tracing`; D3 (allowed to depend only on `usage`) |
+| `retry` | `openai-agents-core` | `crates/core/src/retry`; `openai_retry_advice` moved to `crates/openai/src/retry_advice.rs` (D7) |
+| `models` (OpenAI provider, Responses / Chat Completions) | `openai-agents-openai` | `crates/openai`; facade feature **`openai`** (on by default) |
+| `mcp` | `openai-agents-mcp` | `crates/mcp`; the `McpServer` contract stays in core, facade feature **`mcp`** (**off** by default, D6) |
+| `extensions` (`sqlite`) / `SqliteSession` | `openai-agents-sqlite` | `crates/sqlite`; facade feature `sqlite` |
+| `testing` | `openai-agents-testing` | `crates/testing`; re-exported as `openai_agents::testing` (D2) |
+| `decorators` (`@function_tool`) | `openai-agents-macros` | `crates/macros`; `#[function_tool]` |
+| `realtime`, `voice`, `prompts`, `computer`, `editor`, `repl` | — | Not ported |
+
+
 Standard reference: `vendor/openai-agents-python` @ **v0.23.1** (`openai-agents==0.23.1`).
 Re-sync the vendored tree with `bash scripts/sync_vendor.sh`.
 
