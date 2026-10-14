@@ -100,6 +100,7 @@ on `openai-agents` the way your project would rather than reaching into the SDK'
 | `always_approve` | Sticky `always_approve` |
 | `structured_output` | `output_type` + typed `final_output_as::<T>()` |
 | `guardrails` | Context, guardrails, `RunHooks` / `AgentHooks` |
+| `web_demo` | Local web console (axum + SSE): one chat box over a multi-agent network, a capability checklist, and a chaos drawer that injects faults |
 
 They need `OPENAI_API_KEY` and `OPENAI_MODEL` in the environment; `OPENAI_BASE_URL` and
 `OPENAI_API` (`chat_completions` | `responses`) are optional.
@@ -119,6 +120,27 @@ cargo run -p openai-agents-examples --example structured_output
 
 (The `-p openai-agents-examples` is needed because the workspace has more than one default member,
 so a bare `cargo run --example` cannot tell which package you mean.)
+
+### Web demo
+
+```bash
+cargo run -p openai-agents-examples --example web_demo
+# then open http://127.0.0.1:3000
+```
+
+Uses a real model, so `OPENAI_API_KEY` and `OPENAI_MODEL` are required (startup fails without
+them). Extra variables:
+
+- `DEMO_ADDR` — listen address, default `127.0.0.1:3000`. A non-loopback address prints a warning:
+  the demo has no authentication.
+- `DEMO_DEBUG` — `1`/`0`. Controls fault injection and `/api/debug/*`. On by default for loopback
+  addresses, off otherwise; when off, injected faults in requests are ignored.
+
+The page has a capability checklist (22 items, lit up as you trigger them) and a debug drawer with
+fault presets: LLM errors and retry policies, tool delays and failures, summarizer and session
+failures, MCP failures, dropped streams, expired or replayed approvals, and server state reset. The
+MCP demo server is this same executable re-run with `--mcp-server`. The examples package now builds
+the facade's `mcp` feature because of it.
 
 ## Standard reference
 

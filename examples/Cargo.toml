@@ -61,6 +61,13 @@ path = "src/08_structured_output.rs"
 name = "guardrails"
 path = "src/09_guardrails.rs"
 
+# Serving a page needs the `axum` dependency below; the MCP half of the demo needs the facade's
+# `mcp` feature (declared with the dependency). `tokio` needs its `net` feature for the listener
+# and `time` for the injected delays.
+[[example]]
+name = "web_demo"
+path = "src/10_web_demo.rs"
+
 # The sources are user-facing code, so they live at the repository root rather than inside
 # `crates/facade`. They depend on the facade the way a user's project would.
 #
@@ -72,8 +79,17 @@ path = "src/09_guardrails.rs"
 [dependencies]
 # `guardrails.rs` implements `AgentHooks`, whose methods are `async_trait`.
 async-trait = "0.1"
-openai-agents = { path = "../crates/facade", version = "0.1.0", features = ["openai"] }
+# `10_web_demo.rs` serves the page: routing plus SSE, so the demo is one `cargo run`.
+# The default feature set is enough (no WebSocket, no multipart, no macros).
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio"] }
+# `mcp` is needed by `web_demo` only: it demonstrates a real MCP server over stdio (the demo's
+# own binary re-executed with `--mcp-server`). Declaring it here follows the note above; the
+# cost is that every example in this package now compiles the `openai-agents-mcp` crate too.
+openai-agents = { path = "../crates/facade", version = "0.1.0", features = ["openai", "mcp"] }
+# `stream::unfold` turns the run's event channel into the SSE body.
+futures = "0.3"
 serde = { version = "1", features = ["derive"] }
 schemars = "1"
 serde_json = { version = "1", features = ["preserve_order"] }
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+uuid = { version = "1", features = ["v4"] }
