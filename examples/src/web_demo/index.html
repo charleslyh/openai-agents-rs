@@ -1588,8 +1588,17 @@ async function boot() {
   $("input").addEventListener("input", fitInput);
   window.addEventListener("resize", fitInput);
   fitInput();
+  let composing = false, compEndAt = 0;
+  $("input").addEventListener("compositionstart", () => { composing = true; });
+  $("input").addEventListener("compositionend", () => { composing = false; compEndAt = e_now(); });
+  function e_now() { return performance.now(); }
   $("input").addEventListener("keydown", e => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+    if (e.key !== "Enter" || e.shiftKey) return;
+    // Enter that confirms an IME composition must not submit (Safari fires
+    // keydown after compositionend, with keyCode 229).
+    if (e.isComposing || composing || e.keyCode === 229 || e_now() - compEndAt < 50) return;
+    e.preventDefault();
+    send();
   });
   $("settingsBtn").addEventListener("click", () => openDrawer("settings"));
   $("debugBtn").addEventListener("click", () => openDrawer("debug"));
