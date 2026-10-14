@@ -1,0 +1,27 @@
+[package]
+name = "openai-agents-examples"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Runnable examples for the Rust OpenAI Agents SDK"
+
+# Inherits the lint config (including the tracked clippy backlog) from `[workspace.lints]`.
+[lints]
+workspace = true
+
+# The examples are user-facing code, so they live at the repository root rather than inside
+# `crates/facade`. They depend on the facade the way a user's project would.
+#
+# `openai` is on, and every example needs it: `common::model()` builds an `OpenAIChatCompletions-
+# Model` or an `OpenAIResponsesModel` from `OPENAI_API_KEY`, and that is the point of most of them.
+# A consequence: this package activates the facade's `openai` feature whenever it is built, which
+# is why the root manifest sets `default-members = ["crates/*"]` — `cargo test --no-default-features`
+# must keep verifying that the SDK builds without an HTTP client.
+[dependencies]
+# `guardrails.rs` implements `AgentHooks`, whose methods are `async_trait`.
+async-trait = "0.1"
+openai-agents = { path = "../crates/facade", version = "0.1.0", features = ["openai"] }
+serde = { version = "1", features = ["derive"] }
+schemars = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }

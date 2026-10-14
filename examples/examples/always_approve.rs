@@ -1,14 +1,13 @@
-//! 07 — Sticky always_approve
+//! Sticky always_approve
 //!
 //! Approving with `always_approve=true` skips later prompts for the same tool in this run.
 //!
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`, `HITL_AUTO`.
 //!
 //! ```bash
-//! HITL_AUTO=approve cargo run --example 07_always_approve
+//! HITL_AUTO=approve cargo run -p openai-agents-examples --example always_approve
 //! ```
 
-#[path = "common/mod.rs"]
 mod common;
 
 use openai_agents::{function_tool, Agent, RunOptions, Runner};

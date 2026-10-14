@@ -1,12 +1,11 @@
-//! 04 — Multi-agent handoff
+//! Multi-agent handoff
 //!
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
-//! cargo run --example 04_handoff
+//! cargo run -p openai-agents-examples --example handoff
 //! ```
 
-#[path = "common/mod.rs"]
 mod common;
 
 use std::sync::Arc;

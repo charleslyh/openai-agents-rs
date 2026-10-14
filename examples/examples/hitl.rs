@@ -1,14 +1,13 @@
-//! 06 — Human-in-the-loop approvals
+//! Human-in-the-loop approvals
 //!
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //! Non-interactive: `HITL_AUTO=approve` or `HITL_AUTO=reject`.
 //!
 //! ```bash
-//! cargo run --example 06_hitl
-//! HITL_AUTO=approve cargo run --example 06_hitl
+//! cargo run -p openai-agents-examples --example hitl
+//! HITL_AUTO=approve cargo run -p openai-agents-examples --example hitl
 //! ```
 
-#[path = "common/mod.rs"]
 mod common;
 
 use std::path::Path;

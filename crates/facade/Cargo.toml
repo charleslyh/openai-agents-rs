@@ -61,41 +61,5 @@ serde_json = { version = "1", features = ["preserve_order"] }
 name = "run_loop"
 harness = false
 
-[[example]]
-name = "01_hello"
-required-features = ["openai"]
-
-[[example]]
-name = "02_tools"
-required-features = ["openai"]
-
-[[example]]
-name = "03_streamed"
-required-features = ["openai"]
-
-[[example]]
-name = "04_handoff"
-required-features = ["openai"]
-
-[[example]]
-name = "05_as_tools"
-required-features = ["openai"]
-
-[[example]]
-name = "06_hitl"
-required-features = ["openai"]
-
-[[example]]
-name = "07_always_approve"
-required-features = ["openai"]
-
-[[example]]
-name = "08_structured_output"
-required-features = ["openai"]
-
-[[example]]
-name = "09_guardrails"
-required-features = ["openai"]
-
 [package.metadata.docs.rs]
 all-features = true

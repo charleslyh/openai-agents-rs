@@ -21,6 +21,15 @@ path stays `openai_agents::…`.
   `--features mcp` compiles to zero tests and **still passes**. CI, docs and any new command must
   pass the flag explicitly.
 
+## Examples are not in this crate
+
+They live at the repository root in `examples/`, as their own workspace member, so they depend on
+`openai-agents` the way a user's project would. Keep it that way: if an example needs something the
+facade does not re-export, that is a gap in the public API — do not let it reach into `core`.
+
+The one thing this crate still owns is `benches/`: they are a performance guard on the public API,
+not user-facing code.
+
 ## Why the default provider is installed here (D1 / C10)
 
 Core does not know about OpenAI. The facade's `default_model_provider()` returns the OpenAI

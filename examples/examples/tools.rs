@@ -1,12 +1,11 @@
-//! 02 — Function tools (core path)
+//! Function tools
 //!
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
-//! cargo run --example 02_tools
+//! cargo run -p openai-agents-examples --example tools
 //! ```
 
-#[path = "common/mod.rs"]
 mod common;
 
 use openai_agents::{function_tool, Agent, RunOptions, Runner};

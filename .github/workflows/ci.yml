@@ -50,6 +50,11 @@ jobs:
       - name: Verify the vendored Python SDK pin
         run: bash scripts/sync_vendor.sh --check
       # Layer 1: ScriptedModel behavior, no HTTP client in the build.
+      #
+      # No `--workspace` anywhere below, and that is deliberate: the root `examples/` package is a
+      # member but not a *default* member, because it turns on the facade's `openai` feature. A
+      # `--workspace` run would build it, activate that feature for the whole graph, and quietly
+      # stop this run from proving the SDK still builds with no HTTP client.
       - name: Behavior tests (no default features)
         run: cargo test --no-default-features
       # Layer 2: OpenAI HTTP contracts through wiremock and the parity scenarios. The MCP client is
@@ -58,6 +63,9 @@ jobs:
         run: cargo test
       - name: Tests (all features, incl. SQLite sessions)
         run: cargo test --all-features
+      # The examples are user-facing code: a breaking change to the public API shows up here.
+      - name: Examples still compile
+        run: cargo build -p openai-agents-examples --examples
 
   parity:
     name: python oracle (parity, MCP interop)

@@ -1,4 +1,4 @@
-//! 08 — Structured output (`output_type`)
+//! Structured output (`output_type`)
 //!
 //! Declares an output type; the SDK advertises its JSON Schema to the model (Responses:
 //! `text.format`, Chat Completions: `response_format`) and validates the reply. A reply that
@@ -8,10 +8,9 @@
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`, `EXAMPLE_INPUT`.
 //!
 //! ```bash
-//! cargo run --example 08_structured_output
+//! cargo run -p openai-agents-examples --example structured_output
 //! ```
 
-#[path = "common/mod.rs"]
 mod common;
 
 use std::sync::Arc;
