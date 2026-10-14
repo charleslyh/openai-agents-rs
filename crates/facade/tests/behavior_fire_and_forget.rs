@@ -73,7 +73,10 @@ impl SessionHub {
         // Snapshot the log and subscribe under one lock so no event is missed or duplicated.
         let (mut events, rx) = {
             let state = channel.state.lock().unwrap();
-            (state.log.clone(), state.tx.as_ref().map(|tx| tx.subscribe()))
+            (
+                state.log.clone(),
+                state.tx.as_ref().map(|tx| tx.subscribe()),
+            )
         };
         if let Some(mut rx) = rx {
             loop {

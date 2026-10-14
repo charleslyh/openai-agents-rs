@@ -47,6 +47,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      # `vendor/openai-agents-python` is gitignored, so fetch it at the pinned tag first.
+      - name: Fetch the vendored Python SDK
+        run: bash scripts/sync_vendor.sh
       - name: Verify the vendored Python SDK pin
         run: bash scripts/sync_vendor.sh --check
       # Layer 1: ScriptedModel behavior, no HTTP client in the build.
@@ -77,6 +80,8 @@ jobs:
         with:
           python-version: "3.12"
       - uses: Swatinem/rust-cache@v2
+      - name: Fetch the vendored Python SDK
+        run: bash scripts/sync_vendor.sh
       - name: Oracle venv
         run: bash conformance/setup_venv.sh
       # Layer 3a: fail if a committed golden no longer matches what the Python SDK does.
