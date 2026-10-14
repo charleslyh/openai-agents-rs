@@ -5,11 +5,63 @@ edition = "2021"
 publish = false
 description = "Runnable examples for the Rust OpenAI Agents SDK"
 
+# The sources live in `src/`, not in `examples/`, and every example is declared explicitly below.
+#
+# Auto-discovery would look for `examples/*.rs` *inside this package* — and since the package
+# directory is itself named `examples`, that means `examples/examples/*.rs`. Hence the explicit
+# `[[example]]` paths: the directory keeps its name, `cargo run --example hello` keeps working, and
+# the files can sit in `src/` next to the shared `common` module (`mod common;` resolves against
+# the example's own root file, so `src/common/mod.rs` is picked up as before).
+autoexamples = false
+
 # Inherits the lint config (including the tracked clippy backlog) from `[workspace.lints]`.
 [lints]
 workspace = true
 
-# The examples are user-facing code, so they live at the repository root rather than inside
+# One entry per file in `src/`; `src/common/` is a module, not an example, so it is not listed.
+#
+# The `NN_` prefixes order the directory for a reader working through them in order (hello → tools →
+# streamed → …). They are *not* part of the target name: `name` stays a bare identifier, so the
+# command is `cargo run -p openai-agents-examples --example hello`, not `--example 01_hello`.
+# Adding a file means adding a section here — which is also where a per-example `required-features`
+# would go if one of them ever needs an extra facade feature.
+[[example]]
+name = "hello"
+path = "src/01_hello.rs"
+
+[[example]]
+name = "tools"
+path = "src/02_tools.rs"
+
+[[example]]
+name = "streamed"
+path = "src/03_streamed.rs"
+
+[[example]]
+name = "handoff"
+path = "src/04_handoff.rs"
+
+[[example]]
+name = "agents_as_tools"
+path = "src/05_agents_as_tools.rs"
+
+[[example]]
+name = "hitl"
+path = "src/06_hitl.rs"
+
+[[example]]
+name = "always_approve"
+path = "src/07_always_approve.rs"
+
+[[example]]
+name = "structured_output"
+path = "src/08_structured_output.rs"
+
+[[example]]
+name = "guardrails"
+path = "src/09_guardrails.rs"
+
+# The sources are user-facing code, so they live at the repository root rather than inside
 # `crates/facade`. They depend on the facade the way a user's project would.
 #
 # `openai` is on, and every example needs it: `common::model()` builds an `OpenAIChatCompletions-
