@@ -44,8 +44,8 @@ button{font:inherit; color:var(--t1); cursor:pointer; background:rgba(17,24,50,.
 .app{position:relative; z-index:1; height:100vh; display:grid; grid-template-rows:56px 1fr auto; grid-template-columns:minmax(0,1fr) minmax(360px,42%); gap:14px; padding:14px 16px 16px}
 .topbar{grid-area:1/1/2/3}
 .left{grid-area:2/1/3/2; min-width:0}
-.right{grid-area:2/2/3/3; min-width:0}
-.composer{grid-area:3/1/4/3}
+.right{grid-area:2/2/4/3; min-width:0}
+.composer{grid-area:3/1/4/2; min-width:0}
 
 /* ---------- top bar ---------- */
 .topbar{display:flex; align-items:center; gap:18px; padding:0 8px; border-bottom:1px solid var(--line)}
@@ -219,7 +219,10 @@ button{font:inherit; color:var(--t1); cursor:pointer; background:rgba(17,24,50,.
 .chipx{border:1px solid rgba(232,121,249,.5); background:rgba(232,121,249,.12); color:var(--inject); border-radius:999px; padding:3px 10px; font-size:11.5px; display:inline-flex; gap:6px; align-items:center}
 .chipx:hover{background:rgba(232,121,249,.22)}
 .inputrow{display:flex; gap:10px; align-items:flex-end; border:1px solid var(--line); border-radius:var(--r); background:var(--glass); padding:10px 12px; backdrop-filter:blur(12px)}
-.inputrow textarea{flex:1; resize:none; border:0; background:transparent; color:var(--t1); font:inherit; min-height:24px; max-height:120px; outline:none}
+.inputrow{align-items:flex-end}
+.inputrow .quest{align-self:flex-end}
+/* Grows with its content up to 5 lines (JS sets the height; this is the cap), then scrolls. */
+.inputrow textarea{flex:1; min-width:0; resize:none; border:0; background:transparent; color:var(--t1); font:inherit; padding:6px 0; min-height:calc(1.55em + 12px); max-height:calc(5 * 1.55em + 12px); overflow-y:auto; outline:none}
 .inputrow textarea::placeholder{color:var(--t3); opacity:1}
 option{background:var(--bg1); color:var(--t1)}
 .field input[type=range]{accent-color:var(--c2)}
@@ -519,7 +522,7 @@ function buildChecklist() {
       card.append(el("span", "status"));
       card.append(el("span", "name", cap.name));
       card.append(el("span", "note", cap.note));
-      card.addEventListener("click", () => { toggleCaps(false); $("input").value = cap.prompt; $("input").focus(); });
+      card.addEventListener("click", () => { toggleCaps(false); setInput(cap.prompt, true); });
       d.append(card);
     });
     list.append(d);
@@ -601,31 +604,43 @@ function flash(id) {
 }
 
 /* ---------- chain ---------- */
-const NODES = [["Triage",""],["Billing","sub"],["Weather","sub"],["Ops","sub"],["translate_*","sub"],["stdio MCP","mcp"]];
+/* [key, label, kind, hint]. Lookups use `key` (the lower-case agent or tool prefix), never the
+   label, so a label can be shortened without breaking the highlighting. */
+const NODES = [
+  ["triage", "Triage", "", "Triage: the entry agent that routes every turn"],
+  ["billing", "Billing", "sub", "Billing agent"],
+  ["weather", "Weather", "sub", "Weather agent"],
+  ["ops", "Ops", "sub", "Ops agent"],
+  ["translate", "trans", "sub", "Translation sub-agents, called as tools (translate_*)"],
+  ["stdio", "MCP", "mcp", "Local MCP server over stdio"],
+];
+function chainNode(name) {
+  const key = String(name || "").toLowerCase().split("_")[0];
+  return key ? [...$("chain").querySelectorAll(".node")].find(n => n.dataset.key === key) : undefined;
+}
 function buildChain() {
   const box = $("chain");
   box.textContent = "";
-  NODES.forEach(([name, kind], i) => {
+  NODES.forEach(([key, label, kind, hint], i) => {
     if (i) box.append(el("span", "link"));
-    const n = el("span", "node " + kind, name);
+    const n = el("span", "node " + kind, label);
     n.id = "node-" + (kind || "main") + "-" + i;
-    n.title = name;
+    n.dataset.key = key;
+    n.title = hint;
     box.append(n);
   });
 }
 function lightChain(agent, handoffTo) {
   const all = [...$("chain").querySelectorAll(".node")];
   all.forEach(n => n.classList.remove("active"));
-  const hit = all.find(n => agent && n.textContent.toLowerCase().includes(agent.toLowerCase().split("_")[0]));
+  const hit = chainNode(agent);
   (hit ? [hit] : all.slice(0, 1)).forEach(n => { n.classList.add("active", "visited"); });
-  if (handoffTo) {
-    const t = all.find(n => n.textContent.toLowerCase().includes(handoffTo.toLowerCase().split("_")[0]));
-    if (t) t.classList.add("visited");
-  }
+  const t = chainNode(handoffTo);
+  if (t) t.classList.add("visited");
 }
 
 function pulse(name) {
-  const node = [...$("chain").querySelectorAll(".node")].find(n => n.textContent.toLowerCase().includes(name));
+  const node = chainNode(name);
   if (!node) return;
   node.classList.add("active", "visited");
   setTimeout(() => node.classList.remove("active"), 1800);
@@ -641,7 +656,7 @@ function showWelcome() {
     .forEach(p => {
       const b = el("button", "prompt", p);
       b.type = "button";
-      b.addEventListener("click", () => { $("input").value = p; send(); });
+      b.addEventListener("click", () => { setInput(p); send(); });
       wrap.append(b);
     });
   $("chatlog").append(wrap);
@@ -807,11 +822,24 @@ function pendingPlan() {
   const plan = JSON.parse(JSON.stringify(S.plan));
   return Object.keys(plan).length ? plan : null;
 }
+/* The message box grows with its content (CSS caps it at 5 lines, then it scrolls). Setting
+   `.value` from code fires no `input` event, so every programmatic change goes through here. */
+function fitInput() {
+  const t = $("input");
+  t.style.height = "auto";
+  t.style.height = t.scrollHeight + "px";
+}
+function setInput(text, focus) {
+  const t = $("input");
+  t.value = text;
+  fitInput();
+  if (focus) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); }
+}
 async function send() {
   if (S.running) { stopRun(); return; }
   const input = $("input").value.trim();
   if (!input || !S.conversation) return;
-  $("input").value = "";
+  setInput("");
   S.lastInput = input;
   userBubble(input);
   S.runEvents = [];
@@ -1027,7 +1055,7 @@ function handleError(ev) {
   const acts = el("div", "decisions");
   const again = el("button", "", "Resend the last message");
   again.type = "button";
-  again.addEventListener("click", () => { if (S.lastInput) { $("input").value = S.lastInput; send(); } });
+  again.addEventListener("click", () => { if (S.lastInput) { setInput(S.lastInput); send(); } });
   acts.append(again);
   card.append(acts);
   addEvent("error", ev.kind + ": " + ev.message, retryable ? "retryable" : "not retryable", !!ev.injected);
@@ -1103,7 +1131,7 @@ function suggest() {
   if (pick) {
     const b = el("button", null, pick.cap.name + " — " + pick.cap.prompt);
     b.type = "button";
-    b.addEventListener("click", () => { toggleCaps(false); $("input").value = pick.cap.prompt; $("input").focus(); });
+    b.addEventListener("click", () => { toggleCaps(false); setInput(pick.cap.prompt, true); });
     box.append(b);
   }
   if (faults[0]) {
@@ -1388,8 +1416,7 @@ function loadPreset(p, focusInput) {
   S.applied = [];
   saveProgress();
   renderInjectBar();
-  $("input").value = p.prompt;
-  if (focusInput) $("input").focus();
+  setInput(p.prompt, focusInput);
   addEvent("debug", "loaded preset: " + p.name, p.id);
   markPresetLoaded(p.id);
 }
@@ -1443,6 +1470,9 @@ async function boot() {
   });
   modeBox.hidden = true;
   $("sendBtn").addEventListener("click", send);
+  $("input").addEventListener("input", fitInput);
+  window.addEventListener("resize", fitInput);
+  fitInput();
   $("input").addEventListener("keydown", e => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
   });
