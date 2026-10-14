@@ -51,6 +51,10 @@ pub struct RunSettings {
     pub max_turns: Option<usize>,
     pub parallel_tool_calls: Option<bool>,
     pub tool_concurrency: Option<usize>,
+    /// Ask the provider for token usage in streamed answers. On: `include_usage = true`. Off: the
+    /// SDK default is left alone (which omits it for third-party servers, so a server that rejects
+    /// `stream_options` still works); the page then hides the token numbers.
+    pub include_usage: Option<bool>,
     pub retry: RetryChoice,
 }
 
@@ -87,6 +91,7 @@ impl RunSettings {
         let mut ms = ModelSettings {
             temperature: self.temperature,
             parallel_tool_calls: self.parallel_tool_calls,
+            include_usage: self.include_usage.filter(|on| *on),
             timeout: self.retry.attempt_timeout_secs.map(|t| t as f32),
             ..Default::default()
         };
@@ -422,6 +427,17 @@ mod tests {
         let ms = s.model_settings();
         assert_eq!(ms.timeout, Some(0.5));
         assert!(ms.retry.is_some());
+    }
+
+    #[test]
+    fn include_usage_is_only_forced_when_on() {
+        let on: RunSettings =
+            serde_json::from_value(serde_json::json!({"include_usage": true})).expect("valid");
+        assert_eq!(on.model_settings().include_usage, Some(true));
+        let off: RunSettings =
+            serde_json::from_value(serde_json::json!({"include_usage": false})).expect("valid");
+        assert_eq!(off.model_settings().include_usage, None);
+        assert_eq!(RunSettings::default().model_settings().include_usage, None);
     }
 
     #[test]

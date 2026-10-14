@@ -267,6 +267,8 @@ option{background:var(--bg1); color:var(--t1)}
 .preset button{border:1px solid var(--line2); background:rgba(17,24,50,.7); border-radius:9px; padding:4px 10px; font-size:11.5px; color:var(--t2)}
 .preset button:hover{color:var(--t1); border-color:var(--inject)}
 .switchrow{display:flex; align-items:center; justify-content:space-between; font-size:12.5px; color:var(--t2); margin-bottom:9px}
+/* Token numbers live in elements with class "tok"; Settings > "include usage" hides them all. */
+body.no-tokens .tok{display:none !important}
 .legend{display:flex; flex-wrap:wrap; gap:8px; font-size:11px; color:var(--t3)}
 .legend i{display:inline-block; width:9px; height:9px; border-radius:3px; margin-right:5px}
 
@@ -329,7 +331,7 @@ option{background:var(--bg1); color:var(--t1)}
           <div>stored items <b id="sessCount">0</b></div>
           <div>until compaction <b id="sessUntil">–</b></div>
           <div>compaction <b id="sessComp">not yet</b></div>
-          <div>usage <b id="sessUsage">0 req · 0 tok</b></div>
+          <div title="Model requests and tokens used by every run in this conversation">usage <b id="sessUsage">0 req</b></div>
         </div>
       </div>
       <div class="summary" id="sessSummaryWrap" hidden>
@@ -491,10 +493,16 @@ const S = {
   conversation: null, runId: null, running: false, controller: null, cancelMode: "after_turn",
   verifiedCaps: new Set(), verifiedFaults: new Set(),
   plan: {}, persisted: false, applied: [],
-  settings: {temperature:1, max_turns:10, parallel_tool_calls:true, tool_concurrency:4,
+  settings: {temperature:1, max_turns:10, parallel_tool_calls:true, tool_concurrency:4, include_usage:true,
              retry:{policy:"never", max_retries:0, initial_delay_secs:null, max_delay_secs:null, attempt_timeout_secs:null}},
   lastInput: "", runEvents: [], pendingRun: null, currentBubble: null, currentText: "",
-  reasoningEl: null, agent: null, usages: 0,
+  reasoningEl: null, agent: null,
+  /* Usage of this conversation. `usageTotal` is everything up to the previous message;
+     `usageRun` is the latest report for the message in progress. A run resumed after an approval
+     reports the whole run again (it carries the part before the pause), so it replaces
+     `usageRun` instead of adding to it. The session shows total + run. */
+  usageTotal: {requests:0, input_tokens:0, output_tokens:0, total_tokens:0},
+  usageRun: {requests:0, input_tokens:0, output_tokens:0, total_tokens:0},
   epoch: 0,
 };
 try {
@@ -503,6 +511,23 @@ try {
 } catch (e) { /* fresh start */ }
 
 function touched() { verify("settings"); }
+
+/* ---------- usage ---------- */
+const USAGE_KEYS = ["requests", "input_tokens", "output_tokens", "total_tokens"];
+const zeroUsage = () => ({requests:0, input_tokens:0, output_tokens:0, total_tokens:0});
+const addUsage = (a, b) => Object.fromEntries(USAGE_KEYS.map(k => [k, (a[k] || 0) + (b[k] || 0)]));
+const subUsage = (a, b) => Object.fromEntries(USAGE_KEYS.map(k => [k, Math.max(0, (a[k] || 0) - (b[k] || 0))]));
+const fmt = n => Number(n).toLocaleString();
+function applyTokenVisibility() {
+  document.body.classList.toggle("no-tokens", S.settings.include_usage === false);
+}
+/* The session line: requests, plus tokens (hidden when "include usage" is off). */
+function renderSessionUsage() {
+  const t = addUsage(S.usageTotal, S.usageRun);
+  const box = $("sessUsage");
+  box.textContent = fmt(t.requests) + " req";
+  box.append(el("span", "tok", " · " + fmt(t.total_tokens) + " tok"));
+}
 function saveProgress() {
   try {
     localStorage.setItem("demo.caps", JSON.stringify([...S.verifiedCaps]));
@@ -744,7 +769,7 @@ function addEvent(kind, text, detail, injected, capId) {
   const d = el("div", "d");
   d.append(el("span", "badge " + (injected ? "inject" : ""), kind));
   d.append(el("span", "txt", text));
-  if (detail) d.append(el("span", "badge hook", detail));
+  if (detail) d.append(el("span", "badge hook" + (kind === "usage" ? " tok" : ""), detail));
   row.append(d);
   tl.append(row);
   tl.scrollTop = tl.scrollHeight;
@@ -892,6 +917,8 @@ async function send() {
   S.lastInput = input;
   userBubble(input);
   resetRunViews();
+  S.usageTotal = addUsage(S.usageTotal, S.usageRun);
+  S.usageRun = zeroUsage();
   const plan = pendingPlan();
   S.applied = [];
   S.sawToolError = false; S.inflight = 0; S.turns = (S.turns || 0) + 1;
@@ -1062,10 +1089,18 @@ function handleEvent(ev) {
       else if (ev.compaction_failed) { $("sessComp").textContent = "failed, history kept"; addEvent("session", "compaction failed, history unchanged", null, false, "summarizer_fail"); }
       else $("sessComp").textContent = "not yet";
       break;
-    case "usage":
-      $("sessUsage").textContent = ev.requests + " req · " + ev.total_tokens + " tok";
-      addEvent("usage", ev.requests + " requests, " + ev.input_tokens + " in, " + ev.output_tokens + " out", null, false, "usage");
+    case "usage": {
+      /* The session panel shows the conversation total. The timeline shows this round only: what
+         this stream added on top of the previous report for the same message (a resumed run
+         reports the whole message again, so the difference is what the resume cost). */
+      const reported = Object.fromEntries(USAGE_KEYS.map(k => [k, Number(ev[k]) || 0]));
+      const round = subUsage(reported, S.usageRun);
+      S.usageRun = reported;
+      renderSessionUsage();
+      addEvent("usage", "this round: " + fmt(round.requests) + (round.requests === 1 ? " request" : " requests"),
+               fmt(round.input_tokens) + " in · " + fmt(round.output_tokens) + " out", false, "usage");
       break;
+    }
     case "final":
       if (S.currentBubble) S.currentBubble.classList.remove("cursor");
       if (ev.structured && typeof ev.structured === "object") renderWeather(ev.structured);
@@ -1313,6 +1348,13 @@ function buildSettings(body) {
   const conc = el("input"); conc.type = "number"; conc.min = "1"; conc.max = "8"; conc.value = s.tool_concurrency;
   conc.addEventListener("change", () => { s.tool_concurrency = Number(conc.value) || 4; saveProgress(); touched(); });
   field(g1, "tool concurrency", conc);
+  const usageOn = el("input"); usageOn.type = "checkbox"; usageOn.checked = s.include_usage !== false;
+  usageOn.title = "Ask the provider for token counts, and show them in the session panel and the timeline";
+  usageOn.addEventListener("change", () => {
+    s.include_usage = usageOn.checked;
+    saveProgress(); touched(); applyTokenVisibility();
+  });
+  field(g1, "include usage (tokens)", usageOn);
   body.append(g1);
 
   const g2 = el("div", "sect");
@@ -1337,9 +1379,9 @@ function buildSettings(body) {
   const reset = el("button", "ghost", "Restore defaults");
   reset.type = "button";
   reset.addEventListener("click", () => {
-    S.settings = {temperature:1, max_turns:10, parallel_tool_calls:true, tool_concurrency:4,
+    S.settings = {temperature:1, max_turns:10, parallel_tool_calls:true, tool_concurrency:4, include_usage:true,
                   retry:{policy:"never", max_retries:0, initial_delay_secs:null, max_delay_secs:null, attempt_timeout_secs:null}};
-    saveProgress(); openDrawer("settings");
+    saveProgress(); applyTokenVisibility(); openDrawer("settings");
   });
   g2.append(reset);
   body.append(g2);
@@ -1511,7 +1553,8 @@ async function newConversation() {
     S.sentPlan = null; S.applied = [];
     $("sessComp").textContent = "not yet";
     $("sessSummaryWrap").hidden = true;
-    $("sessUsage").textContent = "0 req · 0 tok";
+    S.usageTotal = zeroUsage(); S.usageRun = zeroUsage();
+    renderSessionUsage();
     resetRunViews();
     renderInjectBar();
     updateSendButton();
@@ -1525,6 +1568,7 @@ function setConn(ok, text) {
   $("connText").textContent = text;
 }
 async function boot() {
+  applyTokenVisibility();
   buildChain(); buildChecklist();
   const modeBox = $("modeswitch");
   [["after_turn","stop after this turn"],["immediate","stop immediately"]].forEach(([v, label]) => {
