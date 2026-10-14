@@ -106,6 +106,7 @@ pub enum DemoEvent {
     Usage {
         requests: u64,
         input_tokens: u64,
+        cached_tokens: u64,
         output_tokens: u64,
         total_tokens: u64,
     },
@@ -196,6 +197,7 @@ pub fn usage_event(usage: &Usage) -> DemoEvent {
     DemoEvent::Usage {
         requests: usage.requests,
         input_tokens: usage.input_tokens,
+        cached_tokens: usage.input_tokens_details.cached_tokens,
         output_tokens: usage.output_tokens,
         total_tokens: usage.total_tokens,
     }
