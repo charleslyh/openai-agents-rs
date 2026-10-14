@@ -474,7 +474,7 @@ impl Model for OpenAIChatCompletionsModel {
             tagged.push((index, item));
         }
 
-        for (_, call) in layout.calls.iter() {
+        for call in layout.calls.values() {
             // A server that streams a tool call without an id still needs one: the runner pairs
             // the tool result with the call by id.
             let call_id = if call.id.is_empty() {
