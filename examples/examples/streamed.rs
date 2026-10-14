@@ -1,4 +1,4 @@
-//! 03 — Streaming run events (core path)
+//! Streaming run events
 //!
 //! Prints assistant text as token deltas (typewriter). Both OpenAI APIs emit the standard
 //! Responses wire events (D-011): `response.output_text.delta` for visible tokens, and
@@ -7,10 +7,9 @@
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`, `OPENAI_API`.
 //!
 //! ```bash
-//! cargo run --example 03_streamed
+//! cargo run -p openai-agents-examples --example streamed
 //! ```
 
-#[path = "common/mod.rs"]
 mod common;
 
 use std::io::{self, Write};

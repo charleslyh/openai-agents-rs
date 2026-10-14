@@ -1,13 +1,12 @@
-//! 05 — Agents as tools (orchestration)
+//! Agents as tools (orchestration)
 //!
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
 //! EXAMPLE_INPUT="Translate 'Hello, world!' to French and Spanish." \
-//!   cargo run --example 05_as_tools
+//!   cargo run -p openai-agents-examples --example agents_as_tools
 //! ```
 
-#[path = "common/mod.rs"]
 mod common;
 
 use std::sync::Arc;

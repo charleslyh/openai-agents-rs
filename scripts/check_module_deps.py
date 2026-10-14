@@ -50,6 +50,7 @@ EXTENSIONS = {
     "openai-agents-testing",
 }
 FACADE = "openai-agents"
+EXAMPLES = "openai-agents-examples"
 CRATE_DEPS: dict[str, set[str]] = {
     CORE: set(),
     "openai-agents-macros": set(),
@@ -58,6 +59,10 @@ CRATE_DEPS: dict[str, set[str]] = {
     "openai-agents-sqlite": {CORE},
     "openai-agents-testing": {CORE},
     FACADE: {CORE} | EXTENSIONS,
+    # The root `examples/` package is user-facing code: it may reach the facade, but must not reach
+    # past it into core or an extension. If an example needs something the facade does not
+    # re-export, that is a gap in the public API, not a reason to depend on core directly.
+    EXAMPLES: {FACADE},
 }
 
 # Third-party crates core must not depend on, and tokio features it must not enable. They are what

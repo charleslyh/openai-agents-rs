@@ -275,6 +275,64 @@ crate 内可共享的泛型实例现在各自实例化),但这只是猜测,没�
 `run_loop_inner` 里最大的一块是模型调用本身(重试 + 流式,约 180 行),它的闭包捕获请求与
 响应、`from_resume` 与 `live_approvals` 三个返回值交织。继续拆的收益低于出错风险,停在这里。
 
+## 测试数基线(2026-10-14 重测)
+
+之前反复引用的 197 / 262 是 **P3 之前**的基线。之后 HITL 的 approval / output resolution
+(`bd3cfd5`)等提交加了测试,所以当前数字是:
+
+| 命令 | passed | ignored |
+| --- | --- | --- |
+| `cargo test --no-default-features` | 205 | 3 |
+| `cargo test` | 249 | 3 |
+| `cargo test --all-features` | 267 | 3 |
+
+注意命令里**没有 `--workspace`**:根 `examples/` 包是成员但不是 default member(见下),
+加上 `--workspace` 会把它拉进特性统一,从而改变 `--no-default-features` 跑的测试集。
+
+## examples 移到根级(P1.5,已完成)
+
+原先 9 个示例在 `crates/facade/examples/`,带 `01_` 编号前缀。问题有三个:示例是给人看的入门
+代码,却埋在 `crates/` 里;`01_hello` 这类名字不是合法 Rust 标识符,每个都得在 `Cargo.toml`
+里写 `[[example]]` + `name`;CI 的 `cargo test --workspace --all-features` 还把它们当测试目标
+编译 —— 入门示例被当成回归测试在跑。
+
+现在放在根级 `examples/`,作为自己的 workspace 成员(`openai-agents-examples`),并去掉编号:
+
+| 原名 | 现名 |
+| --- | --- |
+| `01_hello` | `hello` |
+| `02_tools` | `tools` |
+| `03_streamed` | `streamed` |
+| `04_handoff` | `handoff` |
+| `05_as_tools` | `agents_as_tools` |
+| `06_hitl` | `hitl` |
+| `07_always_approve` | `always_approve` |
+| `08_structured_output` | `structured_output` |
+| `09_guardrails` | `guardrails` |
+
+### 两个必须知道的后果
+
+**1. 它不是 default member。** 根 `Cargo.toml` 显式写了 `default-members = ["crates/*"]`。
+原因是示例依赖 facade 且开启 `openai`,一旦它被纳入构建,特性统一就会给整个图打开
+`openai`,`cargo test --no-default-features` 就不再是"无 HTTP 客户端"的验证。实测:不加
+`--workspace` 是 205,加了会变成 249 —— 多出来的正是那些本该被 feature 关掉的测试。
+CI 里三行 `cargo test` 因此**故意不写 `--workspace`**,这一点已写成注释。
+
+**2. 运行要带 `-p`。** workspace 有多个 default member,裸 `cargo run --example hello` 会报
+`no example target named hello in default-run packages`。正确写法:
+
+```bash
+cargo run -p openai-agents-examples --example hello
+```
+
+### 配套改动
+
+- `check_module_deps.py` 加了 `EXAMPLES` 规则:只许依赖 facade,不许越过它去碰 core 或某个
+  扩展 —— 示例需要的东西如果 facade 没 re-export,那是公共 API 的缺口。
+- CI 新增一步 `cargo build -p openai-agents-examples --examples`,让公共 API 的破坏性改动在
+  示例上暴露。nightly 的冒烟测试改用 `-p ... --example`。
+- `benches/` **留在 facade**:它是跑在公共 API 上的性能护栏,不是给人看的代码。
+
 ## 计划与实际的偏差
 
 对照 `04-roadmap.md`。这张表是"这次重构离原计划有多远"的直接答案。
@@ -320,7 +378,7 @@ crate 内可共享的泛型实例现在各自实例化),但这只是猜测,没�
 | 体积对比 | **已完成**:见 P3 验收小节(三个 feature 组合 + 与 P3 前的对照) |
 | `--timings` | 未产出报告文件。改为上表四个场景的实测对照,比单次 `--timings` 更有可比性 |
 | tests 按领域分组 | 决定不做(`tests/` 子目录不会被 Cargo 自动发现,见下) |
-| examples 整理 | 未整理 |
+| examples 整理 | **已完成**:移到根级 `examples/` 包并去掉编号前缀,见下 |
 
 ### 计划里没有、实际新增的
 

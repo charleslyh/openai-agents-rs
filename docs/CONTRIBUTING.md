@@ -38,8 +38,17 @@ crate, and do not reach from one extension crate into another.
 | `openai-agents-testing` | `ScriptedModel` and item builders |
 | `openai-agents-macros` | `#[function_tool]` |
 | `openai-agents` (facade) | re-exports everything, installs the default model provider |
+| `openai-agents-examples` | the runnable examples, at the repository root in `examples/`. Not a default member: it turns on the facade's `openai` feature, which would defeat `cargo test --no-default-features` |
 
 Two traps worth knowing:
+
+- Run an example with `cargo run -p openai-agents-examples --example hello`. A bare
+  `cargo run --example hello` fails: the workspace has more than one default member, so cargo
+  cannot tell which package you mean.
+- Build them with `cargo build -p openai-agents-examples --examples`; CI does this so a breaking
+  change to the public API cannot land unnoticed.
+
+Two more, about features:
 
 - `mcp` is off by default, so `cargo test --test mcp_interop` compiles to zero tests and **still
   passes**. Always pass `--features mcp` explicitly.

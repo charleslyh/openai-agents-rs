@@ -86,34 +86,39 @@ To talk to a server that needs no key, or to route several servers by model pref
 `CompatibleProvider::new(base_url)` (key optional, Chat Completions by default) with
 `MultiProvider`: `"local/qwen2.5"`, `"gateway/my-model"`.
 
-| # | Example | What it shows |
-|---|---------|----------------|
-| 01 | `01_hello` | Minimal `Agent` + `Runner::run` |
-| 02 | `02_tools` | `#[function_tool]` tool loop |
-| 03 | `03_streamed` | `Runner::run_streamed` events |
-| 04 | `04_handoff` | Multi-agent handoff |
-| 05 | `05_as_tools` | `Agent.as_tool` orchestration |
-| 06 | `06_hitl` | Approvals + `RunState` JSON resume |
-| 07 | `07_always_approve` | Sticky `always_approve` |
-| 08 | `08_structured_output` | `output_type` + typed `final_output_as::<T>()` |
-| 09 | `09_guardrails` | Context, guardrails, `RunHooks` / `AgentHooks` |
+The examples live in [`examples/`](./examples) — a workspace member of their own, so they depend
+on `openai-agents` the way your project would rather than reaching into the SDK's internals.
+
+| Example | What it shows |
+|---------|----------------|
+| `hello` | Minimal `Agent` + `Runner::run` |
+| `tools` | `#[function_tool]` tool loop |
+| `streamed` | `Runner::run_streamed` events |
+| `handoff` | Multi-agent handoff |
+| `agents_as_tools` | `Agent.as_tool` orchestration |
+| `hitl` | Approvals + `RunState` JSON resume |
+| `always_approve` | Sticky `always_approve` |
+| `structured_output` | `output_type` + typed `final_output_as::<T>()` |
+| `guardrails` | Context, guardrails, `RunHooks` / `AgentHooks` |
+
+They need `OPENAI_API_KEY` and `OPENAI_MODEL` in the environment; `OPENAI_BASE_URL` and
+`OPENAI_API` (`chat_completions` | `responses`) are optional.
 
 ```bash
-cargo run --example 01_hello
-cargo run --example 02_tools
-cargo run --example 03_streamed
-cargo run --example 04_handoff
+cargo run -p openai-agents-examples --example hello
+cargo run -p openai-agents-examples --example tools
 
-OPENAI_API=responses cargo run --example 02_tools
+OPENAI_API=responses cargo run -p openai-agents-examples --example tools
 
 EXAMPLE_INPUT="Translate 'Hello' to French and Spanish." \
-  cargo run --example 05_as_tools
-HITL_AUTO=approve cargo run --example 06_hitl
-HITL_AUTO=approve cargo run --example 07_always_approve
+  cargo run -p openai-agents-examples --example agents_as_tools
+HITL_AUTO=approve cargo run -p openai-agents-examples --example hitl
 
-cargo run --example 08_structured_output
-cargo run --example 09_guardrails
+cargo run -p openai-agents-examples --example structured_output
 ```
+
+(The `-p openai-agents-examples` is needed because the workspace has more than one default member,
+so a bare `cargo run --example` cannot tell which package you mean.)
 
 ## Standard reference
 

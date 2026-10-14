@@ -1,14 +1,13 @@
-//! 01 — Minimal Agent + Runner (core path)
+//! Hello world (minimal agent and runner)
 //!
 //! Minimal API agent example (Python: `examples/basic/hello_world.py` style).
 //!
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
-//! cargo run --example 01_hello
+//! cargo run -p openai-agents-examples --example hello
 //! ```
 
-#[path = "common/mod.rs"]
 mod common;
 
 use openai_agents::{Agent, RunOptions, Runner};

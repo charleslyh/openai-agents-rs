@@ -41,8 +41,8 @@ jobs:
             exit 0
           fi
           echo "::notice::endpoint=${OPENAI_BASE_URL:-api.openai.com} api=${OPENAI_API:-default}"
-          # 01 covers the plain loop, 02 the tool loop, 08 structured output, 09 guardrails.
-          cargo run --example 01_hello
-          cargo run --example 02_tools
-          cargo run --example 08_structured_output
-          cargo run --example 09_guardrails
+          # hello covers the plain loop, tools the tool loop, structured_output and guardrails.
+          cargo run -p openai-agents-examples --example hello
+          cargo run -p openai-agents-examples --example tools
+          cargo run -p openai-agents-examples --example structured_output
+          cargo run -p openai-agents-examples --example guardrails

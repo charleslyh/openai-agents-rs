@@ -1,5 +1,9 @@
 [workspace]
-members = ["crates/*"]
+members = ["crates/*", "examples"]
+# The examples package turns on the facade's `openai` feature, which would defeat
+# `cargo test --no-default-features` (the check that the SDK still builds with no HTTP client).
+# Keeping it out of the default set preserves that check; build it explicitly with `-p`.
+default-members = ["crates/*"]
 resolver = "2"
 
 # Dependencies every crate needs with the *same* features, so the version is declared once.
