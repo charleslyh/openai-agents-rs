@@ -29,6 +29,9 @@ use runner::{spawn_run, RunRequest, Start};
 use state::{new_id, AppState, RunSettings, TakeError};
 
 const INDEX_HTML: &str = include_str!("index.html");
+/// Where `index.html` lives on disk, for live reload. Fixed at compile time; no request input is
+/// ever part of this path.
+const INDEX_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/web_demo/index.html");
 const MAX_BODY_BYTES: usize = 16 * 1024;
 const MAX_INPUT_CHARS: usize = 2_000;
 
@@ -63,6 +66,7 @@ pub fn router(app: Arc<AppState>, allowed_hosts: Option<Vec<String>>) -> Router 
     Router::new()
         .route("/", get(index))
         .route("/api/health", get(health))
+        .route("/api/dev/stamp", get(dev_stamp))
         .route("/api/conversations", post(create_conversation))
         .route(
             "/api/conversations/{id}",
@@ -109,13 +113,71 @@ async fn guard_headers(
     response
 }
 
+/// Live reload of `index.html`: serve it from disk and reload the browser when it changes, so a
+/// front-end edit needs no rebuild. On by default in debug builds (which is what `cargo run`
+/// makes) while the debug features are on; `DEMO_DEV=0` / `DEMO_DEV=1` overrides the default.
+/// Release builds serve the embedded copy.
+pub fn live_reload(app: &AppState) -> bool {
+    let wanted = match std::env::var("DEMO_DEV").ok().as_deref() {
+        Some("0" | "false" | "no" | "off") => false,
+        Some("1" | "true" | "yes" | "on") => true,
+        _ => cfg!(debug_assertions),
+    };
+    wanted && app.debug
+}
+
+/// Modification time of the page in milliseconds, as a change marker. Zero when unreadable.
+async fn page_stamp() -> u128 {
+    tokio::fs::metadata(INDEX_PATH)
+        .await
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_millis())
+}
+
+async fn dev_stamp(State(app): State<Arc<AppState>>) -> Response {
+    if !live_reload(&app) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    Json(json!({"stamp": page_stamp().await})).into_response()
+}
+
+/// Polls the stamp and reloads the page when it moves. Carries the page's nonce, so the strict
+/// CSP stays as it is.
+fn reload_snippet(nonce: &str) -> String {
+    format!(
+        "<script nonce=\"{nonce}\">(function(){{var last=null;\
+         setInterval(function(){{fetch('/api/dev/stamp',{{cache:'no-store'}})\
+         .then(function(r){{return r.ok?r.json():null}})\
+         .then(function(j){{if(!j)return;if(last===null)last=j.stamp;\
+         else if(j.stamp!==last)location.reload()}}).catch(function(){{}})}},700)}})();</script>"
+    )
+}
+
 async fn index(State(app): State<Arc<AppState>>) -> Response {
     let csp = format!(
         "default-src 'none'; script-src 'nonce-{n}'; style-src 'nonce-{n}'; connect-src 'self'; \
          img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
         n = app.nonce
     );
-    let mut response = Html(INDEX_HTML.replace("__NONCE__", &app.nonce)).into_response();
+    let mut page = if live_reload(&app) {
+        match tokio::fs::read_to_string(INDEX_PATH).await {
+            Ok(fresh) => fresh,
+            Err(_) => INDEX_HTML.to_string(),
+        }
+    } else {
+        INDEX_HTML.to_string()
+    };
+    page = page.replace("__NONCE__", &app.nonce);
+    if live_reload(&app) {
+        let snippet = reload_snippet(&app.nonce);
+        match page.rfind("</body>") {
+            Some(at) => page.insert_str(at, &snippet),
+            None => page.push_str(&snippet),
+        }
+    }
+    let mut response = Html(page).into_response();
     if let Ok(value) = HeaderValue::from_str(&csp) {
         response
             .headers_mut()
