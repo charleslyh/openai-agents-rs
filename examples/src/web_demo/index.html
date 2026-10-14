@@ -207,8 +207,15 @@ button{font:inherit; color:var(--t1); cursor:pointer; background:rgba(17,24,50,.
 .span .bar{position:relative; height:14px; border-radius:4px; background:rgba(154,164,199,.1); overflow:hidden}
 .span .bar i{position:absolute; top:2px; bottom:2px; border-radius:3px; background:var(--info); min-width:2px}
 .span.err .bar i{background:var(--bad)}
-.span .tip{display:none; font-size:11px; color:var(--t2); grid-column:1/3; padding:2px 0 6px}
-.span:hover .tip{display:block}
+.span{border-radius:6px}
+.span:hover,.span:focus-visible{background:rgba(154,164,199,.08)}
+/* Hover tip for a span: one floating element, positioned in JS and clamped to the viewport. */
+.wftip{position:fixed; z-index:20; left:0; top:0; max-width:min(320px,calc(100vw - 16px)); padding:8px 10px; border-radius:10px; border:1px solid var(--line2); background:rgba(11,16,32,.97); box-shadow:var(--shadow); font-size:11.5px; line-height:1.45; color:var(--t2); pointer-events:none; opacity:0; transition:opacity .12s}
+.wftip.on{opacity:1}
+.wftip .tt{display:flex; align-items:center; gap:7px; color:var(--t1); font-size:12px; word-break:break-word}
+.wftip .tt i{flex:0 0 9px; height:9px; border-radius:3px}
+.wftip .tm{margin-top:3px; font-family:var(--mono); font-size:11px; color:var(--t2)}
+.wftip .te{margin-top:4px; color:var(--bad); word-break:break-word}
 .empty{color:var(--t3); font-size:12px; padding:10px 0}
 
 /* ---------- composer ---------- */
@@ -367,6 +374,8 @@ option{background:var(--bg1); color:var(--t1)}
   <div class="suggest" id="suggest"></div>
 </div>
 
+<div class="wftip" id="wftip" role="tooltip"></div>
+
 <div id="drawerRoot"></div>
 
 <script nonce="__NONCE__">
@@ -486,6 +495,7 @@ const S = {
              retry:{policy:"never", max_retries:0, initial_delay_secs:null, max_delay_secs:null, attempt_timeout_secs:null}},
   lastInput: "", runEvents: [], pendingRun: null, currentBubble: null, currentText: "",
   reasoningEl: null, agent: null, usages: 0,
+  epoch: 0,
 };
 try {
   S.settings = Object.assign(S.settings, JSON.parse(localStorage.getItem("demo.settings")||"{}"));
@@ -753,28 +763,65 @@ function renderTrace(spans) {
   const span = Math.max(1, to - from);
   const colors = {task:"#6366F1", agent:"#22D3EE", turn:"#60A5FA", function:"#34D399", generation:"#A855F7",
                   handoff:"#FBBF24", guardrail:"#F87171", response:"#8A95BE", custom:"#E879F9"};
+  hideWfTip();
   spans.forEach(s => {
     const row = el("div", "span" + (s.error ? " err" : ""));
+    row.tabIndex = 0;
+    row.setAttribute("aria-label", `${s.name}, ${s.kind}, ${s.end_ms - s.start_ms} ms${s.error ? ", error: " + s.error : ""}`);
     row.append(el("div", "label", s.name));
     const bar = el("div", "bar");
     const i = el("i");
+    const color = colors[s.kind] || "#60A5FA";
     i.style.left = Math.round(100 * (s.start_ms - from) / span) + "%";
     i.style.width = Math.max(1, Math.round(100 * (s.end_ms - s.start_ms) / span)) + "%";
-    i.style.background = colors[s.kind] || "#60A5FA";
+    i.style.background = color;
     bar.append(i);
     row.append(bar);
-    const dur = (s.end_ms - s.start_ms);
-    row.append(el("div", "tip", `${s.kind} · ${dur} ms${s.error ? " · error: " + s.error : ""}`));
+    const info = {name: s.name, kind: s.kind, color, dur: s.end_ms - s.start_ms, at: s.start_ms - from, error: s.error};
+    row.addEventListener("mouseenter", e => showWfTip(info, e.clientX, e.clientY));
+    row.addEventListener("mousemove", e => placeWfTip(e.clientX, e.clientY));
+    row.addEventListener("mouseleave", hideWfTip);
+    row.addEventListener("focus", () => {
+      const r = row.getBoundingClientRect();
+      showWfTip(info, r.left + 24, r.bottom);
+    });
+    row.addEventListener("blur", hideWfTip);
     box.append(row);
   });
   if (!$("wfbody").hidden) return;
   $("tabWaterfall").classList.add("fresh");
 }
+function showWfTip(info, x, y) {
+  const tip = $("wftip");
+  tip.textContent = "";
+  const title = el("div", "tt");
+  const swatch = el("i");
+  swatch.style.background = info.color;
+  title.append(swatch, document.createTextNode(info.name));
+  tip.append(title);
+  tip.append(el("div", "tm", `${info.kind} · ${info.dur} ms · starts +${info.at} ms`));
+  if (info.error) tip.append(el("div", "te", "error: " + info.error));
+  tip.classList.add("on");
+  placeWfTip(x, y);
+}
+/* Under and to the right of the pointer; flips above or to the left when it would leave the
+   window, and never goes past either edge. */
+function placeWfTip(x, y) {
+  const tip = $("wftip"), m = 8, off = 14;
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  let left = x + off, top = y + off;
+  if (left + w > window.innerWidth - m) left = x - off - w;
+  if (top + h > window.innerHeight - m) top = y - off - h;
+  tip.style.left = Math.max(m, Math.min(left, window.innerWidth - w - m)) + "px";
+  tip.style.top = Math.max(m, Math.min(top, window.innerHeight - h - m)) + "px";
+}
+function hideWfTip() { $("wftip").classList.remove("on"); }
 function showTab(name) {
   const wf = name === "waterfall";
   $("timeline").hidden = wf;
   $("wfbody").hidden = !wf;
   $("hooksToggle").hidden = wf;
+  hideWfTip();
   [["tabTimeline", !wf], ["tabWaterfall", wf]].forEach(([id, on]) => {
     const b = $(id);
     b.classList.toggle("sel", on);
@@ -844,11 +891,7 @@ async function send() {
   setInput("");
   S.lastInput = input;
   userBubble(input);
-  S.runEvents = [];
-  $("timeline").textContent = "";
-  $("wfbody").textContent = "";
-  $("wfbody").append(el("div", "empty", "The trace waterfall appears when a run finishes."));
-  $("tabWaterfall").classList.remove("fresh");
+  resetRunViews();
   const plan = pendingPlan();
   S.applied = [];
   S.sawToolError = false; S.inflight = 0; S.turns = (S.turns || 0) + 1;
@@ -856,7 +899,21 @@ async function send() {
   await startStream("/api/chat", {conversation_id:S.conversation, input, settings:S.settings, debug:plan || {}});
   if (plan && !S.persisted) { S.plan = {}; renderInjectBar(); buildPresets(); }
 }
+/* Empty everything that describes "the current run": the timeline, the waterfall, and the
+   highlighting in the agent network. Used before each new message and by "New conversation". */
+function resetRunViews() {
+  S.runEvents = [];
+  $("timeline").textContent = "";
+  $("timeline").append(el("div", "empty", "Run something to see events here."));
+  $("wfbody").textContent = "";
+  $("wfbody").append(el("div", "empty", "The trace waterfall appears when a run finishes."));
+  $("tabWaterfall").classList.remove("fresh");
+  hideWfTip();
+  showTab("timeline");
+  buildChain();
+}
 async function startStream(url, body) {
+  const epoch = S.epoch;
   S.running = true; S.pendingRun = null; updateSendButton();
   S.controller = new AbortController();
   try {
@@ -871,9 +928,11 @@ async function startStream(url, body) {
     }
     await readSSE(response, handleEvent);
   } catch (e) {
+    if (epoch !== S.epoch) return;
     if (e.name === "AbortError") addEvent("client", "Stopped by the browser (simulated offline)", null, false);
     else addEvent("client", "Connection to the server was lost: " + e.message, null, false);
   } finally {
+    if (epoch !== S.epoch) return;
     S.running = false;
     if (S.currentBubble) S.currentBubble.classList.remove("cursor");
     const sp = S.sentPlan || {};
@@ -1443,11 +1502,19 @@ async function newConversation() {
     const r = await fetch("/api/conversations", {method:"POST"});
     if (!r.ok) { setConn(false, "server full"); return; }
     const j = await r.json();
+    S.epoch++;
+    if (S.controller) S.controller.abort();
     S.conversation = j.conversation_id;
-    S.pendingRun = null; S.currentBubble = null; S.currentText = "";
+    S.running = false; S.runId = null; S.controller = null;
+    S.pendingRun = null; S.currentBubble = null; S.currentText = ""; S.reasoningEl = null;
+    S.lastApproval = null; S.lastInput = ""; S.turns = 0; S.inflight = 0; S.gotFinal = false;
+    S.sentPlan = null; S.applied = [];
     $("sessComp").textContent = "not yet";
     $("sessSummaryWrap").hidden = true;
     $("sessUsage").textContent = "0 req · 0 tok";
+    resetRunViews();
+    renderInjectBar();
+    updateSendButton();
     clearChat();
     await refreshSession();
     setConn(true, "connected");
@@ -1505,6 +1572,7 @@ async function boot() {
     if (!$("capsPop").hidden) { toggleCaps(false); $("questBtn").focus(); return; }
     closeDrawer();
   });
+  $("wfbody").addEventListener("scroll", hideWfTip);
   $("tabTimeline").addEventListener("click", () => showTab("timeline"));
   $("tabWaterfall").addEventListener("click", () => showTab("waterfall"));
   $("showHooks").addEventListener("change", e => $("timeline").classList.toggle("nohooks", !e.target.checked));

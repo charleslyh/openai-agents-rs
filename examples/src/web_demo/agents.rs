@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use openai_agents::{
     handoff, input_guardrail, output_guardrail, Agent, AgentOutputSchema, AsToolConfig,
-    GuardrailFunctionOutput, InputGuardrail, InputLike, McpServer, Model, OutputGuardrail,
-    RunErrorHandlerInput, RunErrorHandlerResult, RunErrorHandlers,
+    GuardrailFunctionOutput, InputGuardrail, InputLike, McpServer, Model, ModelSettings,
+    OutputGuardrail, RunErrorHandlerInput, RunErrorHandlerResult, RunErrorHandlers, ToolChoice,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -98,16 +98,27 @@ pub fn build_network(
     let weather = Agent::new("Weather")
         .handoff_description("Weather and temperature questions.")
         .instructions(
-            "You are the weather agent. Use get_weather for conditions and get_temperature for \
-             temperatures; call both for several cities in the same turn when asked. Always \
-             answer with the requested JSON object (city, celsius, summary); for several cities \
-             report the first one and mention the others in the summary.",
+            "You are the weather agent. You have no weather knowledge of your own: every figure \
+             you give must come from a tool result, so never answer before calling tools. Use \
+             get_weather for conditions and get_temperature for temperatures. Each tool takes \
+             ONE city. When the user names several cities, issue one tool call per city, ALL IN \
+             THE SAME TURN (parallel tool calls), before you answer; never fetch the cities one \
+             after another. Then answer with the requested JSON object (city, celsius, \
+             summary): put the first city in `city` and `celsius`, and compare all the cities \
+             in the summary.",
         )
         .model(Arc::clone(&model))
         .tools(vec![
             tools::get_weather(faults),
             tools::get_temperature(faults),
         ])
+        // The first turn must call a tool, so the model cannot answer from memory. The SDK
+        // clears this once the agent has used tools (`reset_tool_choice`, on by default), so
+        // the turn after the tool results can produce the structured answer.
+        .model_settings(ModelSettings {
+            tool_choice: Some(ToolChoice::Required),
+            ..Default::default()
+        })
         .output_type(Arc::new(AgentOutputSchema::of::<WeatherReport>()?))
         .output_guardrails(vec![no_secrets()]);
 
