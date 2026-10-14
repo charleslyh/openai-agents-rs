@@ -89,9 +89,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             format!("[::1]:{}", addr.port()),
         ]
     });
+    let live = web_demo::live_reload(&app);
     let router = web_demo::router(app, allowed_hosts);
     let listener = tokio::net::TcpListener::bind(addr).await?;
     eprintln!("web demo: http://{addr}  model={model_name}  debug={debug}");
+    if live {
+        eprintln!("live reload: index.html is read from disk; edits refresh the page, no rebuild");
+    }
 
     axum::serve(listener, router)
         .with_graceful_shutdown(async {

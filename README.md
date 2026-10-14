@@ -135,6 +135,9 @@ them). Extra variables:
   the demo has no authentication.
 - `DEMO_DEBUG` — `1`/`0`. Controls fault injection and `/api/debug/*`. On by default for loopback
   addresses, off otherwise; when off, injected faults in requests are ignored.
+- `DEMO_DEV` — `1`/`0`. Live reload of `index.html`: the page is read from disk and the browser
+  reloads when the file changes, so front-end edits need no rebuild. On by default in debug builds
+  (plain `cargo run`) while debug features are on; release builds serve the embedded copy.
 
 The page has a capability checklist (22 items, lit up as you trigger them) and a debug drawer with
 fault presets: LLM errors and retry policies, tool delays and failures, summarizer and session
