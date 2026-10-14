@@ -290,7 +290,7 @@ mod tests {
             }
             if self
                 .fail_times
-                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+                .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
                 .is_ok()
             {
                 return Err(AgentsError::tool("refused"));
