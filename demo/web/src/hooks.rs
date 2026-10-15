@@ -6,7 +6,7 @@ use openai_agents::{
 };
 use serde_json::Value;
 
-use super::events::{truncate, DemoCtx, DemoEvent, Emitter};
+use crate::events::{truncate, DemoCtx, DemoEvent, Emitter};
 
 pub struct TimelineHooks;
 

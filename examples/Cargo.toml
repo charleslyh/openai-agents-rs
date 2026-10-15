@@ -25,48 +25,115 @@ workspace = true
 # command is `cargo run -p openai-agents-examples --example hello`, not `--example 01_hello`.
 # Adding a file means adding a section here — which is also where a per-example `required-features`
 # would go if one of them ever needs an extra facade feature.
+# One example per knowledge point, ordered like the web demo's capability checklist (see
+# `demo/web/assets/index.html`): conversation and memory, tools, multi-agent,
+# safety and governance,
+# output and observability, run control. Each header names the checklist item it covers;
+# the full web console lives in `demo/web`. Only closely related ideas share a file.
+#
+# `mcp` needs the facade's `mcp` feature (declared with the dependency below).
+
 [[example]]
 name = "hello"
 path = "src/01_hello.rs"
 
-[[example]]
-name = "tools"
-path = "src/02_tools.rs"
-
+# Conversation and memory
 [[example]]
 name = "streamed"
-path = "src/03_streamed.rs"
+path = "src/02_streamed.rs"
 
 [[example]]
+name = "memory"
+path = "src/03_memory.rs"
+
+[[example]]
+name = "compaction"
+path = "src/04_compaction.rs"
+
+# Tools
+[[example]]
+name = "tools"
+path = "src/05_tools.rs"
+
+[[example]]
+name = "parallel_tools"
+path = "src/06_parallel_tools.rs"
+
+[[example]]
+name = "tool_timeout"
+path = "src/07_tool_timeout.rs"
+
+[[example]]
+name = "tool_recovery"
+path = "src/08_tool_recovery.rs"
+
+[[example]]
+name = "mcp"
+path = "src/09_mcp.rs"
+
+# Multi-agent
+[[example]]
 name = "handoff"
-path = "src/04_handoff.rs"
+path = "src/10_handoff.rs"
 
 [[example]]
 name = "agents_as_tools"
-path = "src/05_agents_as_tools.rs"
+path = "src/11_agents_as_tools.rs"
 
+# Safety and governance
 [[example]]
 name = "hitl"
-path = "src/06_hitl.rs"
+path = "src/12_hitl.rs"
 
 [[example]]
 name = "always_approve"
-path = "src/07_always_approve.rs"
+path = "src/13_always_approve.rs"
 
+[[example]]
+name = "input_guardrail"
+path = "src/14_input_guardrail.rs"
+
+[[example]]
+name = "output_guardrail"
+path = "src/15_output_guardrail.rs"
+
+[[example]]
+name = "tool_input_guardrail"
+path = "src/16_tool_input_guardrail.rs"
+
+[[example]]
+name = "tool_output_guardrail"
+path = "src/17_tool_output_guardrail.rs"
+
+# Output and observability
 [[example]]
 name = "structured_output"
-path = "src/08_structured_output.rs"
+path = "src/18_structured_output.rs"
 
 [[example]]
-name = "guardrails"
-path = "src/09_guardrails.rs"
+name = "run_context"
+path = "src/19_run_context.rs"
 
-# Serving a page needs the `axum` dependency below; the MCP half of the demo needs the facade's
-# `mcp` feature (declared with the dependency). `tokio` needs its `net` feature for the listener
-# and `time` for the injected delays.
 [[example]]
-name = "web_demo"
-path = "src/10_web_demo.rs"
+name = "hooks"
+path = "src/20_hooks.rs"
+
+[[example]]
+name = "usage"
+path = "src/21_usage.rs"
+
+[[example]]
+name = "tracing"
+path = "src/22_tracing.rs"
+
+# Run control
+[[example]]
+name = "cancel"
+path = "src/23_cancel.rs"
+
+[[example]]
+name = "settings"
+path = "src/24_settings.rs"
 
 # The sources are user-facing code, so they live at the repository root rather than inside
 # `crates/facade`. They depend on the facade the way a user's project would.
@@ -77,19 +144,13 @@ path = "src/10_web_demo.rs"
 # is why the root manifest sets `default-members = ["crates/*"]` — `cargo test --no-default-features`
 # must keep verifying that the SDK builds without an HTTP client.
 [dependencies]
-# `guardrails.rs` implements `AgentHooks`, whose methods are `async_trait`.
+# `20_hooks.rs` implements `AgentHooks`, whose methods are `async_trait`.
 async-trait = "0.1"
-# `10_web_demo.rs` serves the page: routing plus SSE, so the demo is one `cargo run`.
-# The default feature set is enough (no WebSocket, no multipart, no macros).
-axum = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio"] }
-# `mcp` is needed by `web_demo` only: it demonstrates a real MCP server over stdio (the demo's
-# own binary re-executed with `--mcp-server`). Declaring it here follows the note above; the
-# cost is that every example in this package now compiles the `openai-agents-mcp` crate too.
+# `mcp` is needed by the `mcp` example only (a real MCP server over stdio: the example's own
+# binary re-executed with `--mcp-server`). Every example in this package compiles the
+# `openai-agents-mcp` crate too because of it.
 openai-agents = { path = "../crates/facade", version = "0.1.0", features = ["openai", "mcp"] }
-# `stream::unfold` turns the run's event channel into the SSE body.
-futures = "0.3"
 serde = { version = "1", features = ["derive"] }
 schemars = "1"
 serde_json = { version = "1", features = ["preserve_order"] }
-tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
-uuid = { version = "1", features = ["v4"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }

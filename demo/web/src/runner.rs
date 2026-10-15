@@ -15,17 +15,17 @@ use openai_agents::{
 };
 use tokio::sync::mpsc;
 
-use super::agents;
-use super::events::{
+use crate::agents;
+use crate::events::{
     classify, map_stream_event, tripwire_event, usage_event, DemoCtx, DemoEvent, Emitter,
     InterruptionDto,
 };
-use super::faults::{
+use crate::faults::{
     FaultPlan, FaultyMcpServer, FaultyModel, FaultySession, FaultySummarizer, LlmFault,
     SessionFault,
 };
-use super::hooks::TimelineHooks;
-use super::state::{
+use crate::hooks::TimelineHooks;
+use crate::state::{
     AppState, BusyGuard, Conversation, PendingRun, RunSettings, RunSlot, COMPACTION_TRIGGER_ITEMS,
     DEFAULT_APPROVAL_TTL_SECS,
 };
@@ -276,7 +276,7 @@ async fn drive(app: Arc<AppState>, request: RunRequest, emit: Emitter) {
                         call_id: i.call_id.clone(),
                         agent: i.agent_name.clone(),
                         tool: i.tool_name.clone(),
-                        arguments: super::events::truncate(&i.arguments, 500),
+                        arguments: crate::events::truncate(&i.arguments, 500),
                     })
                     .collect();
                 app.store_pending(
@@ -327,7 +327,7 @@ async fn drive(app: Arc<AppState>, request: RunRequest, emit: Emitter) {
     } else if let Some(message) = snapshot_error {
         emit.emit(DemoEvent::Error {
             kind: "internal".into(),
-            message: super::events::truncate(&message, 400),
+            message: crate::events::truncate(&message, 400),
             retryable: false,
             hint: "Unexpected failure in the run. Resend, or start a new conversation.".into(),
             injected: false,
@@ -374,7 +374,7 @@ async fn emit_session(emit: &Emitter, conversation: &Conversation, before: Optio
         .await
         .unwrap_or_default();
     let count = items.len();
-    let summary = items.iter().find_map(super::state::summary_of);
+    let summary = items.iter().find_map(crate::state::summary_of);
     let compacted = summary.is_some() && summary != before;
     emit.emit(DemoEvent::Session {
         count,

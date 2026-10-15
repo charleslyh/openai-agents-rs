@@ -11,9 +11,9 @@ use openai_agents::{
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use super::events::{DemoCtx, DemoEvent};
-use super::faults::ToolFaults;
-use super::tools;
+use crate::events::{DemoCtx, DemoEvent};
+use crate::faults::ToolFaults;
+use crate::tools;
 
 /// The structured answer of the Weather agent.
 #[derive(Debug, Deserialize, openai_agents::schemars::JsonSchema)]

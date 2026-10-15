@@ -16,8 +16,8 @@ use serde::Deserialize;
 use serde_json::Value;
 use tokio::sync::mpsc::UnboundedSender;
 
-use super::faults::FaultPlan;
-use super::trace::TraceCollector;
+use crate::faults::FaultPlan;
+use crate::trace::TraceCollector;
 
 pub const MAX_CONVERSATIONS: usize = 64;
 pub const CONVERSATION_TTL: Duration = Duration::from_secs(30 * 60);

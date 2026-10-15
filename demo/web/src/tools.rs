@@ -10,8 +10,8 @@ use openai_agents::{
 };
 use serde_json::{json, Value};
 
-use super::events::{guardrail_action, DemoCtx, DemoEvent};
-use super::faults::{ToolFaults, INJECTED_TAG};
+use crate::events::{guardrail_action, DemoCtx, DemoEvent};
+use crate::faults::{ToolFaults, INJECTED_TAG};
 
 const KNOWN_CITIES: [&str; 8] = [
     "paris", "tokyo", "london", "new york", "oakland", "beijing", "berlin", "sydney",

@@ -17,7 +17,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 
-use super::events::{model_error_kind, DemoEvent, Emitter};
+use crate::events::{model_error_kind, DemoEvent, Emitter};
 
 /// Every injected error message carries this tag, so the page can tell it from a real failure.
 pub const INJECTED_TAG: &str = "[injected]";

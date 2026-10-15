@@ -54,8 +54,8 @@ jobs:
         run: bash scripts/sync_vendor.sh --check
       # Layer 1: ScriptedModel behavior, no HTTP client in the build.
       #
-      # No `--workspace` anywhere below, and that is deliberate: the root `examples/` package is a
-      # member but not a *default* member, because it turns on the facade's `openai` feature. A
+      # No `--workspace` anywhere below, and that is deliberate: the root `examples/` and `demo/web`
+      # packages are members but not *default* members, because they turn on the facade's `openai` feature. A
       # `--workspace` run would build it, activate that feature for the whole graph, and quietly
       # stop this run from proving the SDK still builds with no HTTP client.
       - name: Behavior tests (no default features)
@@ -69,6 +69,8 @@ jobs:
       # The examples are user-facing code: a breaking change to the public API shows up here.
       - name: Examples still compile
         run: cargo build -p openai-agents-examples --examples
+      - name: Web demo still compiles and its tests pass
+        run: cargo test -p openai-agents-web-demo
 
   parity:
     name: python oracle (parity, MCP interop)

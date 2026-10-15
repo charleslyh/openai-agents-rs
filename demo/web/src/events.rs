@@ -286,7 +286,7 @@ impl ErrorInfo {
         let message = err.to_string();
         Self {
             kind: kind.to_string(),
-            injected: message.contains(super::faults::INJECTED_TAG),
+            injected: message.contains(crate::faults::INJECTED_TAG),
             message: truncate(&message, 400),
             retryable,
             hint: hint.to_string(),

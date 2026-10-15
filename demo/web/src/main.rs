@@ -5,18 +5,27 @@
 //! `DEMO_ADDR` (default `127.0.0.1:3000`), `DEMO_DEBUG` (`1`/`0`; on only for loopback by default).
 //!
 //! ```bash
-//! cargo run -p openai-agents-examples --example web_demo
+//! cargo run -p openai-agents-web-demo
 //! ```
 
-mod common;
-mod web_demo;
+mod agents;
+mod events;
+mod faults;
+mod hooks;
+mod mcp_server;
+mod model;
+mod runner;
+mod server;
+mod state;
+mod tools;
+mod trace;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
 
 use openai_agents::{McpClient, McpServer, StdioParams, ToolFilter};
-use web_demo::state::AppState;
-use web_demo::trace::TraceCollector;
+use state::AppState;
+use trace::TraceCollector;
 
 fn env_flag(name: &str) -> Option<bool> {
     std::env::var(name)
@@ -28,12 +37,12 @@ fn env_flag(name: &str) -> Option<bool> {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Server mode must be decided before anything reads the model environment: the child process
     // gets a scrubbed environment and has no API key.
-    if std::env::args().nth(1).as_deref() == Some(web_demo::mcp_server::MCP_SERVER_FLAG) {
-        web_demo::mcp_server::run()?;
+    if std::env::args().nth(1).as_deref() == Some(mcp_server::MCP_SERVER_FLAG) {
+        mcp_server::run()?;
         return Ok(());
     }
 
-    let model = common::model()?;
+    let model = model::model()?;
     let model_name = std::env::var("OPENAI_MODEL").unwrap_or_default();
     let api = std::env::var("OPENAI_API").unwrap_or_else(|_| "chat_completions".into());
 
@@ -58,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // The MCP server is this same executable, started with a fixed argument.
     let exe = std::env::current_exe()?;
     let mcp: Arc<dyn McpServer> = McpClient::stdio(
-        StdioParams::new(exe.to_string_lossy()).args([web_demo::mcp_server::MCP_SERVER_FLAG]),
+        StdioParams::new(exe.to_string_lossy()).args([mcp_server::MCP_SERVER_FLAG]),
     )
     .tool_filter(ToolFilter::block(["mcp_admin_reset"]))
     .shared();
@@ -89,8 +98,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             format!("[::1]:{}", addr.port()),
         ]
     });
-    let live = web_demo::live_reload(&app);
-    let router = web_demo::router(app, allowed_hosts);
+    let live = server::live_reload(&app);
+    let router = server::router(app, allowed_hosts);
     let listener = tokio::net::TcpListener::bind(addr).await?;
     eprintln!("web demo: http://{addr}  model={model_name}  debug={debug}");
     if live {
