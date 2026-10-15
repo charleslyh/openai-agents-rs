@@ -6,7 +6,7 @@
 //! run (agent, turn, generation, function, ...). The web demo draws the same data as a
 //! waterfall; here each finished span is printed.
 //!
-//! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`, `EXAMPLE_INPUT`.
+//! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
 //! cargo run -p openai-agents-examples --example tracing
@@ -79,7 +79,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut options = RunOptions::default();
     options.run_config = run_config;
 
-    let input = common::input_with_fallback("question> ", "Give me the city metrics for Berlin.")?;
+    let input = "Give me the city metrics for Berlin.";
     let result = Runner::run(&agent, input, options).await?;
     println!("{}", result.final_output_as_str().unwrap_or_default());
     Ok(())

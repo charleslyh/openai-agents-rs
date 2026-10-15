@@ -57,10 +57,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .model(common::model()?)
         .tools(vec![get_weather(), get_temperature_tool()]);
 
-    let input = common::input_with_fallback(
-        "Ask about weather: ",
-        "What is the weather and temperature in Oakland?",
-    )?;
+    let input = "What is the weather and temperature in Oakland?";
 
     let mut result = Runner::run(&agent, input, RunOptions::default()).await?;
     let path = Path::new(".cache/agent_patterns/human_in_the_loop/result.json");

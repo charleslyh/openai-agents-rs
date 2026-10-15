@@ -61,10 +61,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .model(model);
 
-    let msg = common::input_with_fallback(
-        "Hi! What would you like translated, and to which languages? ",
-        "Translate 'Hello, world!' to French and Spanish.",
-    )?;
+    let msg = common::example_input("Translate 'Hello, world!' to French and Spanish.");
 
     let orchestrator_result = Runner::run(&orchestrator, msg, RunOptions::default()).await?;
     for item in &orchestrator_result.new_items {

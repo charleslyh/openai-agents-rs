@@ -113,23 +113,16 @@ pub fn confirm(question: &str) -> io::Result<bool> {
     ))
 }
 
-/// Read a line, or use `fallback` when empty / `EXAMPLE_INPUT` is set.
-pub fn input_with_fallback(prompt: &str, fallback: &str) -> io::Result<String> {
-    if let Ok(v) = std::env::var("EXAMPLE_INPUT") {
-        if !v.trim().is_empty() {
-            eprintln!("{prompt}{v}");
-            return Ok(v);
-        }
-    }
-    print!("{prompt}");
-    io::stdout().flush()?;
-    let mut line = String::new();
-    io::stdin().read_line(&mut line)?;
-    let line = line.trim().to_string();
-    if line.is_empty() {
-        eprintln!("(using fallback) {fallback}");
-        Ok(fallback.to_string())
-    } else {
-        Ok(line)
-    }
+/// The example's input: `EXAMPLE_INPUT` when set, otherwise `default`.
+///
+/// Only examples whose behaviour depends on the request (guardrail trips, routing, ...) use this;
+/// the rest hard-code their input. Nothing is read from stdin. The chosen input is echoed to
+/// stderr.
+pub fn example_input(default: &str) -> String {
+    let input = match std::env::var("EXAMPLE_INPUT") {
+        Ok(v) if !v.trim().is_empty() => v,
+        _ => default.to_string(),
+    };
+    eprintln!("input: {input}");
+    input
 }

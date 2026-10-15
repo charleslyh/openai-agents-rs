@@ -5,7 +5,7 @@
 //! does not match surfaces as a model behavior error, matching Python's
 //! `Agent(output_type=...)`.
 //!
-//! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`, `EXAMPLE_INPUT`.
+//! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
 //! cargo run -p openai-agents-examples --example structured_output
@@ -38,10 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .model(common::model()?)
         .output_type(Arc::new(AgentOutputSchema::of::<WeatherReport>()?));
 
-    let question = common::input_with_fallback(
-        "question> ",
-        "What is the weather in Paris right now? Answer in JSON.",
-    )?;
+    let question = "What is the weather in Paris right now? Answer in JSON.";
 
     let result = Runner::run(&agent, question, RunOptions::default()).await?;
     println!("raw final_output: {}", result.final_output);

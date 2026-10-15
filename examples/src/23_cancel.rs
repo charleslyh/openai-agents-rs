@@ -16,6 +16,7 @@ mod common;
 
 use std::io::{self, Write};
 
+use openai_agents::model::wire_events::{self, WireEvent};
 use openai_agents::{Agent, CancelMode, RunOptions, Runner, StreamEvent};
 
 /// Stop after this many streamed text deltas.
@@ -37,11 +38,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut deltas = 0usize;
     while let Some(event) = streamed.next_event().await {
         if let StreamEvent::RawResponse { data } = event? {
-            if data.get("type").and_then(|t| t.as_str()) == Some("response.output_text.delta") {
-                print!(
-                    "{}",
-                    data.get("delta").and_then(|d| d.as_str()).unwrap_or("")
-                );
+            if let WireEvent::OutputTextDelta { delta, .. } = wire_events::parse(&data) {
+                print!("{delta}");
                 io::stdout().flush()?;
                 deltas += 1;
                 if deltas == STOP_AFTER_DELTAS {

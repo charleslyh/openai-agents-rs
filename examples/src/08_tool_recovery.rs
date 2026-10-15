@@ -5,7 +5,7 @@
 //! `flaky_inventory` fails on its first call. A failing tool does not end the run: the error
 //! text goes back to the model, which can read it and call the tool again.
 //!
-//! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`, `EXAMPLE_INPUT`.
+//! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
 //! cargo run -p openai-agents-examples --example tool_recovery
@@ -53,8 +53,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .model(common::model()?)
         .tools(vec![flaky_inventory()]);
 
-    let input =
-        common::input_with_fallback("request> ", "Check warehouse inventory for widget A.")?;
+    let input = "Check warehouse inventory for widget A.";
     let result = Runner::run(&agent, input, RunOptions::default()).await?;
     println!("{}", result.final_output_as_str().unwrap_or_default());
     Ok(())

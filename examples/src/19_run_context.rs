@@ -5,7 +5,7 @@
 //! `RunOptions::context` carries your own value through the run. A tool downcasts it with
 //! `ctx.run_context.context::<T>()`; the model never sees it.
 //!
-//! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`, `EXAMPLE_INPUT`.
+//! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
 //! cargo run -p openai-agents-examples --example run_context
@@ -46,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut options = RunOptions::default();
     options.context = Some(Arc::new(Tenant { id: "acme".into() }));
 
-    let input = common::input_with_fallback("question> ", "Which tenant am I?")?;
+    let input = "Which tenant am I?";
     let result = Runner::run(&agent, input, options).await?;
     println!("{}", result.final_output_as_str().unwrap_or_default());
     Ok(())

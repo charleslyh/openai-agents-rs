@@ -5,7 +5,7 @@
 //! `RunResult::usage` aggregates requests and tokens across the whole run. Token counts need
 //! `ModelSettings::include_usage`, which is requested here.
 //!
-//! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`, `EXAMPLE_INPUT`.
+//! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
 //! cargo run -p openai-agents-examples --example usage
@@ -29,7 +29,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut options = RunOptions::default();
     options.run_config = run_config;
 
-    let input = common::input_with_fallback("question> ", "Summarise what an agent SDK does.")?;
+    let input = "Summarise what an agent SDK does.";
     let result = Runner::run(&agent, input, options).await?;
     println!("{}", result.final_output_as_str().unwrap_or_default());
 

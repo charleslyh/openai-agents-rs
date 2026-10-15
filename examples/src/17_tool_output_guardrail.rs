@@ -5,7 +5,7 @@
 //! `pii-redactor` runs after `lookup_customer` and replaces emails and phone numbers in the
 //! tool result before the model sees it.
 //!
-//! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`, `EXAMPLE_INPUT`.
+//! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
 //! cargo run -p openai-agents-examples --example tool_output_guardrail
@@ -77,10 +77,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .model(common::model()?)
         .tools(vec![lookup_customer()]);
 
-    let input = common::input_with_fallback(
-        "question> ",
-        "Look up the customer record for Alice and quote it exactly.",
-    )?;
+    let input = "Look up the customer record for Alice and quote it exactly.";
     let result = Runner::run(&agent, input, RunOptions::default()).await?;
     println!("{}", result.final_output_as_str().unwrap_or_default());
     println!(

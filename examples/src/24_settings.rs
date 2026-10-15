@@ -5,7 +5,7 @@
 //! The knobs of one run: `ModelSettings` (temperature, retry policy for transient model
 //! errors) in `RunConfig`, and `RunOptions::max_turns`.
 //!
-//! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`, `EXAMPLE_INPUT`.
+//! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
 //! cargo run -p openai-agents-examples --example settings
@@ -34,7 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     options.max_turns = Some(5);
     options.run_config = run_config;
 
-    let input = common::input_with_fallback("question> ", "Hello!")?;
+    let input = "Hello!";
     let result = Runner::run(&agent, input, options).await?;
     println!("{}", result.final_output_as_str().unwrap_or_default());
     Ok(())

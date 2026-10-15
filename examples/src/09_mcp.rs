@@ -6,7 +6,7 @@
 //! JSON-RPC server with three fixed tools. The client blocks `mcp_admin_reset` with a
 //! `ToolFilter`, so the model only sees `mcp_city_facts` and `mcp_convert_temperature`.
 //!
-//! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`, `EXAMPLE_INPUT`.
+//! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
 //! cargo run -p openai-agents-examples --example mcp
@@ -149,10 +149,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .model(model)
         .mcp_servers(vec![Arc::clone(&server)]);
 
-    let input = common::input_with_fallback(
-        "question> ",
-        "What do you know about Paris? Also convert 20 celsius to fahrenheit.",
-    )?;
+    let input = "What do you know about Paris? Also convert 20 celsius to fahrenheit.";
     let outcome = Runner::run(&agent, input, RunOptions::default()).await;
     let _ = server.cleanup().await;
     println!("{}", outcome?.final_output_as_str().unwrap_or_default());
