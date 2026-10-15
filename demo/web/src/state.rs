@@ -20,7 +20,6 @@ use crate::faults::FaultPlan;
 use crate::trace::TraceCollector;
 
 pub const MAX_CONVERSATIONS: usize = 64;
-pub const CONVERSATION_TTL: Duration = Duration::from_secs(30 * 60);
 pub const MAX_CONCURRENT_RUNS: usize = 8;
 pub const DEFAULT_APPROVAL_TTL_SECS: u64 = 10 * 60;
 /// Compact the stored history once it holds more items than this (kept low so it is easy to see).
@@ -391,13 +390,10 @@ impl AppState {
         out
     }
 
-    /// Drop expired conversations, approvals and old run records.
+    /// Drop expired approvals and old run records. Conversations are not swept (local dev demo);
+    /// they are only bounded by `MAX_CONVERSATIONS`.
     pub fn sweep(&self) {
         let now = Instant::now();
-        lock(&self.conversations).retain(|_, c| {
-            c.busy.load(Ordering::SeqCst)
-                || now.duration_since(*lock(&c.last_used)) < CONVERSATION_TTL
-        });
         lock(&self.pending).retain(|_, p| p.expires > now);
         lock(&self.runs).retain(|_, r| {
             r.finished

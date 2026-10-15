@@ -946,10 +946,26 @@ async function startStream(url, body) {
   S.running = true; S.pendingRun = null; updateSendButton();
   S.controller = new AbortController();
   try {
-    const response = await fetch(url, {
+    const post = () => fetch(url, {
       method:"POST", headers:{"content-type":"application/json"},
       body: JSON.stringify(body), signal: S.controller.signal,
     });
+    let response = await post();
+    if (response.status === 404 && url === "/api/chat") {
+      /* The idle conversation was swept on the server (TTL). Start a fresh one and retry once;
+         the earlier server-side history is gone, but the chat keeps working. */
+      const probe = await response.clone().json().catch(() => ({}));
+      if (probe.kind === "unknown_conversation") {
+        const created = await fetch("/api/conversations", {method:"POST"});
+        if (created.ok) {
+          S.conversation = (await created.json()).conversation_id;
+          body.conversation_id = S.conversation;
+          S.turns = 0;
+          addEvent("client", "Previous conversation expired on the server; started a new one", null, false);
+          response = await post();
+        }
+      }
+    }
     if (!response.ok) {
       const j = await response.json().catch(() => ({kind:"http_" + response.status, message:"Request failed."}));
       handleError({kind:j.kind, message:j.message, retryable:false, hint:"Fix the request and try again.", injected:false});
