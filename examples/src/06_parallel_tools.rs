@@ -5,7 +5,7 @@
 //! With `parallel_tool_calls` on, the model can ask for several tools in one turn, and the
 //! runner executes them concurrently (bounded by `ToolExecutionConfig`).
 //!
-//! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`, `EXAMPLE_INPUT`.
+//! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
 //! cargo run -p openai-agents-examples --example parallel_tools
@@ -44,8 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut options = RunOptions::default();
     options.run_config = run_config;
 
-    let input =
-        common::input_with_fallback("request> ", "Compare the weather in Paris and Tokyo.")?;
+    let input = "Compare the weather in Paris and Tokyo.";
     let result = Runner::run(&agent, input, options).await?;
     println!("{}", result.final_output_as_str().unwrap_or_default());
     Ok(())

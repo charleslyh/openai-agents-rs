@@ -24,6 +24,9 @@ use crate::items::ResponseOutputItem;
 use crate::usage::Usage;
 
 pub mod emit;
+pub mod typed;
+
+pub use typed::{parse, WireEvent};
 
 /// Placeholder id for objects synthesized from a non-Responses API
 /// (Python: `agents.models.fake_id.FAKE_RESPONSES_ID`).

@@ -7,7 +7,7 @@
 //! `RaiseException` the run fails with `AgentsError::ToolTimeout`. Set `TOOL_TIMEOUT_RAISE=1`
 //! to try the second one.
 //!
-//! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`, `EXAMPLE_INPUT`.
+//! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
 //! cargo run -p openai-agents-examples --example tool_timeout
@@ -48,7 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .model(common::model()?)
         .tools(vec![slow_report(behavior)]);
 
-    let input = common::input_with_fallback("request> ", "Build the quarterly report.")?;
+    let input = "Build the quarterly report.";
     match Runner::run(&agent, input, RunOptions::default()).await {
         Ok(result) => println!("{}", result.final_output_as_str().unwrap_or_default()),
         Err(AgentsError::ToolTimeout(e)) => println!("run aborted by tool timeout: {e}"),

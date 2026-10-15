@@ -5,7 +5,7 @@
 //! `RunHooks` (set on `RunOptions`) observes the whole run; `AgentHooks` (set on one agent)
 //! observes only that agent. Every method has a default no-op body, so implement what you need.
 //!
-//! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`, `EXAMPLE_INPUT`.
+//! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
 //! cargo run -p openai-agents-examples --example hooks
@@ -69,7 +69,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut options = RunOptions::default();
     options.hooks = Some(Arc::new(PrintRunHooks));
 
-    let input = common::input_with_fallback("question> ", "Say hello.")?;
+    let input = "Say hello.";
     let result = Runner::run(&agent, input, options).await?;
     println!("{}", result.final_output_as_str().unwrap_or_default());
     Ok(())

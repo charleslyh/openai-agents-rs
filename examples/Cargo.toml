@@ -135,6 +135,10 @@ path = "src/23_cancel.rs"
 name = "settings"
 path = "src/24_settings.rs"
 
+[[example]]
+name = "reasoning"
+path = "src/25_reasoning.rs"
+
 # The sources are user-facing code, so they live at the repository root rather than inside
 # `crates/facade`. They depend on the facade the way a user's project would.
 #

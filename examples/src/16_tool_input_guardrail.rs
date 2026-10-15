@@ -6,7 +6,7 @@
 //! for. `reject_content` replaces the call with a message for the model; the run carries on.
 //! (`raise_exception` would stop the run instead.)
 //!
-//! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`, `EXAMPLE_INPUT`.
+//! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
 //! cargo run -p openai-agents-examples --example tool_input_guardrail
@@ -71,7 +71,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .model(common::model()?)
         .tools(vec![get_weather()]);
 
-    let input = common::input_with_fallback("question> ", "What is the weather in Atlantis?")?;
+    let input = "What is the weather in Atlantis?";
     let result = Runner::run(&agent, input, RunOptions::default()).await?;
     println!("{}", result.final_output_as_str().unwrap_or_default());
     println!(

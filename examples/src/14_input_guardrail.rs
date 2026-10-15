@@ -51,7 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             },
         )]);
 
-    let input = common::input_with_fallback("question> ", "What is the capital of France?")?;
+    let input = common::example_input("What is the capital of France?");
     match Runner::run(&agent, input, RunOptions::default()).await {
         Ok(result) => println!("{}", result.final_output),
         Err(AgentsError::InputGuardrailTripwire(InputGuardrailTripwireTriggered { result })) => {

@@ -14,6 +14,7 @@ mod common;
 
 use std::io::{self, Write};
 
+use openai_agents::model::wire_events::{self, WireEvent};
 use openai_agents::{
     function_tool, Agent, ItemHelpers, RunItem, RunItemStreamName, RunOptions, Runner, StreamEvent,
 };
@@ -37,24 +38,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     while let Some(ev) = streamed.next_event().await {
         match ev? {
-            StreamEvent::RawResponse { data } => {
-                let kind = data.get("type").and_then(|t| t.as_str()).unwrap_or("");
-                let delta = data.get("delta").and_then(|d| d.as_str()).unwrap_or("");
-                match kind {
-                    "response.reasoning_summary_text.delta" | "response.reasoning_text.delta" => {
-                        open_section(&mut section, Section::Reasoning)?;
-                        print!("{delta}");
-                        io::stdout().flush()?;
-                    }
-                    "response.output_text.delta" => {
-                        open_section(&mut section, Section::Message)?;
-                        print!("{delta}");
-                        io::stdout().flush()?;
-                        saw_text_delta = true;
-                    }
-                    _ => {}
+            StreamEvent::RawResponse { data } => match wire_events::parse(&data) {
+                WireEvent::ReasoningSummaryTextDelta { delta, .. }
+                | WireEvent::ReasoningTextDelta { delta, .. } => {
+                    open_section(&mut section, Section::Reasoning)?;
+                    print!("{delta}");
+                    io::stdout().flush()?;
                 }
-            }
+                WireEvent::OutputTextDelta { delta, .. } => {
+                    open_section(&mut section, Section::Message)?;
+                    print!("{delta}");
+                    io::stdout().flush()?;
+                    saw_text_delta = true;
+                }
+                _ => {}
+            },
             StreamEvent::AgentUpdated { agent_name } => {
                 end_section(&mut section)?;
                 println!("Agent updated: {agent_name}");

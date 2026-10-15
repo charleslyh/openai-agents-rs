@@ -4,6 +4,7 @@
 use std::fmt;
 use std::sync::atomic::AtomicU32;
 
+use openai_agents::model::wire_events::{self, WireEvent};
 use openai_agents::{AgentsError, ModelError, RunItem, StreamEvent, ToolGuardrailBehavior, Usage};
 use serde::Serialize;
 use serde_json::Value;
@@ -207,22 +208,16 @@ pub fn usage_event(usage: &Usage) -> DemoEvent {
 pub fn map_stream_event(event: StreamEvent, delivered: &mut usize) -> Vec<DemoEvent> {
     match event {
         StreamEvent::RawResponse { data } => {
-            let kind = data.get("type").and_then(Value::as_str).unwrap_or("");
-            let delta = data.get("delta").and_then(Value::as_str).unwrap_or("");
-            if delta.is_empty() {
-                return Vec::new();
-            }
-            match kind {
-                "response.reasoning_summary_text.delta" | "response.reasoning_text.delta" => {
-                    vec![DemoEvent::Reasoning {
-                        text: delta.to_string(),
-                    }]
+            match wire_events::parse(&data) {
+                WireEvent::ReasoningSummaryTextDelta { delta, .. }
+                | WireEvent::ReasoningTextDelta { delta, .. }
+                    if !delta.is_empty() =>
+                {
+                    vec![DemoEvent::Reasoning { text: delta }]
                 }
-                "response.output_text.delta" => {
+                WireEvent::OutputTextDelta { delta, .. } if !delta.is_empty() => {
                     *delivered += delta.chars().count();
-                    vec![DemoEvent::Token {
-                        text: delta.to_string(),
-                    }]
+                    vec![DemoEvent::Token { text: delta }]
                 }
                 _ => Vec::new(),
             }
