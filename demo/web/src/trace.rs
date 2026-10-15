@@ -10,7 +10,7 @@ use std::time::SystemTime;
 
 use openai_agents::tracing::{set_trace_processors, Span, SpanData, Trace, TracingProcessor};
 
-use super::events::SpanDto;
+use crate::events::SpanDto;
 
 /// More tracked spans than this means something leaked; start over rather than grow.
 const MAX_TRACKED_SPANS: usize = 50_000;
@@ -125,7 +125,7 @@ impl TracingProcessor for TraceCollector {
             error: span
                 .error
                 .as_ref()
-                .map(|e| super::events::truncate(&e.message, 200)),
+                .map(|e| crate::events::truncate(&e.message, 200)),
         };
         if let Some(bucket) = inner.buckets.get_mut(&run) {
             bucket.push(dto);

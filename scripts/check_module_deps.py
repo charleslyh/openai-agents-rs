@@ -51,6 +51,7 @@ EXTENSIONS = {
 }
 FACADE = "openai-agents"
 EXAMPLES = "openai-agents-examples"
+WEB_DEMO = "openai-agents-web-demo"
 CRATE_DEPS: dict[str, set[str]] = {
     CORE: set(),
     "openai-agents-macros": set(),
@@ -63,6 +64,8 @@ CRATE_DEPS: dict[str, set[str]] = {
     # past it into core or an extension. If an example needs something the facade does not
     # re-export, that is a gap in the public API, not a reason to depend on core directly.
     EXAMPLES: {FACADE},
+    # The web demo (`demo/web`) follows the same rule as the examples.
+    WEB_DEMO: {FACADE},
 }
 
 # Third-party crates core must not depend on, and tokio features it must not enable. They are what

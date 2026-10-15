@@ -89,18 +89,34 @@ To talk to a server that needs no key, or to route several servers by model pref
 The examples live in [`examples/`](./examples) — a workspace member of their own, so they depend
 on `openai-agents` the way your project would rather than reaching into the SDK's internals.
 
-| Example | What it shows |
-|---------|----------------|
-| `hello` | Minimal `Agent` + `Runner::run` |
-| `tools` | `#[function_tool]` tool loop |
-| `streamed` | `Runner::run_streamed` events |
-| `handoff` | Multi-agent handoff |
-| `agents_as_tools` | `Agent.as_tool` orchestration |
-| `hitl` | Approvals + `RunState` JSON resume |
-| `always_approve` | Sticky `always_approve` |
-| `structured_output` | `output_type` + typed `final_output_as::<T>()` |
-| `guardrails` | Context, guardrails, `RunHooks` / `AgentHooks` |
-| `web_demo` | Local web console (axum + SSE): one chat box over a multi-agent network, a capability checklist, and a chaos drawer that injects faults |
+Ordered like the web demo's capability checklist, one knowledge point per example.
+
+| Example | Checklist group | What it shows |
+|---------|-----------------|----------------|
+| `hello` | — | Minimal `Agent` + `Runner::run` |
+| `streamed` | Conversation and memory | `Runner::run_streamed` events (streaming output) |
+| `memory` | Conversation and memory | `Session` multi-turn memory |
+| `compaction` | Conversation and memory | `CompactingSession` context compaction |
+| `tools` | Tools | `#[function_tool]` tool loop |
+| `parallel_tools` | Tools | Parallel tool calls |
+| `tool_timeout` | Tools | Tool timeout (`ErrorAsResult` / `RaiseException`) |
+| `tool_recovery` | Tools | Model retries after a tool failure |
+| `mcp` | Tools | Local stdio MCP server with a `ToolFilter` |
+| `handoff` | Multi-agent | Multi-agent handoff |
+| `agents_as_tools` | Multi-agent | `Agent.as_tool` orchestration |
+| `hitl` | Safety and governance | Approvals + `RunState` JSON resume |
+| `always_approve` | Safety and governance | Sticky `always_approve` |
+| `input_guardrail` | Safety and governance | Input guardrail tripwire |
+| `output_guardrail` | Safety and governance | Output guardrail tripwire |
+| `tool_input_guardrail` | Safety and governance | Tool input guardrail (reject a call) |
+| `tool_output_guardrail` | Safety and governance | Tool output guardrail (redact a result) |
+| `structured_output` | Output and observability | `output_type` + typed `final_output_as::<T>()` |
+| `run_context` | Output and observability | `RunOptions::context` read inside a tool |
+| `hooks` | Output and observability | `RunHooks` / `AgentHooks` |
+| `usage` | Output and observability | `RunResult::usage` |
+| `tracing` | Output and observability | Custom `TracingProcessor` |
+| `cancel` | Run control | `RunResultStreaming::cancel` |
+| `settings` | Run control | `ModelSettings` temperature + retry, `max_turns` |
 
 They need `OPENAI_API_KEY` and `OPENAI_MODEL` in the environment; `OPENAI_BASE_URL` and
 `OPENAI_API` (`chat_completions` | `responses`) are optional.
@@ -123,8 +139,12 @@ so a bare `cargo run --example` cannot tell which package you mean.)
 
 ### Web demo
 
+A local web console (axum + SSE) in its own package, [`demo/web`](./demo/web): one chat box over a
+multi-agent network, a capability checklist, and a chaos drawer that injects faults. The
+examples above follow its checklist.
+
 ```bash
-cargo run -p openai-agents-examples --example web_demo
+cargo run -p openai-agents-web-demo
 # then open http://127.0.0.1:3000
 ```
 
@@ -135,15 +155,15 @@ them). Extra variables:
   the demo has no authentication.
 - `DEMO_DEBUG` — `1`/`0`. Controls fault injection and `/api/debug/*`. On by default for loopback
   addresses, off otherwise; when off, injected faults in requests are ignored.
-- `DEMO_DEV` — `1`/`0`. Live reload of `index.html`: the page is read from disk and the browser
+- `DEMO_HMR` — `1`/`0`. Live reload of `index.html`: the page is read from disk and the browser
   reloads when the file changes, so front-end edits need no rebuild. On by default in debug builds
   (plain `cargo run`) while debug features are on; release builds serve the embedded copy.
 
 The page has a capability checklist (22 items, lit up as you trigger them) and a debug drawer with
 fault presets: LLM errors and retry policies, tool delays and failures, summarizer and session
 failures, MCP failures, dropped streams, expired or replayed approvals, and server state reset. The
-MCP demo server is this same executable re-run with `--mcp-server`. The examples package now builds
-the facade's `mcp` feature because of it.
+MCP demo server is this same executable re-run with `--mcp-server`. The demo package builds the
+facade's `mcp` feature because of it.
 
 ## Standard reference
 

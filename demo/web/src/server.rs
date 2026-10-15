@@ -1,16 +1,6 @@
-//! The web demo: an axum server with one chat endpoint that streams a unified agent network as
+//! The HTTP side: an axum server with one chat endpoint that streams a unified agent network as
 //! server-sent events, plus the small control endpoints around it (approve, cancel, conversations,
 //! debug). Fault injection and the debug endpoints are only on when `AppState.debug` says so.
-
-pub mod agents;
-pub mod events;
-pub mod faults;
-pub mod hooks;
-pub mod mcp_server;
-pub mod runner;
-pub mod state;
-pub mod tools;
-pub mod trace;
 
 use std::sync::Arc;
 
@@ -24,14 +14,14 @@ use openai_agents::CancelMode;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use faults::FaultPlan;
-use runner::{spawn_run, RunRequest, Start};
-use state::{new_id, AppState, RunSettings, TakeError};
+use crate::faults::FaultPlan;
+use crate::runner::{spawn_run, RunRequest, Start};
+use crate::state::{new_id, AppState, RunSettings, TakeError};
 
-const INDEX_HTML: &str = include_str!("index.html");
+const INDEX_HTML: &str = include_str!("../assets/index.html");
 /// Where `index.html` lives on disk, for live reload. Fixed at compile time; no request input is
 /// ever part of this path.
-const INDEX_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/web_demo/index.html");
+const INDEX_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/index.html");
 const MAX_BODY_BYTES: usize = 16 * 1024;
 const MAX_INPUT_CHARS: usize = 2_000;
 
@@ -115,10 +105,10 @@ async fn guard_headers(
 
 /// Live reload of `index.html`: serve it from disk and reload the browser when it changes, so a
 /// front-end edit needs no rebuild. On by default in debug builds (which is what `cargo run`
-/// makes) while the debug features are on; `DEMO_DEV=0` / `DEMO_DEV=1` overrides the default.
+/// makes) while the debug features are on; `DEMO_HMR=0` / `DEMO_HMR=1` overrides the default.
 /// Release builds serve the embedded copy.
 pub fn live_reload(app: &AppState) -> bool {
-    let wanted = match std::env::var("DEMO_DEV").ok().as_deref() {
+    let wanted = match std::env::var("DEMO_HMR").ok().as_deref() {
         Some("0" | "false" | "no" | "off") => false,
         Some("1" | "true" | "yes" | "on") => true,
         _ => cfg!(debug_assertions),
@@ -192,7 +182,7 @@ async fn health(State(app): State<Arc<AppState>>) -> Json<Value> {
         "api": app.api,
         "debug": app.debug,
         "mcp": app.mcp.is_some(),
-        "compaction_trigger_items": state::COMPACTION_TRIGGER_ITEMS,
+        "compaction_trigger_items": crate::state::COMPACTION_TRIGGER_ITEMS,
         "input_limit": MAX_INPUT_CHARS,
     }))
 }
@@ -220,8 +210,8 @@ async fn conversation_view(app: &AppState, id: &str) -> Option<Value> {
     Some(json!({
         "conversation_id": id,
         "count": count,
-        "until_compaction": (state::COMPACTION_TRIGGER_ITEMS + 1).saturating_sub(count),
-        "summary": items.iter().find_map(state::summary_of),
+        "until_compaction": (crate::state::COMPACTION_TRIGGER_ITEMS + 1).saturating_sub(count),
+        "summary": items.iter().find_map(crate::state::summary_of),
     }))
 }
 
