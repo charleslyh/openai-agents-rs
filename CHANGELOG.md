@@ -64,6 +64,8 @@ entry will be `0.1.0`.
   environment. `AGENTS_OFFLINE=1` answers locally, so a project can be tried before any key
   exists. New `providers` feature on the facade (off by default) (X-015).
 - `RunOptions::provider(..)` sets the provider that resolves a run's model names.
+- Every preset has a contract test against a mock server: the protocol it speaks, the reasoning
+  field that protocol uses, and a capability it lacks refusing the request instead of sending it.
 - **Breaking:** guardrails return a `Verdict`: `Pass`, `Fail { reason, severity }` or
   `Transform(content)` (continue with rewritten content, e.g. redacted data).
   `GuardrailFunctionOutput::tripwire_triggered` is now a method; `pass` / `trip` keep working and
