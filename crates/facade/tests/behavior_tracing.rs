@@ -79,9 +79,9 @@ async fn run_config_injects_trace_identity() {
     )]));
     let agent = Agent::new("identified").model(model);
     let mut opts = RunOptions::default();
-    opts.run_config.trace_id = Some("trace-custom".into());
-    opts.run_config.group_id = Some("thread-7".into());
-    opts.run_config.trace_metadata = Some(serde_json::json!({"tenant": "acme"}));
+    opts.run_config.tracing.trace_id = Some("trace-custom".into());
+    opts.run_config.tracing.group_id = Some("thread-7".into());
+    opts.run_config.tracing.metadata = Some(serde_json::json!({"tenant": "acme"}));
     let _ = Runner::run(&agent, "hi", opts).await.expect("run");
 
     let traces = proc.traces.lock().unwrap().clone();
@@ -106,7 +106,7 @@ async fn run_config_tracing_disabled_is_authoritative() {
     )]));
     let agent = Agent::new("private").model(model);
     let mut opts = RunOptions::default();
-    opts.run_config.tracing_disabled = true;
+    opts.run_config.tracing.disabled = true;
     let _ = Runner::run(&agent, "hi", opts).await.expect("run");
 
     assert!(proc.spans.lock().unwrap().is_empty());
@@ -154,7 +154,7 @@ async fn spawned_input_guardrail_respects_run_tracing_disabled() {
         .model(off_model)
         .input_guardrails(vec![openai_agents::input_guardrail("spanned", spanned)]);
     let mut opts = RunOptions::default();
-    opts.run_config.tracing_disabled = true;
+    opts.run_config.tracing.disabled = true;
     let before_spans = proc.spans.lock().unwrap().len();
     let before_started = proc.started_spans.lock().unwrap().len();
     let _ = Runner::run(&off_agent, "hi", opts).await.expect("run");
@@ -288,7 +288,7 @@ async fn tracing_disabled_skips_processor() {
     )]));
     let agent = Agent::new("quiet").model(model);
     let mut opts = RunOptions::default();
-    opts.run_config.tracing_disabled = true;
+    opts.run_config.tracing.disabled = true;
     let _ = Runner::run(&agent, "hi", opts).await.expect("run");
 
     assert!(proc.spans.lock().unwrap().is_empty());
@@ -403,7 +403,7 @@ async fn task_and_turn_spans_nest_like_python() {
     // `include_task_and_turn_spans: false` drops both layers and re-parents the rest.
     let proc = InMemoryProcessor::install();
     let mut options = RunOptions::default();
-    options.run_config.tracing = Some(TracingConfig {
+    options.run_config.tracing.config = Some(TracingConfig {
         include_task_and_turn_spans: Some(false),
     });
     Runner::run(&build(), "go", options).await.expect("run");

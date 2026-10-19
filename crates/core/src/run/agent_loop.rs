@@ -99,9 +99,9 @@ pub(crate) async fn run_loop(
     events: Option<EventTx>,
     snapshot: Option<Arc<Mutex<StreamingSnapshot>>>,
 ) -> Result<RunResult, AgentsError> {
-    let run_tracing_disabled = options.run_config.tracing_disabled;
+    let run_tracing_disabled = options.run_config.tracing.disabled;
     let session = options.session.clone();
-    let reasoning_policy = options.run_config.reasoning_item_id_policy;
+    let reasoning_policy = options.run_config.model.reasoning_item_id_policy;
     // Python (`prepare_input_with_session`): stored history comes before the new input.
     let mut writer = session
         .clone()
@@ -110,8 +110,8 @@ pub(crate) async fn run_loop(
         (LoopStart::Fresh { input, .. }, Some(session)) => {
             let (prepared, to_save) = prepare_input_with_session(
                 session.as_ref(),
-                options.run_config.session_settings,
-                options.run_config.session_input_callback.as_ref(),
+                options.run_config.session.settings,
+                options.run_config.session.input_callback.as_ref(),
                 ItemHelpers::input_to_new_input_list(&input),
             )
             .await?;
@@ -193,6 +193,7 @@ async fn run_loop_inner(
     let max_tool_concurrency = validate_run_options(&options)?;
     let workflow = options
         .run_config
+        .tracing
         .workflow_name
         .clone()
         .unwrap_or_else(|| "Agent workflow".into());
@@ -202,9 +203,9 @@ async fn run_loop_inner(
     let _root = crate::tracing::trace_with_config(
         &workflow,
         crate::tracing::TraceConfig {
-            trace_id: options.run_config.trace_id.clone(),
-            group_id: options.run_config.group_id.clone(),
-            metadata: options.run_config.trace_metadata.clone(),
+            trace_id: options.run_config.tracing.trace_id.clone(),
+            group_id: options.run_config.tracing.group_id.clone(),
+            metadata: options.run_config.tracing.metadata.clone(),
         },
     );
 

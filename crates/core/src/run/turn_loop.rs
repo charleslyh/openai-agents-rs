@@ -252,7 +252,7 @@ impl<'a> TurnLoop<'a> {
         // Python: the run is wrapped in a task span; each agent gets an agent span (replaced on
         // handoff) and each turn a turn span, unless `tracing.include_task_and_turn_spans` is off.
         let use_task_and_turn_spans =
-            TracingConfig::includes_task_and_turn_spans(options.run_config.tracing.as_ref());
+            TracingConfig::includes_task_and_turn_spans(options.run_config.tracing.config.as_ref());
         let task_guard = use_task_and_turn_spans.then(|| task_span(&workflow));
 
         let starting_agent_name = starting_agent.name.clone();
@@ -467,7 +467,7 @@ impl<'a> TurnLoop<'a> {
             // `tokio::spawn` does not inherit task-locals, so the run's tracing switch is
             // re-established inside the task; otherwise spans opened by a guardrail escape
             // `RunConfig.tracing_disabled`.
-            let disabled = self.options.run_config.tracing_disabled;
+            let disabled = self.options.run_config.tracing.disabled;
             let fut = self.guardrails.runner(parallel, &self.context);
             self.guardrails.pending = Some(AbortOnDrop(tokio::spawn(
                 crate::tracing::with_run_tracing_disabled(disabled, fut),
@@ -525,7 +525,7 @@ impl<'a> TurnLoop<'a> {
         };
         // Python (`maybe_filter_model_input`): the filter runs before the LLM hooks and only
         // affects this call.
-        let data = match &self.options.run_config.call_model_input_filter {
+        let data = match &self.options.run_config.model.input_filter {
             Some(filter) => {
                 filter(CallModelData {
                     model_data: data,
@@ -581,7 +581,7 @@ impl<'a> TurnLoop<'a> {
         // `ModelTracing.ENABLED_WITHOUT_DATA`, so adapters drop payloads.
         let tracing_mode = if crate::tracing::tracing_disabled() {
             ModelTracing::Disabled
-        } else if self.options.run_config.trace_include_sensitive_data {
+        } else if self.options.run_config.tracing.include_sensitive_data {
             ModelTracing::Enabled
         } else {
             ModelTracing::EnabledWithoutData
@@ -699,7 +699,7 @@ impl<'a> TurnLoop<'a> {
                     self.current_input_items
                         .push(apply_reasoning_item_id_policy(
                             item,
-                            self.options.run_config.reasoning_item_id_policy,
+                            self.options.run_config.model.reasoning_item_id_policy,
                         ));
                 }
                 Ok(None)
@@ -817,7 +817,7 @@ impl<'a> TurnLoop<'a> {
             &self.events,
             &mut self.generated_items,
             &mut self.current_input_items,
-            self.options.run_config.reasoning_item_id_policy,
+            self.options.run_config.model.reasoning_item_id_policy,
         )
         .await;
         Ok(None)

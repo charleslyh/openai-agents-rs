@@ -266,7 +266,7 @@ async fn parity_scenarios_match_expect_and_golden() {
 
         let mut options = RunOptions::default();
         if let Some(run_config) = &scenario.run_config {
-            options.run_config.nest_handoff_history = run_config.nest_handoff_history;
+            options.run_config.handoff.nest_history = run_config.nest_handoff_history;
         }
         if let Some(max_turns) = scenario.max_turns {
             options.max_turns = Some(max_turns);

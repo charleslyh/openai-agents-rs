@@ -41,7 +41,7 @@ Contributors: each crate carries an `AGENTS.md` with its boundary rules and the 
 knowing before you change it (`crates/core/AGENTS.md`, `crates/mcp/AGENTS.md`, and so on).
 
 With `default-features = false` the build contains no HTTP client. A model *name* then needs a
-provider you set yourself (`RunConfig.model_provider`, or `set_default_model_provider_factory`).
+provider you set yourself (`RunConfig.model.provider`, or `set_default_model_provider_factory`).
 With `openai`, `Runner` installs the OpenAI provider on its first call, so `OPENAI_API_KEY`
 (or `OPENAI_BASE_URL`) is enough. See D-047 in [`docs/DEVIATIONS.md`](./docs/DEVIATIONS.md).
 
@@ -241,7 +241,7 @@ only OpenAI accepts, such as `stream_options`, are sent to other servers only wh
 Long chats and tool-heavy runs outgrow the model's context. Two provider-neutral tools:
 
 - **Per call (history untouched):** `ToolOutputTrimmer` shortens old tool outputs and
-  `ContextWindowTrimmer` drops the oldest turns; set one as `RunConfig.call_model_input_filter`
+  `ContextWindowTrimmer` drops the oldest turns; set one as `RunConfig.model.input_filter`
   (combine with `chain_input_filters`).
 - **Stored history:** wrap a session in `CompactingSession` with a `ModelSummarizer` (any model).
   Old turns become a short summary once the history passes a token or item trigger.

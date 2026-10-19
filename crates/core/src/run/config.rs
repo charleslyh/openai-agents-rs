@@ -3,22 +3,15 @@
 
 use std::sync::Arc;
 
-use serde_json::Value;
-
 use crate::agent::Agent;
-use crate::error::AgentsError;
 use crate::extensions::Extensions;
 use crate::guardrail::{InputGuardrail, OutputGuardrail};
-use crate::handoffs::{HandoffHistoryMapper, HandoffInputFilter};
-use crate::items::ReasoningItemIdPolicy;
 use crate::lifecycle::RunHooks;
-use crate::memory::{Session, SessionInputCallback, SessionSettings};
-use crate::model::{CallModelData, CallModelInputFilter, ModelInputData, ModelProvider, ModelRef};
-use crate::model_settings::ModelSettings;
+use crate::memory::Session;
 use crate::run_context::{ContextValue, RunContextWrapper};
-use crate::tracing::TracingConfig;
 
 use super::errors::RunErrorHandlers;
+use super::options::{HandoffOptions, ModelOptions, SessionOptions, ToolOptions, TracingOptions};
 
 /// Default max turns (Python: `DEFAULT_MAX_TURNS = 10`).
 pub const DEFAULT_MAX_TURNS: usize = 10;
@@ -92,7 +85,7 @@ pub(crate) fn resolve_blocked_message(
     context: &RunContextWrapper,
 ) -> String {
     let default = OUTPUT_GUARDRAIL_BLOCKED_TOOL_OUTPUT.to_string();
-    let resolved = match &run_config.output_guardrail_blocked_message {
+    let resolved = match &run_config.tools.guardrail_blocked_message {
         None => return default,
         Some(OutputGuardrailBlockedMessage::Text(text)) => Some(text.clone()),
         Some(OutputGuardrailBlockedMessage::Formatter(format)) => {
@@ -139,7 +132,7 @@ pub enum ToolErrorKind {
     ToolNotFound,
 }
 
-/// Data passed to [`RunConfig::tool_error_formatter`] (Python: `ToolErrorFormatterArgs`).
+/// Data passed to [`ToolOptions::error_formatter`](super::ToolOptions::error_formatter) (Python: `ToolErrorFormatterArgs`).
 ///
 /// Python also passes `tool_type`; every Rust tool is a function tool, so it is omitted.
 #[derive(Debug, Clone)]
@@ -178,139 +171,79 @@ pub enum ToolNotFoundBehavior {
     ReturnErrorToModel,
 }
 
-/// Run configuration subset (Python: `RunConfig`).
+/// Run configuration (Python: `RunConfig`), grouped by topic.
 ///
-/// Build one with `RunConfig { field, ..Default::default() }`; the `..Default::default()` tail is
-/// what keeps a caller compiling when a field is added, so always include it.
-#[derive(Clone)]
+/// Start from `RunConfig::default()` and set what you need, either through the chain methods
+/// (`RunConfig::default().with_tracing(TracingOptions::new().workflow_name("support"))`) or by
+/// assigning fields (`config.model.settings = Some(settings)`). The struct is
+/// `#[non_exhaustive]`, so a literal with `..Default::default()` only works inside this crate.
+#[derive(Clone, Default, Debug)]
+#[non_exhaustive]
 pub struct RunConfig {
-    /// Override model for the whole run: an instance, or a name resolved by
-    /// [`model_provider`](Self::model_provider) (Python: `RunConfig.model`).
-    pub model: Option<ModelRef>,
-    /// Provider used to resolve string model names (Python: `RunConfig.model_provider`).
-    ///
-    /// When unset, names go through the default set with [`crate::set_default_model_provider_factory`].
-    pub model_provider: Option<Arc<dyn ModelProvider>>,
-    /// Override model settings (merged over agent settings).
-    pub model_settings: Option<ModelSettings>,
-    /// Disable tracing for this run.
-    pub tracing_disabled: bool,
-    /// Workflow name for the root trace.
-    pub workflow_name: Option<String>,
-    /// Reuse this trace id instead of generating one (Python: `RunConfig.trace_id`).
-    pub trace_id: Option<String>,
-    /// Grouping identifier for the trace, e.g. a chat thread id (Python: `RunConfig.group_id`).
-    pub group_id: Option<String>,
-    /// Extra metadata attached to the trace (Python: `RunConfig.trace_metadata`).
-    pub trace_metadata: Option<Value>,
-    /// Whether tool inputs/outputs and model payloads may be recorded
-    /// (Python: `RunConfig.trace_include_sensitive_data`).
-    pub trace_include_sensitive_data: bool,
+    /// Model selection, settings and input filtering.
+    pub model: ModelOptions,
+    /// Trace naming, ids and sensitive-data policy.
+    pub tracing: TracingOptions,
+    /// How session history joins the run.
+    pub session: SessionOptions,
+    /// What a handoff passes on.
+    pub handoff: HandoffOptions,
+    /// How tool calls are executed and reported.
+    pub tools: ToolOptions,
     /// Input guardrails applied to the run (Python: `RunConfig.input_guardrails`).
     pub input_guardrails: Vec<InputGuardrail>,
     /// Output guardrails applied to the run (Python: `RunConfig.output_guardrails`).
     pub output_guardrails: Vec<OutputGuardrail>,
-    /// Behavior when the model calls an unknown tool (Python: `RunConfig.tool_not_found_behavior`).
-    pub tool_not_found_behavior: ToolNotFoundBehavior,
-    /// Execution settings for local function tools (Python: `RunConfig.tool_execution`).
-    pub tool_execution: Option<ToolExecutionConfig>,
-    /// Merge session history with the new input (Python: `RunConfig.session_input_callback`).
-    pub session_input_callback: Option<SessionInputCallback>,
-    /// Session read settings for this run, overlaid on the session's own
-    /// (Python: `RunConfig.session_settings`).
-    pub session_settings: Option<SessionSettings>,
-    /// Tracing settings for this run (Python: `RunConfig.tracing`).
-    pub tracing: Option<TracingConfig>,
-    /// Placeholder shown instead of a tool output that an output guardrail rejected
-    /// (Python: `RunConfig.output_guardrail_blocked_message`).
-    pub output_guardrail_blocked_message: Option<OutputGuardrailBlockedMessage>,
-    /// Whether reasoning item ids are kept in the input the runner builds
-    /// (Python: `RunConfig.reasoning_item_id_policy`; `None` preserves them).
-    pub reasoning_item_id_policy: Option<ReasoningItemIdPolicy>,
-    /// Collision handling for tool and handoff names (Python: `tool_name_collision_policy`).
-    pub tool_name_collision_policy: ToolNameCollisionPolicy,
-    /// Customize approval-rejection and tool-not-found messages
-    /// (Python: `RunConfig.tool_error_formatter`).
-    pub tool_error_formatter: Option<ToolErrorFormatter>,
-    /// Compact earlier history into summary messages when handing off
-    /// (Python: `RunConfig.nest_handoff_history`, opt-in, default false).
-    pub nest_handoff_history: bool,
-    /// Custom mapper for the nested history (Python: `RunConfig.handoff_history_mapper`);
-    /// only used when nesting is on.
-    pub handoff_history_mapper: Option<HandoffHistoryMapper>,
-    /// Default filter for every handoff without its own (Python: `RunConfig.handoff_input_filter`).
-    pub handoff_input_filter: Option<HandoffInputFilter>,
-    /// Edit the model input just before each call (Python: `RunConfig.call_model_input_filter`).
-    pub call_model_input_filter: Option<CallModelInputFilter>,
 }
 
 impl RunConfig {
-    /// Install a [`ToolErrorFormatter`] from an async closure.
-    pub fn with_tool_error_formatter<F, Fut>(mut self, f: F) -> Self
-    where
-        F: Fn(ToolErrorFormatterArgs) -> Fut + Send + Sync + 'static,
-        Fut: std::future::Future<Output = Option<String>> + Send + 'static,
-    {
-        self.tool_error_formatter = Some(Arc::new(move |args| Box::pin(f(args))));
+    /// Replace the model group.
+    #[must_use]
+    pub fn with_model(mut self, model: ModelOptions) -> Self {
+        self.model = model;
         self
     }
 
-    /// Install a [`CallModelInputFilter`] from an async closure.
-    pub fn with_call_model_input_filter<F, Fut>(mut self, f: F) -> Self
-    where
-        F: Fn(CallModelData) -> Fut + Send + Sync + 'static,
-        Fut: std::future::Future<Output = Result<ModelInputData, AgentsError>> + Send + 'static,
-    {
-        self.call_model_input_filter = Some(Arc::new(move |data| Box::pin(f(data))));
+    /// Replace the tracing group.
+    #[must_use]
+    pub fn with_tracing(mut self, tracing: TracingOptions) -> Self {
+        self.tracing = tracing;
         self
     }
-}
 
-impl Default for RunConfig {
-    fn default() -> Self {
-        Self {
-            model: None,
-            model_provider: None,
-            model_settings: None,
-            tracing_disabled: false,
-            workflow_name: None,
-            trace_id: None,
-            group_id: None,
-            trace_metadata: None,
-            trace_include_sensitive_data: default_trace_include_sensitive_data(),
-            input_guardrails: Vec::new(),
-            output_guardrails: Vec::new(),
-            tool_not_found_behavior: ToolNotFoundBehavior::default(),
-            call_model_input_filter: None,
-            handoff_input_filter: None,
-            nest_handoff_history: false,
-            handoff_history_mapper: None,
-            tool_error_formatter: None,
-            tool_name_collision_policy: ToolNameCollisionPolicy::default(),
-            tool_execution: None,
-            reasoning_item_id_policy: None,
-            tracing: None,
-            output_guardrail_blocked_message: None,
-            session_input_callback: None,
-            session_settings: None,
-        }
+    /// Replace the session group.
+    #[must_use]
+    pub fn with_session(mut self, session: SessionOptions) -> Self {
+        self.session = session;
+        self
     }
-}
 
-impl std::fmt::Debug for RunConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RunConfig")
-            .field("model_bound", &self.model.is_some())
-            .field("model_settings", &self.model_settings)
-            .field("tracing_disabled", &self.tracing_disabled)
-            .field("workflow_name", &self.workflow_name)
-            .field("trace_id", &self.trace_id)
-            .field("group_id", &self.group_id)
-            .field(
-                "trace_include_sensitive_data",
-                &self.trace_include_sensitive_data,
-            )
-            .finish()
+    /// Replace the handoff group.
+    #[must_use]
+    pub fn with_handoff(mut self, handoff: HandoffOptions) -> Self {
+        self.handoff = handoff;
+        self
+    }
+
+    /// Replace the tool group.
+    #[must_use]
+    pub fn with_tools(mut self, tools: ToolOptions) -> Self {
+        self.tools = tools;
+        self
+    }
+
+    /// Add an input guardrail for the whole run.
+    #[must_use]
+    pub fn input_guardrail(mut self, guardrail: InputGuardrail) -> Self {
+        self.input_guardrails.push(guardrail);
+        self
+    }
+
+    /// Add an output guardrail for the whole run.
+    #[must_use]
+    pub fn output_guardrail(mut self, guardrail: OutputGuardrail) -> Self {
+        self.output_guardrails.push(guardrail);
+        self
     }
 }
 
@@ -350,10 +283,8 @@ impl Default for RunOptions {
     fn default() -> Self {
         Self {
             max_turns: Some(DEFAULT_MAX_TURNS),
-            run_config: RunConfig {
-                workflow_name: Some("Agent workflow".into()),
-                ..Default::default()
-            },
+            run_config: RunConfig::default()
+                .with_tracing(TracingOptions::new().workflow_name("Agent workflow")),
             previous_response_id: None,
             conversation_id: None,
             context: None,

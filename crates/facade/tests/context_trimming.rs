@@ -255,7 +255,7 @@ async fn filters_apply_to_the_model_call_only_and_chain() {
         ContextWindowTrimmer::new().max_turns(1).into_filter(),
     ]);
     let mut options = RunOptions::default();
-    options.run_config.call_model_input_filter = Some(filter);
+    options.run_config.model.input_filter = Some(filter);
 
     let input = vec![user("old question"), assistant("old answer"), user("new")];
     let result = Runner::run(&agent, input, options).await.expect("run");

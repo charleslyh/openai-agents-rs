@@ -218,7 +218,7 @@ async fn unknown_tool_can_return_error_to_model() {
     ]));
     let agent = Agent::new("a").model(model);
     let mut options = RunOptions::default();
-    options.run_config.tool_not_found_behavior = ToolNotFoundBehavior::ReturnErrorToModel;
+    options.run_config.tools.not_found_behavior = ToolNotFoundBehavior::ReturnErrorToModel;
     let result = Runner::run(&agent, "go", options).await.expect("run");
     assert_eq!(result.final_output_as_str(), Some("fine"));
     let outputs = tool_output_texts(&result.new_items);
@@ -248,7 +248,7 @@ async fn custom_tool_use_behavior_can_finalize() {
 /// D-026: `call_model_input_filter` rewrites one call without touching the run history.
 #[tokio::test]
 async fn call_model_input_filter_edits_input_and_instructions() {
-    use openai_agents::{ModelInputData, RunConfig};
+    use openai_agents::ModelInputData;
     let model = Arc::new(ScriptedModel::new([ModelStep::from(
         ItemHelpers::text_message("ok"),
     )]));
@@ -256,7 +256,7 @@ async fn call_model_input_filter_edits_input_and_instructions() {
         .model(model.clone())
         .instructions("original");
     let mut options = RunOptions::default();
-    options.run_config = RunConfig::default().with_call_model_input_filter(|data| async move {
+    options.run_config.model = openai_agents::ModelOptions::new().input_filter(|data| async move {
         let mut input = data.model_data.input;
         input.push(json!({"role": "user", "content": "extra"}));
         Ok(ModelInputData {
@@ -318,9 +318,10 @@ async fn run_level_handoff_filter_and_server_managed_conversation() {
             .handoffs(vec![handoff(b)])
     };
     let mut options = RunOptions::default();
-    options.run_config = RunConfig {
-        handoff_input_filter: Some(handoff_input_filter(|data| async move { Ok(data) })),
-        ..RunConfig::default()
+    options.run_config = {
+        let mut c = RunConfig::default();
+        c.handoff.input_filter = Some(handoff_input_filter(|data| async move { Ok(data) }));
+        c
     };
     Runner::run(&build(), "hi", options.clone())
         .await
@@ -602,13 +603,15 @@ fn usage_add_tracks_details_and_entries() {
 async fn tool_error_formatter_rewrites_default_messages() {
     use openai_agents::{RunConfig, ToolErrorKind, ToolNotFoundBehavior};
     let formatter_config = || {
-        let mut config = RunConfig::default().with_tool_error_formatter(|args| async move {
-            match args.kind {
-                ToolErrorKind::ApprovalRejected => Some(format!("denied {}", args.tool_name)),
-                ToolErrorKind::ToolNotFound => None,
-            }
-        });
-        config.tool_not_found_behavior = ToolNotFoundBehavior::ReturnErrorToModel;
+        let mut config = RunConfig::default();
+        config.tools = openai_agents::ToolOptions::new()
+            .error_formatter(|args| async move {
+                match args.kind {
+                    ToolErrorKind::ApprovalRejected => Some(format!("denied {}", args.tool_name)),
+                    ToolErrorKind::ToolNotFound => None,
+                }
+            })
+            .not_found_behavior(ToolNotFoundBehavior::ReturnErrorToModel);
         config
     };
     let dangerous = || FunctionTool::constant("danger", "d", "ran").with_needs_resolution(true);
@@ -681,9 +684,10 @@ async fn tool_name_collision_policy() {
         ItemHelpers::text_message("ok"),
     )]));
     let mut options = RunOptions::default();
-    options.run_config = RunConfig {
-        tool_name_collision_policy: ToolNameCollisionPolicy::Error,
-        ..RunConfig::default()
+    options.run_config = {
+        let mut c = RunConfig::default();
+        c.tools.name_collision_policy = ToolNameCollisionPolicy::Error;
+        c
     };
     let err = Runner::run(&build(model.clone()), "hi", options)
         .await
@@ -783,9 +787,10 @@ async fn nest_handoff_history_summarizes_the_transcript() {
         ModelStep::from(ItemHelpers::function_tool_call("transfer_to_b", "{}", "h1")),
     ]);
     let mut options = RunOptions::default();
-    options.run_config = RunConfig {
-        nest_handoff_history: true,
-        ..RunConfig::default()
+    options.run_config = {
+        let mut c = RunConfig::default();
+        c.handoff.nest_history = true;
+        c
     };
     Runner::run(&a, "hello", options).await.expect("run");
     let input = b_model.calls()[0].input.clone();
@@ -853,9 +858,10 @@ async fn nest_handoff_history_defaults_and_overrides() {
         })
         .collect();
     let mut options = RunOptions::default();
-    options.run_config = RunConfig {
-        nest_handoff_history: true,
-        ..RunConfig::default()
+    options.run_config = {
+        let mut c = RunConfig::default();
+        c.handoff.nest_history = true;
+        c
     };
     Runner::run(&a, "hi", options).await.expect("run");
     assert_eq!(
@@ -876,12 +882,13 @@ async fn nest_handoff_history_mapper_and_flattening() {
         "h1",
     ))]);
     let mut options = RunOptions::default();
-    options.run_config = RunConfig {
-        nest_handoff_history: true,
-        handoff_history_mapper: Some(Arc::new(|transcript| {
+    options.run_config = {
+        let mut c = RunConfig::default();
+        c.handoff.nest_history = true;
+        c.handoff.history_mapper = Some(Arc::new(|transcript| {
             vec![json!({"role": "user", "content": format!("{} items", transcript.len())})]
-        })),
-        ..RunConfig::default()
+        }));
+        c
     };
     Runner::run(&a, "hi", options).await.expect("run");
     assert_eq!(
@@ -943,11 +950,12 @@ async fn max_function_tool_concurrency_limits_parallelism() {
             .model(model)
             .tools(vec![slow("a"), slow("b"), slow("c")]);
         let mut options = RunOptions::default();
-        options.run_config = RunConfig {
-            tool_execution: Some(ToolExecutionConfig {
+        options.run_config = {
+            let mut c = RunConfig::default();
+            c.tools.execution = Some(ToolExecutionConfig {
                 max_function_tool_concurrency: limit,
-            }),
-            ..RunConfig::default()
+            });
+            c
         };
         async move { Runner::run(&agent, "go", options).await }
     };
@@ -1054,9 +1062,10 @@ async fn session_settings_limit_and_input_callback() {
     )]));
     let mut options = RunOptions::default();
     options.session = Some(session.clone());
-    options.run_config = RunConfig {
-        session_settings: Some(SessionSettings { limit: Some(2) }),
-        ..RunConfig::default()
+    options.run_config = {
+        let mut c = RunConfig::default();
+        c.session.settings = Some(SessionSettings { limit: Some(2) });
+        c
     };
     Runner::run(&Agent::new("a").model(model.clone()), "new", options)
         .await
@@ -1086,16 +1095,17 @@ async fn session_settings_limit_and_input_callback() {
     )]));
     let mut options = RunOptions::default();
     options.session = Some(session.clone());
-    options.run_config = RunConfig {
-        session_input_callback: Some(Arc::new(|history, new_items| {
+    options.run_config = {
+        let mut c = RunConfig::default();
+        c.session.input_callback = Some(Arc::new(|history, new_items| {
             Box::pin(async move {
                 let mut out = vec![history.last().cloned().unwrap()];
                 out.push(json!({"role": "user", "content": "note"}));
                 out.extend(new_items);
                 Ok(out)
             })
-        })),
-        ..RunConfig::default()
+        }));
+        c
     };
     Runner::run(&Agent::new("a").model(model.clone()), "new", options)
         .await
@@ -1265,9 +1275,10 @@ async fn reasoning_item_id_policy_omit_strips_reasoning_ids() {
             .model(model.clone())
             .tools(vec![FunctionTool::constant("echo", "e", "x")]);
         let mut options = RunOptions::default();
-        options.run_config = RunConfig {
-            reasoning_item_id_policy: policy,
-            ..RunConfig::default()
+        options.run_config = {
+            let mut c = RunConfig::default();
+            c.model.reasoning_item_id_policy = policy;
+            c
         };
         async move {
             let result = Runner::run(&agent, "go", options).await.expect("run");
@@ -1341,9 +1352,10 @@ async fn output_guardrail_blocked_message_replaces_tool_output() {
             other => panic!("expected a tripwire, got {other:?}"),
         }
     };
-    let with = |message| RunConfig {
-        output_guardrail_blocked_message: message,
-        ..RunConfig::default()
+    let with = |message| {
+        let mut c = RunConfig::default();
+        c.tools.guardrail_blocked_message = message;
+        c
     };
 
     let r = tripped(RunConfig::default(), true).await;
@@ -1715,11 +1727,12 @@ async fn blocked_tool_output_is_withheld_from_the_session_too() {
         "every output of the turn is withheld, not only the final one"
     );
 
-    let custom = RunConfig {
-        output_guardrail_blocked_message: Some(openai_agents::OutputGuardrailBlockedMessage::Text(
-            "[blocked]".into(),
-        )),
-        ..RunConfig::default()
+    let custom = {
+        let mut c = RunConfig::default();
+        c.tools.guardrail_blocked_message = Some(
+            openai_agents::OutputGuardrailBlockedMessage::Text("[blocked]".into()),
+        );
+        c
     };
     let items = run(
         vec![ModelStep::from(call("secret", "c1"))],

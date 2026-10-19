@@ -34,11 +34,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .tools(vec![get_weather()]);
 
     let mut run_config = RunConfig::default();
-    run_config.model_settings = Some(ModelSettings {
+    run_config.model.settings = Some(ModelSettings {
         parallel_tool_calls: Some(true),
         ..Default::default()
     });
-    run_config.tool_execution = Some(ToolExecutionConfig {
+    run_config.tools.execution = Some(ToolExecutionConfig {
         max_function_tool_concurrency: Some(4),
     });
     let mut options = RunOptions::default();

@@ -27,7 +27,7 @@ impl ModelProvider for ScriptedProvider {
 async fn agent_model_name_resolves_via_provider() {
     let agent = Agent::new("named").model_name("scripted-model");
     let mut opts = RunOptions::default();
-    opts.run_config.model_provider = Some(Arc::new(ScriptedProvider));
+    opts.run_config.model.provider = Some(Arc::new(ScriptedProvider));
 
     let result = Runner::run(&agent, "go", opts).await.expect("run");
     assert_eq!(result.final_output_as_str(), Some("from provider"));
@@ -38,8 +38,8 @@ async fn agent_model_name_resolves_via_provider() {
 async fn run_config_model_name_resolves_via_provider() {
     let agent = Agent::new("plain");
     let mut opts = RunOptions::default();
-    opts.run_config.model_provider = Some(Arc::new(ScriptedProvider));
-    opts.run_config.model = Some(ModelRef::Name("scripted-model".into()));
+    opts.run_config.model.provider = Some(Arc::new(ScriptedProvider));
+    opts.run_config.model.model_ref = Some(ModelRef::Name("scripted-model".into()));
 
     let result = Runner::run(&agent, "go", opts).await.expect("run");
     assert_eq!(result.final_output_as_str(), Some("from provider"));
@@ -53,8 +53,9 @@ async fn run_config_model_instance_wins() {
     )]));
     let agent = Agent::new("plain");
     let mut opts = RunOptions::default();
-    opts.run_config.model_provider = Some(Arc::new(ScriptedProvider));
-    opts.run_config.model = Some(ModelRef::Instance(model as Arc<dyn openai_agents::Model>));
+    opts.run_config.model.provider = Some(Arc::new(ScriptedProvider));
+    opts.run_config.model.model_ref =
+        Some(ModelRef::Instance(model as Arc<dyn openai_agents::Model>));
 
     let result = Runner::run(&agent, "go", opts).await.expect("run");
     assert_eq!(result.final_output_as_str(), Some("instance"));

@@ -47,10 +47,11 @@ use super::errors::{
 pub(crate) fn validate_run_options(options: &RunOptions) -> Result<Option<usize>, AgentsError> {
     let max_tool_concurrency = options
         .run_config
-        .tool_execution
+        .tools
+        .execution
         .and_then(|c| c.max_function_tool_concurrency);
     if matches!(
-        &options.run_config.output_guardrail_blocked_message,
+        &options.run_config.tools.guardrail_blocked_message,
         Some(OutputGuardrailBlockedMessage::Text(text)) if text.is_empty()
     ) {
         return Err(UserError::new("output_guardrail_blocked_message must be non-empty").into());
@@ -245,7 +246,7 @@ pub(crate) async fn handle_max_turns_exceeded(
         done_items,
         end.raw_responses,
         end.agent,
-        end.options.run_config.reasoning_item_id_policy,
+        end.options.run_config.model.reasoning_item_id_policy,
     );
     let Some(handled) = invoke_run_error_handler(
         end.options.error_handlers.max_turns.clone(),

@@ -75,7 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .tools(vec![get_city_metrics()]);
 
     let mut run_config = RunConfig::default();
-    run_config.workflow_name = Some("tracing-example".into());
+    run_config.tracing.workflow_name = Some("tracing-example".into());
     let mut options = RunOptions::default();
     options.run_config = run_config;
 

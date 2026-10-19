@@ -165,7 +165,7 @@ pub(crate) async fn format_tool_error(
     call_id: &str,
     default_message: String,
 ) -> String {
-    let Some(formatter) = &run_config.tool_error_formatter else {
+    let Some(formatter) = &run_config.tools.error_formatter else {
         return default_message;
     };
     formatter(ToolErrorFormatterArgs {
@@ -200,7 +200,7 @@ pub(crate) async fn plan_tool_calls(
         let Some(tool) = tools.iter().find(|t| t.name == name).cloned() else {
             // Python: `ModelBehaviorError("Tool X not found in agent Y")`, unless the run asks
             // for the error to be returned to the model.
-            if run_config.tool_not_found_behavior != ToolNotFoundBehavior::ReturnErrorToModel {
+            if run_config.tools.not_found_behavior != ToolNotFoundBehavior::ReturnErrorToModel {
                 return Err(ModelError::Behavior(format!(
                     "Tool {name} not found in agent {}",
                     agent.name

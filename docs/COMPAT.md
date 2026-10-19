@@ -6,6 +6,10 @@ The SDK is a Cargo workspace. `openai-agents` (the facade, `crates/facade`) re-e
 `openai_agents_core::*` plus the optional crates, so every path below is reachable from
 `openai_agents::…` without naming the crate — except where a row says otherwise.
 
+`RunConfig` rows below use Python's flat field names; the Rust fields are grouped by topic
+(`config.model.settings`, `config.tracing.workflow_name`, ...). See the table in
+[MIGRATION-FROM-PYTHON.md](./MIGRATION-FROM-PYTHON.md#runconfig-groups).
+
 | Python (`agents.*`) | Rust crate | Where |
 | --- | --- | --- |
 | `agent`, `agent_output`, `result`, `run`, `run_config`, `run_state`, `run_context` | `openai-agents-core` | `crates/core/src/{agent,agent_output,result,run_context}` 与 `crates/core/src/run/{mod,config}.rs`、`crates/core/src/run_state/` |

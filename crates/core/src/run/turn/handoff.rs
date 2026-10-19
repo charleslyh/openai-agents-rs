@@ -63,7 +63,7 @@ pub(crate) async fn perform_handoff(
     for item in &response.output {
         current_input_items.push(crate::items::apply_reasoning_item_id_policy(
             item,
-            options.run_config.reasoning_item_id_policy,
+            options.run_config.model.reasoning_item_id_policy,
         ));
     }
     for (_tool, output, call_id) in tool_results {
@@ -151,12 +151,12 @@ pub(crate) async fn perform_handoff(
     let input_filter = h
         .input_filter
         .clone()
-        .or_else(|| options.run_config.handoff_input_filter.clone());
+        .or_else(|| options.run_config.handoff.input_filter.clone());
     let server_managed =
         options.previous_response_id.is_some() || options.conversation_id.is_some();
     let mut should_nest = h
         .nest_handoff_history
-        .unwrap_or(options.run_config.nest_handoff_history);
+        .unwrap_or(options.run_config.handoff.nest_history);
     if input_filter.is_some() && server_managed {
         return Err(UserError::new(
             "Server-managed conversations do not support handoff input filters. \
@@ -185,7 +185,7 @@ pub(crate) async fn perform_handoff(
         // Python: an explicit filter replaces automatic nesting.
         let next = match input_filter {
             Some(filter) => filter(data).await?,
-            None => nest_handoff_history(data, options.run_config.handoff_history_mapper.as_ref()),
+            None => nest_handoff_history(data, options.run_config.handoff.history_mapper.as_ref()),
         };
         *current_input_items = next
             .input_history

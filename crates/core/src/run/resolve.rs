@@ -81,15 +81,15 @@ pub(crate) fn resolve_model(
     agent: &Agent,
     run_config: &RunConfig,
 ) -> Result<Arc<dyn Model>, AgentsError> {
-    let provider: &Arc<dyn ModelProvider> = match &run_config.model_provider {
+    let provider: &Arc<dyn ModelProvider> = match &run_config.model.provider {
         Some(p) => p,
         None => default_provider(),
     };
 
-    if let Some(ModelRef::Instance(m)) = &run_config.model {
+    if let Some(ModelRef::Instance(m)) = &run_config.model.model_ref {
         return Ok(Arc::clone(m));
     }
-    if let Some(ModelRef::Name(name)) = &run_config.model {
+    if let Some(ModelRef::Name(name)) = &run_config.model.model_ref {
         return Ok(provider.get_model(Some(name))?);
     }
     if let Some(m) = &agent.model {

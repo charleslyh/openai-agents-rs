@@ -408,3 +408,44 @@ async fn to_input_list_includes_new_items() {
     let list = result.to_input_list();
     assert!(list.len() >= 2);
 }
+
+/// `RunConfig` is built from topic groups; the chain methods and field assignment agree.
+#[test]
+fn run_config_groups_chain_and_assign_alike() {
+    use openai_agents::{HandoffOptions, ModelOptions, ModelSettings, RunConfig, TracingOptions};
+
+    let settings = ModelSettings {
+        temperature: Some(0.2),
+        ..Default::default()
+    };
+    let chained = RunConfig::default()
+        .with_model(ModelOptions::new().settings(settings.clone()))
+        .with_tracing(
+            TracingOptions::new()
+                .workflow_name("support")
+                .group_id("thread-1")
+                .disabled(true),
+        )
+        .with_handoff(HandoffOptions::new().nest_history(true));
+
+    let mut assigned = RunConfig::default();
+    assigned.model.settings = Some(settings);
+    assigned.tracing.workflow_name = Some("support".into());
+    assigned.tracing.group_id = Some("thread-1".into());
+    assigned.tracing.disabled = true;
+    assigned.handoff.nest_history = true;
+
+    assert_eq!(format!("{chained:?}"), format!("{assigned:?}"));
+    assert!(format!("{chained:?}").contains("support"));
+}
+
+/// `RunOptions::default` names the workflow; the grouped default tracing keeps that.
+#[test]
+fn run_options_default_names_the_workflow() {
+    let options = openai_agents::RunOptions::default();
+    assert_eq!(
+        options.run_config.tracing.workflow_name.as_deref(),
+        Some("Agent workflow")
+    );
+    assert!(!options.run_config.tracing.disabled);
+}

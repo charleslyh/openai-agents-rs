@@ -20,7 +20,7 @@ The full support matrix is [COMPAT.md](./COMPAT.md); the reasoning behind each d
 | `input_guardrails` / `output_guardrails` | `input_guardrail(name, fn)` / `output_guardrail(name, fn)` |
 | `RunHooks` / `AgentHooks` subclasses | `impl RunHooks` / `impl AgentHooks` (every method has a no-op default) |
 | `SQLiteSession` | `SqliteSession` (feature `sqlite`; **the same database file works in both SDKs**, D-038) |
-| `RunConfig(...)` / `RunOptions(...)` | `RunConfig { field, ..Default::default() }` — always keep the `..Default::default()` tail |
+| `RunConfig(...)` / `RunOptions(...)` | `RunConfig::default()` plus grouped fields or chain methods, see [RunConfig groups](#runconfig-groups). `RunConfig` is `#[non_exhaustive]`, so a struct literal does not compile outside the crate |
 | `ModelSettings(...)` | `ModelSettings { .. }` (22 fields; 3 OpenAI-only ones are not ported, D-017) |
 | `Runner.run(agent, state)` after HITL | `Runner::run_state(&agent, state, opts)` |
 | `ScriptedModel` / `ModelStep` | `ScriptedModel` / `ModelStep` in `openai_agents::testing` |
@@ -73,3 +73,34 @@ Not a migration aid, but worth knowing before you decide it is a downgrade:
   cannot blow up the process.
 - The stdio MCP client clears the child's environment down to a safe allow-list instead of
   inheriting your API keys (D-041).
+
+## RunConfig groups
+
+Python's `RunConfig` is one flat dataclass; here its fields are grouped by topic. Each group is a
+`#[non_exhaustive]` struct with chain methods, and `RunConfig` has `with_model` / `with_tracing` /
+`with_session` / `with_handoff` / `with_tools`.
+
+| Python `RunConfig` field | Rust |
+| --- | --- |
+| `model` | `config.model.model_ref` (chain: `ModelOptions::model(..)`) |
+| `model_provider` | `config.model.provider` |
+| `model_settings` | `config.model.settings` |
+| `reasoning_item_id_policy` | `config.model.reasoning_item_id_policy` |
+| `call_model_input_filter` | `config.model.input_filter` (chain: `ModelOptions::input_filter(..)`) |
+| `tracing_disabled` | `config.tracing.disabled` |
+| `workflow_name`, `trace_id`, `group_id` | `config.tracing.workflow_name`, `.trace_id`, `.group_id` |
+| `trace_metadata` | `config.tracing.metadata` |
+| `trace_include_sensitive_data` | `config.tracing.include_sensitive_data` |
+| `tracing` | `config.tracing.config` |
+| `session_input_callback`, `session_settings` | `config.session.input_callback`, `.settings` |
+| `nest_handoff_history`, `handoff_history_mapper`, `handoff_input_filter` | `config.handoff.nest_history`, `.history_mapper`, `.input_filter` |
+| `tool_not_found_behavior`, `tool_execution`, `tool_name_collision_policy` | `config.tools.not_found_behavior`, `.execution`, `.name_collision_policy` |
+| `tool_error_formatter`, `output_guardrail_blocked_message` | `config.tools.error_formatter`, `.guardrail_blocked_message` |
+| `input_guardrails`, `output_guardrails` | `config.input_guardrails`, `config.output_guardrails` |
+
+```rust
+let mut options = RunOptions::new().with(tenant);
+options.run_config = RunConfig::default()
+    .with_model(ModelOptions::new().settings(settings))
+    .with_tracing(TracingOptions::new().workflow_name("support"));
+```

@@ -86,11 +86,12 @@ pub use retry::{
 };
 pub use run::{default_provider, set_default_model_provider_factory};
 pub use run::{
-    default_trace_include_sensitive_data, AsToolConfig, OutputGuardrailBlockedMessage,
-    OutputGuardrailBlockedMessageArgs, RunConfig, RunErrorData, RunErrorHandler,
-    RunErrorHandlerInput, RunErrorHandlerResult, RunErrorHandlers, RunHandledError, RunOptions,
-    Runner, ToolErrorFormatter, ToolErrorFormatterArgs, ToolErrorKind, ToolExecutionConfig,
-    ToolNameCollisionPolicy, ToolNotFoundBehavior, DEFAULT_MAX_TURNS,
+    default_trace_include_sensitive_data, AsToolConfig, HandoffOptions, ModelOptions,
+    OutputGuardrailBlockedMessage, OutputGuardrailBlockedMessageArgs, RunConfig, RunErrorData,
+    RunErrorHandler, RunErrorHandlerInput, RunErrorHandlerResult, RunErrorHandlers,
+    RunHandledError, RunOptions, Runner, SessionOptions, ToolErrorFormatter,
+    ToolErrorFormatterArgs, ToolErrorKind, ToolExecutionConfig, ToolNameCollisionPolicy,
+    ToolNotFoundBehavior, ToolOptions, TracingOptions, DEFAULT_MAX_TURNS,
     OUTPUT_GUARDRAIL_BLOCKED_TOOL_OUTPUT,
 };
 pub use run_context::{ContextValue, RunContextWrapper};

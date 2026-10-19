@@ -996,7 +996,7 @@ async fn openai_provider_resolves_model_name() {
 
     let agent = Agent::new("named").model_name("gpt-test");
     let mut opts = RunOptions::default();
-    opts.run_config.model_provider = Some(Arc::new(provider));
+    opts.run_config.model.provider = Some(Arc::new(provider));
     let result = Runner::run(&agent, "go", opts).await.expect("run");
     assert_eq!(result.final_output_as_str(), Some("via responses"));
 
@@ -1022,7 +1022,7 @@ async fn openai_provider_resolves_model_name() {
     openai_agents::set_default_openai_api(openai_agents::DefaultOpenAiApi::ChatCompletions);
     let provider = OpenAIProvider::new("sk-test", Some(&format!("{}/v1", chat_server.uri())), None);
     let mut opts = RunOptions::default();
-    opts.run_config.model_provider = Some(Arc::new(provider));
+    opts.run_config.model.provider = Some(Arc::new(provider));
     let result = Runner::run(&agent, "go", opts).await.expect("run");
     assert_eq!(result.final_output_as_str(), Some("via chat"));
 

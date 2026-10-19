@@ -68,9 +68,10 @@ async fn a_callback_that_edits_history_in_place_does_not_resave_it() {
             Ok(history)
         })
     });
-    let config = RunConfig {
-        session_input_callback: Some(callback),
-        ..RunConfig::default()
+    let config = {
+        let mut c = RunConfig::default();
+        c.session.input_callback = Some(callback);
+        c
     };
     let history = vec![
         json!({"role": "user", "content": "long long long"}),
@@ -115,9 +116,10 @@ async fn a_limit_that_cuts_a_call_from_its_output_drops_the_output() {
         json!({"role": "user", "content": "a"}),
         json!({"role": "assistant", "content": "b"}),
     ];
-    let config = RunConfig {
-        session_settings: Some(SessionSettings { limit: Some(3) }),
-        ..RunConfig::default()
+    let config = {
+        let mut c = RunConfig::default();
+        c.session.settings = Some(SessionSettings { limit: Some(3) });
+        c
     };
     let (input, _) = run(history, config).await;
     assert_eq!(
@@ -160,9 +162,10 @@ async fn the_hidden_origin_key_never_reaches_the_model_or_the_session() {
             Ok(all)
         })
     });
-    let config = RunConfig {
-        session_input_callback: Some(callback),
-        ..RunConfig::default()
+    let config = {
+        let mut c = RunConfig::default();
+        c.session.input_callback = Some(callback);
+        c
     };
     let (input, stored) = run(vec![json!({"role": "user", "content": "old"})], config).await;
     for item in input.as_array().unwrap().iter().chain(stored.iter()) {

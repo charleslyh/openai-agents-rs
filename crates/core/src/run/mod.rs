@@ -13,6 +13,7 @@ mod as_tool;
 pub mod config;
 pub mod errors;
 mod finalize;
+pub mod options;
 mod resolve;
 mod session_writer;
 pub(crate) mod tools;
@@ -29,6 +30,7 @@ pub use errors::{
     RunErrorData, RunErrorHandler, RunErrorHandlerInput, RunErrorHandlerResult, RunErrorHandlers,
     RunHandledError,
 };
+pub use options::{HandoffOptions, ModelOptions, SessionOptions, ToolOptions, TracingOptions};
 pub use resolve::{default_provider, set_default_model_provider_factory};
 
 pub use as_tool::AsToolConfig;

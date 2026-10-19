@@ -55,9 +55,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .model(common::model()?);
 
     let mut options = RunOptions::default();
-    options.run_config = RunConfig {
-        model_settings: Some(settings),
-        ..Default::default()
+    options.run_config = {
+        let mut c = RunConfig::default();
+        c.model.settings = Some(settings);
+        c
     };
 
     let input = common::example_input(

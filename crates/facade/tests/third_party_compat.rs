@@ -210,7 +210,7 @@ async fn stream_options_are_opt_in_for_third_party_servers() {
     ] {
         let server = sse_server(sse).await;
         let mut options = RunOptions::default();
-        options.run_config.model_settings = Some(ModelSettings {
+        options.run_config.model.settings = Some(ModelSettings {
             include_usage,
             ..ModelSettings::default()
         });
@@ -489,7 +489,7 @@ fn settings(f: impl FnOnce(&mut ModelSettings)) -> RunOptions {
     let mut model_settings = ModelSettings::default();
     f(&mut model_settings);
     let mut options = RunOptions::default();
-    options.run_config.model_settings = Some(model_settings);
+    options.run_config.model.settings = Some(model_settings);
     options
 }
 

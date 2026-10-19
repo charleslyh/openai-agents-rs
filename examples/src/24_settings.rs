@@ -24,7 +24,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .model(common::model()?);
 
     let mut run_config = RunConfig::default();
-    run_config.model_settings = Some(ModelSettings {
+    run_config.model.settings = Some(ModelSettings {
         temperature: Some(0.2),
         // Up to two retries when the connection fails; never for other errors.
         retry: Some(ModelRetrySettings::new(2, retry_policies::network_error())),

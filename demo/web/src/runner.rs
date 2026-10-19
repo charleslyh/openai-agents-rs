@@ -158,10 +158,10 @@ async fn drive(app: Arc<AppState>, request: RunRequest, emit: Emitter) {
     options.session = Some(session);
     options.error_handlers = agents::error_handlers();
     let mut run_config = RunConfig::default();
-    run_config.workflow_name = Some(run_id.clone());
-    run_config.model_settings = Some(settings.model_settings());
+    run_config.tracing.workflow_name = Some(run_id.clone());
+    run_config.model.settings = Some(settings.model_settings());
     if let Some(n) = settings.tool_concurrency {
-        run_config.tool_execution = Some(ToolExecutionConfig {
+        run_config.tools.execution = Some(ToolExecutionConfig {
             max_function_tool_concurrency: Some(n),
         });
     }

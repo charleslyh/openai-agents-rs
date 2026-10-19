@@ -34,7 +34,7 @@ fn responses_reply(text: &str) -> ResponseTemplate {
 
 async fn run_with(provider: Arc<dyn openai_agents::ModelProvider>, model: &str) -> String {
     let mut options = RunOptions::default();
-    options.run_config.model_provider = Some(provider);
+    options.run_config.model.provider = Some(provider);
     Runner::run(&Agent::new("a").model_name(model), "go", options)
         .await
         .expect("run")

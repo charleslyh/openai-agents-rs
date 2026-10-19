@@ -86,7 +86,7 @@ pub(crate) async fn final_output_without_tools(
             generated,
             std::slice::from_ref(response),
             agent,
-            options.run_config.reasoning_item_id_policy,
+            options.run_config.model.reasoning_item_id_policy,
         )
     };
     // Python (`execute_tools_and_side_effects`): a refusal ends the turn with `ModelRefusalError`
@@ -151,7 +151,7 @@ pub(crate) async fn prepare_turn(
     // including when the previous turn ended early via `stop_on_first_tool` / `StopAtTools`.
     let mut model_settings = agent
         .model_settings
-        .resolve(options.run_config.model_settings.as_ref());
+        .resolve(options.run_config.model.settings.as_ref());
     if agent.reset_tool_choice && agents_used_tools.contains(&agent.name) {
         model_settings.tool_choice = None;
     }
@@ -160,7 +160,7 @@ pub(crate) async fn prepare_turn(
     let (enabled_tools, enabled_handoffs) = crate::run::tools::resolve_tool_name_collisions(
         agent.all_function_tools(context).await?,
         agent.enabled_handoffs(context).await,
-        options.run_config.tool_name_collision_policy,
+        options.run_config.tools.name_collision_policy,
     )?;
     for tool in &enabled_tools {
         crate::run::tools::validate_tool_timeout(tool)?;

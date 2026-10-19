@@ -22,7 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .model(common::model()?);
 
     let mut run_config = RunConfig::default();
-    run_config.model_settings = Some(ModelSettings {
+    run_config.model.settings = Some(ModelSettings {
         include_usage: Some(true),
         ..Default::default()
     });
