@@ -49,9 +49,7 @@ pub const SUPPORTED_RUN_STATE_SCHEMAS: &[&str] = &[
     RUN_STATE_SCHEMA_VERSION,
 ];
 
-pub use resolutions::{
-    ApprovalDecision, ApprovalStore, ResolutionStore, StickyDecision, ToolResolution,
-};
+pub use resolutions::{ResolutionStore, StickyDecision, ToolResolution};
 
 /// Snapshot of a paused (or resumable) agent run (Python: `RunState`).
 #[derive(Debug, Clone)]
@@ -182,11 +180,6 @@ impl RunState {
         call_id: &str,
     ) -> Option<ToolResolution> {
         self.resolution_status(agent_name, tool_name, call_id)
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn nested_agent_runs(&self) -> &HashMap<String, RunState> {
-        &self.nested_agent_runs
     }
 
     fn find_nested_mut(&mut self, item: &ToolInterruptionItem) -> Option<&mut RunState> {

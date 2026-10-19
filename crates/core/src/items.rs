@@ -166,11 +166,8 @@ pub struct ToolInterruptionItem {
     pub raw_item: ResponseOutputItem,
 }
 
-/// Python name of [`ToolInterruptionItem`].
-pub type ToolApprovalItem = ToolInterruptionItem;
-
 impl ToolInterruptionItem {
-    /// Convenience alias for tool name (Python: `ToolApprovalItem.name`).
+    /// Convenience alias for tool name (Python: `ToolApprovalItem.name`; Python-only name, this crate has one type).
     pub fn name(&self) -> &str {
         &self.tool_name
     }

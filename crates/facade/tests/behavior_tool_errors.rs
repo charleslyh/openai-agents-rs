@@ -611,7 +611,7 @@ async fn tool_error_formatter_rewrites_default_messages() {
         config.tool_not_found_behavior = ToolNotFoundBehavior::ReturnErrorToModel;
         config
     };
-    let dangerous = || FunctionTool::constant("danger", "d", "ran").with_needs_approval(true);
+    let dangerous = || FunctionTool::constant("danger", "d", "ran").with_needs_resolution(true);
     let run_rejected = |message: Option<&'static str>| async move {
         let model = Arc::new(ScriptedModel::new([
             ModelStep::from(ItemHelpers::function_tool_call("danger", "{}", "c1")),

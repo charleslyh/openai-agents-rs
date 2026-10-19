@@ -22,7 +22,7 @@ async fn mixed_batch_executes_unapproved_tools_before_pausing() {
     ]));
     let agent = Agent::new("assistant").model(model).tools(vec![
         FunctionTool::constant("safe_read", "read", "read-ok"),
-        FunctionTool::constant("delete_file", "delete", "deleted").with_needs_approval(true),
+        FunctionTool::constant("delete_file", "delete", "deleted").with_needs_resolution(true),
     ]);
 
     let result = Runner::run(&agent, "go", RunOptions::default())
@@ -58,7 +58,7 @@ async fn run_state_json_accepts_previous_schema_version() {
             "delete",
             "deleted",
         )
-        .with_needs_approval(true)]);
+        .with_needs_resolution(true)]);
     let result = Runner::run(&agent, "go", RunOptions::default())
         .await
         .expect("run");
@@ -100,7 +100,7 @@ async fn unlimited_run_state_round_trip_keeps_max_turns_null() {
             "delete",
             "deleted",
         )
-        .with_needs_approval(true)]);
+        .with_needs_resolution(true)]);
     let mut opts = RunOptions::default();
     opts.max_turns = None;
     let paused = Runner::run(&agent, "go", opts).await.expect("run");
@@ -146,7 +146,7 @@ async fn approve_then_resume_invokes_tool() {
             }
         },
     )
-    .with_needs_approval(true);
+    .with_needs_resolution(true);
 
     let model = Arc::new(ScriptedModel::new([
         ModelStep::from(ItemHelpers::function_tool_call(
@@ -198,7 +198,7 @@ async fn reject_then_resume_skips_tool_body() {
             }
         },
     )
-    .with_needs_approval(true);
+    .with_needs_resolution(true);
 
     let model = Arc::new(ScriptedModel::new([
         ModelStep::from(ItemHelpers::function_tool_call("danger", "{}", "c1")),
@@ -243,7 +243,7 @@ async fn dynamic_needs_approval_only_for_matching_args() {
         }),
         |_ctx, args| async move { Ok(serde_json::Value::String(format!("temp:{args}"))) },
     )
-    .with_needs_approval_fn(|params, _call_id| async move {
+    .with_needs_resolution_fn(|params, _call_id| async move {
         params
             .get("city")
             .and_then(|c| c.as_str())
@@ -272,7 +272,7 @@ async fn dynamic_needs_approval_only_for_matching_args() {
 
 #[tokio::test]
 async fn custom_rejection_message() {
-    let tool = FunctionTool::constant("x", "x", "nope").with_needs_approval(true);
+    let tool = FunctionTool::constant("x", "x", "nope").with_needs_resolution(true);
     let model = Arc::new(ScriptedModel::new([
         ModelStep::from(ItemHelpers::function_tool_call("x", "{}", "c1")),
         ModelStep::from(ItemHelpers::text_message("done")),
@@ -307,7 +307,7 @@ async fn always_approve_applies_to_later_calls() {
             }
         },
     )
-    .with_needs_approval(true);
+    .with_needs_resolution(true);
 
     let model = Arc::new(ScriptedModel::new([
         ModelStep::from(ItemHelpers::function_tool_call("pay", "{}", "c1")),
@@ -335,7 +335,7 @@ async fn always_approve_applies_to_later_calls() {
 
 #[tokio::test]
 async fn run_state_json_round_trip() {
-    let tool = FunctionTool::constant("x", "x", "ok").with_needs_approval(true);
+    let tool = FunctionTool::constant("x", "x", "ok").with_needs_resolution(true);
     let model = Arc::new(ScriptedModel::new([
         ModelStep::from(ItemHelpers::function_tool_call("x", "{}", "c1")),
         ModelStep::from(ItemHelpers::text_message("after")),
@@ -377,7 +377,7 @@ async fn agent_as_tool_nested_approval_bubbles_to_outer() {
             }
         },
     )
-    .with_needs_approval(true);
+    .with_needs_resolution(true);
 
     let nested_model = Arc::new(ScriptedModel::new([
         ModelStep::from(ItemHelpers::function_tool_call("secret", "{}", "nested-1")),
@@ -456,7 +456,7 @@ async fn paused_run_saves_each_item_once_across_resume() {
     ]));
     let agent = Agent::new("a").model(model).tools(vec![
         FunctionTool::constant("echo", "e", "x"),
-        FunctionTool::constant("del", "d", "deleted").with_needs_approval(true),
+        FunctionTool::constant("del", "d", "deleted").with_needs_resolution(true),
     ]);
     let session = InMemorySession::shared("conv");
     let options = || {
@@ -516,7 +516,7 @@ async fn guardrail_results_survive_a_pause_and_resume() {
         })])
         .tools(vec![
             FunctionTool::constant("echo", "e", "x").with_tool_output_guardrails(vec![seen]),
-            FunctionTool::constant("del", "d", "deleted").with_needs_approval(true),
+            FunctionTool::constant("del", "d", "deleted").with_needs_resolution(true),
         ]);
 
     let paused = Runner::run(&agent, "go", RunOptions::default())

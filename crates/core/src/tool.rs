@@ -109,9 +109,6 @@ pub type ToolInvoker = Arc<
 pub type NeedsResolutionFn =
     Arc<dyn Fn(Value, String) -> Pin<Box<dyn Future<Output = bool> + Send>> + Send + Sync>;
 
-/// Python name of [`NeedsResolutionFn`].
-pub type NeedsApprovalFn = NeedsResolutionFn;
-
 /// When a function tool call pauses before it runs, so the host can resolve it
 /// (Python: `FunctionTool.needs_approval`).
 ///
@@ -137,9 +134,6 @@ impl From<bool> for NeedsResolution {
         Self::Fixed(value)
     }
 }
-
-/// Python name of [`NeedsResolution`].
-pub type NeedsApproval = NeedsResolution;
 
 impl NeedsResolution {
     /// Evaluate whether this call pauses for resolution.
@@ -388,20 +382,6 @@ impl FunctionTool {
             Box::pin(async move { f(params, call_id).await })
         }));
         self
-    }
-
-    /// Python name of [`Self::with_needs_resolution`] (`needs_approval=True`).
-    pub fn with_needs_approval(self, needs: impl Into<NeedsResolution>) -> Self {
-        self.with_needs_resolution(needs)
-    }
-
-    /// Python name of [`Self::with_needs_resolution_fn`] (`needs_approval=<callable>`).
-    pub fn with_needs_approval_fn<F, Fut>(self, f: F) -> Self
-    where
-        F: Fn(Value, String) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = bool> + Send + 'static,
-    {
-        self.with_needs_resolution_fn(f)
     }
 
     /// Create a tool that returns a constant JSON/string value (handy for tests).

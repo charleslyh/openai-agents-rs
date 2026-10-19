@@ -336,7 +336,7 @@ pub fn get_temperature(f: &ToolFaults) -> FunctionTool {
             )))
         },
     )
-    .with_needs_approval_fn(|params, _call_id| async move {
+    .with_needs_resolution_fn(|params, _call_id| async move {
         params
             .get("city")
             .and_then(Value::as_str)

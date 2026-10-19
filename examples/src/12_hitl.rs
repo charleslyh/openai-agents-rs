@@ -37,7 +37,7 @@ fn get_temperature_tool() -> FunctionTool {
             )))
         },
     )
-    .with_needs_approval_fn(|params, _call_id| async move {
+    .with_needs_resolution_fn(|params, _call_id| async move {
         // Dynamic approval: only Oakland (matches Python example).
         params
             .get("city")

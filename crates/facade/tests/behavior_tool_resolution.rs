@@ -106,7 +106,7 @@ async fn approvals_and_outputs_resolve_one_paused_batch() {
     ]));
     let agent = Agent::new("assistant").model(model.clone()).tools(vec![
         deferrable("render", &invokes),
-        FunctionTool::constant("delete", "d", "deleted").with_needs_approval(true),
+        FunctionTool::constant("delete", "d", "deleted").with_needs_resolution(true),
     ]);
 
     let paused = Runner::run(&agent, "go", RunOptions::default())
@@ -227,7 +227,7 @@ async fn schema_3_approvals_still_resume() {
     let agent = Agent::new("assistant")
         .model(model.clone())
         .tools(vec![
-            FunctionTool::constant("delete", "d", "deleted").with_needs_approval(true)
+            FunctionTool::constant("delete", "d", "deleted").with_needs_resolution(true)
         ]);
     let paused = Runner::run(&agent, "go", RunOptions::default())
         .await

@@ -137,7 +137,7 @@ async fn streamed_hitl_to_state_then_run_state_streamed() {
             "delete",
             "deleted",
         )
-        .with_needs_approval(true)]);
+        .with_needs_resolution(true)]);
 
     let mut streamed = Runner::run_streamed(agent.clone(), "go", RunOptions::default());
     let _ = streamed.collect_events().await.expect("events");

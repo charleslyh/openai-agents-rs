@@ -30,9 +30,6 @@ pub enum ToolResolution {
     },
 }
 
-/// Python name of [`ToolResolution`] (variants: `Approved` → `Run`, `Rejected` → `Reject`).
-pub type ApprovalDecision = ToolResolution;
-
 /// Sticky always-approve / always-reject for `(agent_name, tool_name)`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StickyDecision {
@@ -53,9 +50,6 @@ pub struct ResolutionStore {
     /// Sticky decisions keyed by `"agent_name\\0tool_name"`.
     pub sticky: HashMap<String, StickyDecision>,
 }
-
-/// Python name of [`ResolutionStore`].
-pub type ApprovalStore = ResolutionStore;
 
 impl ResolutionStore {
     fn sticky_key(agent_name: &str, tool_name: &str) -> String {
