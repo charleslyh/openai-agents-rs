@@ -36,6 +36,21 @@ pub(crate) struct TurnSetup {
     pub(crate) enabled_handoffs: Vec<Handoff>,
 }
 
+/// What a turn's tool phase needs to read, bundled so the phase takes three arguments.
+#[derive(Clone, Copy)]
+pub(crate) struct ToolTurn<'a> {
+    pub(crate) agent: &'a Agent,
+    pub(crate) context: &'a RunContextWrapper,
+    pub(crate) options: &'a RunOptions,
+    pub(crate) nested_agent_runs: &'a HashMap<String, RunState>,
+    pub(crate) max_tool_concurrency: Option<usize>,
+    pub(crate) guardrail_log: &'a SharedToolGuardrailLog,
+    pub(crate) events: &'a Option<EventTx>,
+}
+
+/// Results of the tools that ran, plus the pause signal when a resolution is needed.
+pub(crate) type TurnToolOutcome = (Vec<(FunctionTool, Value, String)>, Option<InterruptSignal>);
+
 /// Why the run has to pause and wait for a human decision.
 pub(crate) struct InterruptSignal {
     /// The interruptions that paused the run.
@@ -164,19 +179,21 @@ pub(crate) async fn prepare_turn(
 /// resolution-free subset, and a nested agent run — and all three end the run the same way, so this
 /// reports which one fired and the loop builds the single `interrupted_result`.
 ///
-/// Returns `Ok(None)` when the turn ran to completion.
-#[allow(clippy::too_many_arguments)]
+/// Returns the tool results and, when the run has to pause, the signal describing why.
 pub(crate) async fn execute_turn_tools(
     plan: ToolPlan,
-    agent: &Agent,
-    context: &RunContextWrapper,
-    options: &RunOptions,
+    env: ToolTurn<'_>,
     generated_items: &mut Vec<RunItem>,
-    nested_agent_runs: &HashMap<String, RunState>,
-    max_tool_concurrency: Option<usize>,
-    guardrail_log: &SharedToolGuardrailLog,
-    events: &Option<EventTx>,
-) -> Result<Option<(Vec<(FunctionTool, Value, String)>, Option<InterruptSignal>)>, AgentsError> {
+) -> Result<TurnToolOutcome, AgentsError> {
+    let ToolTurn {
+        agent,
+        context,
+        options,
+        nested_agent_runs,
+        max_tool_concurrency,
+        guardrail_log,
+        events,
+    } = env;
     if !plan.interruptions.is_empty() {
         // Execute tools that do not need a resolution in this turn before pausing.
         if !plan.to_invoke.is_empty() {
@@ -212,22 +229,22 @@ pub(crate) async fn execute_turn_tools(
                 }
             }
             if !nested_interruptions.is_empty() {
-                return Ok(Some((
+                return Ok((
                     auto_results,
                     Some(InterruptSignal {
                         interruptions: nested_interruptions,
                         nested_states,
                     }),
-                )));
+                ));
             }
         }
-        return Ok(Some((
+        return Ok((
             Vec::new(),
             Some(InterruptSignal {
                 interruptions: plan.interruptions,
                 nested_states: HashMap::new(),
             }),
-        )));
+        ));
     }
 
     // All calls decided — execute remaining tools (rejections already resolved to outputs).
@@ -246,7 +263,7 @@ pub(crate) async fn execute_turn_tools(
         interruptions: nested_interruptions,
         nested_states,
     });
-    Ok(Some((tool_results, signal)))
+    Ok((tool_results, signal))
 }
 
 /// The run's final output when the agent's `tool_use_behavior` says one of this turn's tool

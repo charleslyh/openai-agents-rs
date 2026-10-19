@@ -17,6 +17,7 @@ mod resolve;
 mod session_writer;
 pub(crate) mod tools;
 mod turn;
+mod turn_loop;
 
 pub use config::{
     default_trace_include_sensitive_data, OutputGuardrailBlockedMessage,
@@ -197,7 +198,9 @@ fn spawn_streamed(
         .await;
         match result {
             Ok(r) => {
-                let mut s = snap.lock().expect("snapshot");
+                let mut s = snap
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
                 s.is_complete = true;
                 // A graceful cancel returns a result without a real final output.
                 let stopped_early = s.cancel_after_turn;
@@ -218,7 +221,9 @@ fn spawn_streamed(
             }
             Err(e) => {
                 {
-                    let mut s = snap.lock().expect("snapshot");
+                    let mut s = snap
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
                     s.error = Some(e.to_string());
                     s.is_complete = true;
                 }

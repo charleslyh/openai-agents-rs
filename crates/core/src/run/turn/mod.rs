@@ -203,7 +203,11 @@ pub(crate) fn turn_was_cancelled(
 ) -> bool {
     turn > 1
         && snapshot
-            .map(|snap| snap.lock().expect("snapshot").cancel_after_turn)
+            .map(|snap| {
+                snap.lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .cancel_after_turn
+            })
             .unwrap_or(false)
 }
 
@@ -309,7 +313,8 @@ pub(crate) async fn record_turn_output(
 mod handoff;
 mod tools;
 
-pub(crate) use handoff::perform_handoff;
+pub(crate) use handoff::{perform_handoff, HandoffTurn};
 pub(crate) use tools::{
     execute_turn_tools, final_output_without_tools, prepare_turn, tool_use_behavior_output,
+    InterruptSignal, ToolTurn, TurnSetup,
 };

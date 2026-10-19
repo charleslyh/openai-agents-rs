@@ -2,40 +2,25 @@
 //! one iteration per model call, with tools, handoffs, guardrails and session saving.
 
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
 use tokio::sync::mpsc;
 
 use crate::agent::Agent;
-use crate::error::{AgentsError, InputGuardrailTripwireTriggered};
-use crate::guardrail::{InputGuardrail, InputGuardrailResult};
-use crate::handoffs::Handoff;
-use crate::items::apply_reasoning_item_id_policy;
-use crate::items::{required_function_call_parts, InputLike, ItemHelpers, ModelResponse, RunItem};
+use crate::error::AgentsError;
+use crate::items::{InputLike, ItemHelpers};
 use crate::memory::prepare_input_with_session;
-use crate::model::{CallModelData, Model, ModelInput, ModelInputData, ModelRequest, ModelTracing};
-use crate::result::{InterruptSnapshot, RunResult, StreamingSnapshot};
-use crate::run_context::RunContextWrapper;
-use crate::run_state::{ResolutionStore, RunState};
+use crate::result::{RunResult, StreamingSnapshot};
+use crate::run_state::RunState;
 use crate::stream_events::StreamEvent;
 use crate::tool_guardrails::{ToolInputGuardrailResult, ToolOutputGuardrailResult};
-use crate::tracing::{agent_span, generation_span, task_span, turn_span, SpanGuard, TracingConfig};
-use crate::usage::Usage;
 
 use super::config::RunOptions;
-
-use super::finalize::{finalize_run, finished_result, interrupted_result};
-use super::resolve::{collect_agents, resolve_agent_by_name, resolve_model};
 use super::session_writer::SessionWriter;
-use super::tools::{plan_tool_calls, push_tool_output};
-use super::turn::{
-    execute_turn_tools, final_output_without_tools, handle_max_turns_exceeded, perform_handoff,
-    prepare_turn, record_response_items, record_turn_output, split_response_output,
-    tool_use_behavior_output, turn_was_cancelled, validate_run_options, TurnEnd, TurnOutput,
-};
+use super::turn::validate_run_options;
+use super::turn_loop::{LoopInit, TurnLoop};
 
 tokio::task_local! {
     pub(crate) static NESTED_RESUME_STATES: RefCell<HashMap<String, RunState>>;
@@ -66,7 +51,7 @@ pub(crate) type EventTx = mpsc::Sender<Result<StreamEvent, AgentsError>>;
 /// cancelled (`CancelMode::Immediate` aborts the run task, which drops its futures) or fails
 /// must not leave its input guardrails or event forwarder running, so children are held in this
 /// wrapper. Awaiting it behaves like awaiting the handle.
-struct AbortOnDrop<T>(tokio::task::JoinHandle<T>);
+pub(super) struct AbortOnDrop<T>(pub(super) tokio::task::JoinHandle<T>);
 
 impl<T> std::future::Future for AbortOnDrop<T> {
     type Output = Result<T, tokio::task::JoinError>;
@@ -152,7 +137,9 @@ pub(crate) async fn run_loop(
     let tool_guardrail_log = SharedToolGuardrailLog::default();
     if let LoopStart::Resume { state } = &start {
         // Results from before the pause belong to the resumed run's result too.
-        let mut log = tool_guardrail_log.lock().expect("tool guardrail log");
+        let mut log = tool_guardrail_log
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         log.input = state.tool_input_guardrail_results.clone();
         log.output = state.tool_output_guardrail_results.clone();
     }
@@ -170,7 +157,9 @@ pub(crate) async fn run_loop(
     )
     .await?;
     {
-        let mut log = tool_guardrail_log.lock().expect("tool guardrail log");
+        let mut log = tool_guardrail_log
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         result.tool_input_guardrail_results = std::mem::take(&mut log.input);
         result.tool_output_guardrail_results = std::mem::take(&mut log.output);
     }
@@ -191,11 +180,7 @@ pub(crate) async fn run_loop(
     Ok(result)
 }
 
-/// Writes a run's input and generated items to its session as the run progresses.
-///
-/// Python saves the input before the first model call and each turn's items when the turn ends,
-/// so a run that fails or is cut off keeps the turns it completed. `saved_items` counts the
-/// leading `generated_items` already stored.
+/// Validate the options, open the run's trace and drive the turn loop.
 async fn run_loop_inner(
     starting_agent: Agent,
     start: LoopStart,
@@ -203,13 +188,8 @@ async fn run_loop_inner(
     events: Option<EventTx>,
     snapshot: Option<Arc<Mutex<StreamingSnapshot>>>,
     tool_guardrail_log: SharedToolGuardrailLog,
-    mut session_writer: Option<&mut SessionWriter>,
+    session_writer: Option<&mut SessionWriter>,
 ) -> Result<RunResult, AgentsError> {
-    // Python (`run_config.py:591-592`): `max_turns` is `int | None` and `None` disables the
-    // limit; `run.py:1507` only compares when it is not `None`. `RunOptions::default()` keeps the
-    // Python default of `Some(DEFAULT_MAX_TURNS)` (D-008), but an explicit `None` must mean
-    // "run until the agent stops" (D-042), not "fall back to 10".
-    let max_turns: Option<usize> = options.max_turns;
     let max_tool_concurrency = validate_run_options(&options)?;
     let workflow = options
         .run_config
@@ -228,613 +208,17 @@ async fn run_loop_inner(
         },
     );
 
-    // Python: the run is wrapped in a task span; each agent gets an agent span (replaced on
-    // handoff) and each turn a turn span, unless `tracing.include_task_and_turn_spans` is off.
-    let use_task_and_turn_spans =
-        TracingConfig::includes_task_and_turn_spans(options.run_config.tracing.as_ref());
-    let mut task_guard: Option<SpanGuard> = use_task_and_turn_spans.then(|| task_span(&workflow));
-    // Held only for its drop: replacing it ends the previous agent's span.
-    #[allow(unused_assignments)]
-    let mut agent_guard: Option<SpanGuard> = None;
-    let mut agent_span_due = true;
-
-    let starting_agent_name = starting_agent.name.clone();
-    // Every agent reachable so far by name, for handoffs bound late (`handoff_to_name`).
-    let mut known_agents: HashMap<String, Agent> = HashMap::new();
-    collect_agents(&starting_agent, &mut known_agents);
-    let mut current_agent = starting_agent;
-    // Agents that have emitted tool calls, used to reset `tool_choice` (Python:
-    // `AgentToolUseTracker` + `maybe_reset_tool_choice`).
-    let mut agents_used_tools: HashSet<String> = HashSet::new();
-
-    // Python runs input guardrails once, on the first turn of a fresh run; a resumed run already
-    // has their results.
-    let resuming = matches!(start, LoopStart::Resume { .. });
-    let mut generated_items: Vec<RunItem> = Vec::new();
-    let mut raw_responses: Vec<ModelResponse> = Vec::new();
-    let mut usage = Usage::default();
-    let input: InputLike;
-    let original_input_len: usize;
-    let mut current_input_items: Vec<_>;
-    let mut previous_response_id = options.previous_response_id.clone();
-    let mut turn = 0usize;
-    let mut resume_pending: Option<(ModelResponse, ResolutionStore)> = None;
-    let mut nested_agent_runs: HashMap<String, RunState> = HashMap::new();
-    let mut live_resolutions = ResolutionStore::default();
-    let context = RunContextWrapper::new(options.context.clone());
-    let mut input_guardrail_results: Vec<InputGuardrailResult> = Vec::new();
-
-    match start {
-        LoopStart::Fresh {
-            input: fresh,
-            prepared,
-        } => {
-            input = fresh;
-            // With a session, `run_loop` already merged history and the new input.
-            current_input_items =
-                prepared.unwrap_or_else(|| ItemHelpers::input_to_new_input_list(&input));
-            original_input_len = current_input_items.len();
-        }
-        LoopStart::Resume { state } => {
-            let state = *state;
-            input = state.input.clone();
-            original_input_len = ItemHelpers::input_to_new_input_list(&input).len();
-            current_agent = resolve_agent_by_name(&current_agent, &state.current_agent_name)?;
-            generated_items = state.generated_items;
-            // Drop prior ToolInterruption placeholders; resume will re-create if still pending.
-            generated_items.retain(|i| !matches!(i, RunItem::ToolInterruption(_)));
-            raw_responses = state.raw_responses;
-            input_guardrail_results = state.input_guardrail_results;
-            usage = state.usage;
-            current_input_items = state.current_input_items;
-            previous_response_id = state.previous_response_id.or(previous_response_id);
-            turn = state.turn.saturating_sub(1); // loop will increment
-            nested_agent_runs = state.nested_agent_runs.clone();
-            live_resolutions = state.resolutions.clone();
-            context.set_usage(usage.clone());
-            resume_pending = Some((state.pending_response, state.resolutions));
-        }
-    }
-
-    emit(
-        &events,
-        StreamEvent::AgentUpdated {
-            agent_name: current_agent.name.clone(),
-        },
-    )
-    .await;
-
-    // Python splits input guardrails by `run_in_parallel`: blocking ones finish before the first
-    // model call, the rest run concurrently with it.
-    let (parallel_guardrails, blocking_guardrails): (Vec<InputGuardrail>, Vec<InputGuardrail>) =
-        options
-            .run_config
-            .input_guardrails
-            .iter()
-            .chain(current_agent.input_guardrails.iter())
-            .filter(|_| !resuming)
-            .cloned()
-            .partition(|g| g.run_in_parallel);
-    let guardrail_agent = Arc::new(current_agent.clone());
-    let guardrail_input = input.clone();
-    let guardrail_context = context.clone();
-    let run_input_guardrails = move |guardrails: Vec<InputGuardrail>| {
-        let agent = Arc::clone(&guardrail_agent);
-        let run_input = guardrail_input.clone();
-        let ctx = guardrail_context.clone();
-        async move {
-            let futs = guardrails.into_iter().map(|g| {
-                let agent = Arc::clone(&agent);
-                let run_input = run_input.clone();
-                let ctx = ctx.clone();
-                async move { g.run(agent, run_input, ctx).await }
-            });
-            futures::future::join_all(futs).await
-        }
-    };
-    // Both groups start inside the first turn (Python runs them under the turn span): blocking
-    // ones finish first, then the parallel ones are spawned alongside the model call.
-    let mut parallel_guardrails = Some(parallel_guardrails);
-    let mut blocking_guardrails = Some(blocking_guardrails);
-    let mut pending_input_guardrails: Option<AbortOnDrop<Vec<InputGuardrailResult>>> = None;
-
-    // `on_agent_start` is called once per agent, including after each handoff.
-    if let Some(h) = &options.hooks {
-        h.on_agent_start(context.clone(), &current_agent).await;
-    }
-    if let Some(ah) = &current_agent.hooks {
-        ah.on_start(context.clone(), &current_agent).await;
-    }
-
-    loop {
-        turn += 1;
-        // Save what the previous turn produced (and, before the first model call, the input).
-        // The first turn of a resumed run is the one that was paused: it is saved when it ends.
-        if resume_pending.is_none() {
-            if let Some(writer) = session_writer.as_deref_mut() {
-                writer.flush(&generated_items).await?;
-            }
-        }
-        if let Some(snap) = &snapshot {
-            let mut s = snap.lock().expect("snapshot");
-            s.current_turn = turn;
-            s.current_agent_name = current_agent.name.clone();
-        }
-        // Graceful cancel (`CancelMode::AfterTurn`): stop before a new turn begins.
-        if turn_was_cancelled(turn, snapshot.as_ref()) {
-            return Ok(finished_result(
-                input,
-                generated_items,
-                raw_responses,
-                Value::Null,
-                Arc::new(current_agent.clone()),
-                max_turns,
-                usage,
-            ));
-        }
-        // Python (`run.py:1506-1507`): the turn counter is incremented first and only compared
-        // when `max_turns` is not `None`.
-        if let Some(output) = handle_max_turns_exceeded(
-            turn,
-            &TurnEnd {
-                input: &input,
-                raw_responses: &raw_responses,
-                agent: &current_agent,
-                max_turns,
-                options: &options,
-            },
-            &generated_items.clone(),
-            &mut generated_items,
-            &context,
-            task_guard.as_mut(),
-        )
-        .await?
-        {
-            return finalize_run(
-                input,
-                generated_items,
-                raw_responses,
-                output,
-                &current_agent,
-                max_turns,
-                usage,
-                &context,
-                options.hooks.as_ref(),
-                &options.run_config.output_guardrails,
-                input_guardrail_results,
-                None,
-                session_writer.as_deref_mut(),
-            )
-            .await;
-        }
-
-        // A handoff ended the previous agent's span; the new agent's starts with its first turn.
-        if agent_span_due {
-            drop(agent_guard.take());
-            agent_guard = Some(agent_span(&current_agent.name));
-            agent_span_due = false;
-        }
-        let mut turn_guard: Option<SpanGuard> =
-            use_task_and_turn_spans.then(|| turn_span(turn, &current_agent.name));
-
-        if let Some(blocking) = blocking_guardrails.take().filter(|g| !g.is_empty()) {
-            let results = run_input_guardrails(blocking).await;
-            if let Some(r) = results.iter().find(|r| r.output.tripwire_triggered) {
-                return Err(InputGuardrailTripwireTriggered { result: r.clone() }.into());
-            }
-            input_guardrail_results.extend(results);
-        }
-        if let Some(parallel) = parallel_guardrails.take().filter(|g| !g.is_empty()) {
-            // `tokio::spawn` does not inherit task-locals, so the run's tracing switch and the
-            // current span are re-established inside the task; otherwise spans opened by a
-            // guardrail escape `RunConfig.tracing_disabled` and lose their parent.
-            let run_tracing_disabled = options.run_config.tracing_disabled;
-            let fut = run_input_guardrails(parallel);
-            pending_input_guardrails = Some(AbortOnDrop(tokio::spawn(
-                crate::tracing::with_run_tracing_disabled(run_tracing_disabled, fut),
-            )));
-        }
-
-        let setup = prepare_turn(&current_agent, &agents_used_tools, &options, &context).await?;
-        let model_settings = setup.model_settings;
-        let enabled_handoffs = setup.enabled_handoffs;
-        let tools = setup.tools;
-
-        let model = resolve_model(&current_agent, &options.run_config)?;
-
-        let (response, resolutions_map, from_resume) = if let Some((pending, resolutions)) =
-            resume_pending.take()
-        {
-            (pending, resolutions, true)
-        } else {
-            let _gen_span =
-                generation_span(current_agent.model_name.as_deref().unwrap_or("scripted"));
-            // Python: `instructions` may be a callable of `(context, agent)`.
-            let resolved_instructions = current_agent.resolve_instructions(&context).await;
-            // Python (`maybe_filter_model_input`): the filter runs before the LLM hooks and
-            // only affects this call.
-            let model_data = match &options.run_config.call_model_input_filter {
-                Some(filter) => {
-                    filter(CallModelData {
-                        model_data: ModelInputData {
-                            input: current_input_items.clone(),
-                            instructions: resolved_instructions,
-                        },
-                        agent: Arc::new(current_agent.clone()),
-                        context: context.clone(),
-                    })
-                    .await?
-                }
-                None => ModelInputData {
-                    input: current_input_items.clone(),
-                    instructions: resolved_instructions,
-                },
-            };
-            let system_instructions = model_data.instructions;
-            let model_input_items = model_data.input;
-            if let Some(h) = &options.hooks {
-                h.on_llm_start(
-                    context.clone(),
-                    &current_agent,
-                    system_instructions.as_deref(),
-                    &model_input_items,
-                )
-                .await;
-            }
-            if let Some(ah) = &current_agent.hooks {
-                ah.on_llm_start(
-                    context.clone(),
-                    &current_agent,
-                    system_instructions.as_deref(),
-                    &model_input_items,
-                )
-                .await;
-            }
-            let (response, early_guardrails) = {
-                // Everything an attempt reads is a plain reference, so each attempt rebuilds its
-                // request and a retry can start it again from scratch.
-                let model_ref: &dyn Model = &*model;
-                let instructions_ref = system_instructions.as_deref();
-                let input_ref = &model_input_items;
-                let settings_ref = &model_settings;
-                let tools_ref = &tools;
-                let events_ref = &events;
-                let emitted_unsafe = Arc::new(AtomicBool::new(false));
-                // Python maps `trace_include_sensitive_data=False` to
-                // `ModelTracing.ENABLED_WITHOUT_DATA`, so adapters drop payloads.
-                let tracing_mode = if crate::tracing::tracing_disabled() {
-                    ModelTracing::Disabled
-                } else if options.run_config.trace_include_sensitive_data {
-                    ModelTracing::Enabled
-                } else {
-                    ModelTracing::EnabledWithoutData
-                };
-                let previous_ref = previous_response_id.as_deref();
-                let conversation_ref = options.conversation_id.as_deref();
-                let output_schema_ref = current_agent.output_type.as_deref();
-                let attempt_flag = Arc::clone(&emitted_unsafe);
-                let model_fut = crate::retry::call_with_retry(
-                    crate::retry::RetryCall {
-                        settings: model_settings.retry.as_ref(),
-                        previous_response_id: previous_ref,
-                        conversation_id: conversation_ref,
-                        timeout: model_settings.timeout,
-                        stream: events.is_some(),
-                        emitted_unsafe_event: events.is_some().then_some(&*emitted_unsafe),
-                    },
-                    |request| model_ref.get_retry_advice(request),
-                    move || {
-                        let attempt_flag = Arc::clone(&attempt_flag);
-                        async move {
-                            let req = ModelRequest {
-                                system_instructions: instructions_ref,
-                                input: ModelInput::Items(input_ref),
-                                model_settings: settings_ref,
-                                tools: tools_ref,
-                                tracing: tracing_mode,
-                                previous_response_id: previous_ref,
-                                conversation_id: conversation_ref,
-                                output_schema: output_schema_ref,
-                            };
-                            if events_ref.is_some() {
-                                let (raw_tx, mut raw_rx) = mpsc::channel::<Value>(64);
-                                let forward = {
-                                    let events = events_ref.clone();
-                                    AbortOnDrop(tokio::spawn(async move {
-                                        while let Some(data) = raw_rx.recv().await {
-                                            // Python: once an event other than `response.created` /
-                                            // `response.in_progress` reached the consumer, a
-                                            // replay would show it output twice.
-                                            let kind = data.get("type").and_then(Value::as_str);
-                                            if !matches!(
-                                                kind,
-                                                Some("response.created" | "response.in_progress")
-                                            ) {
-                                                attempt_flag.store(true, Ordering::SeqCst);
-                                            }
-                                            emit(&events, StreamEvent::RawResponse { data }).await;
-                                        }
-                                    }))
-                                };
-                                let outcome = model_ref.stream_response(req, raw_tx).await;
-                                let _ = forward.await;
-                                outcome
-                            } else {
-                                model_ref.get_response(req).await
-                            }
-                        }
-                    },
-                );
-                let model_fut = async move { model_fut.await.map_err(AgentsError::from) };
-                tokio::pin!(model_fut);
-                // Python cancels the in-flight model call when a concurrent input guardrail
-                // trips, so a tripwire never waits for (or pays for) the full response.
-                let mut early_guardrails = None;
-                let response = match pending_input_guardrails.as_mut() {
-                    Some(task) => tokio::select! {
-                        joined = &mut *task => {
-                            let results = joined.map_err(|e| {
-                                AgentsError::internal(format!("input guardrail task failed: {e}"))
-                            })?;
-                            if let Some(r) = results.iter().find(|r| r.output.tripwire_triggered) {
-                                return Err(
-                                    InputGuardrailTripwireTriggered { result: r.clone() }.into()
-                                );
-                            }
-                            early_guardrails = Some(results);
-                            (&mut model_fut).await?
-                        }
-                        response = &mut model_fut => response?,
-                    },
-                    None => (&mut model_fut).await?,
-                };
-                (response, early_guardrails)
-            };
-            if let Some(results) = early_guardrails {
-                pending_input_guardrails = None;
-                input_guardrail_results.extend(results);
-            }
-            if let Some(id) = &response.response_id {
-                previous_response_id = Some(id.clone());
-            }
-            usage.add(&response.usage);
-            for guard in [task_guard.as_mut(), turn_guard.as_mut()]
-                .into_iter()
-                .flatten()
-            {
-                guard.add_usage(&response.usage);
-            }
-            context.add_usage(&response.usage);
-            raw_responses.push(response.clone());
-            if let Some(snap) = &snapshot {
-                let mut s = snap.lock().expect("snapshot");
-                s.new_items = generated_items.clone();
-                s.raw_responses = raw_responses.clone();
-                s.usage = usage.clone();
-            }
-            if let Some(h) = &options.hooks {
-                h.on_llm_end(context.clone(), &current_agent, &response)
-                    .await;
-            }
-            if let Some(ah) = &current_agent.hooks {
-                ah.on_llm_end(context.clone(), &current_agent, &response)
-                    .await;
-            }
-            (response, live_resolutions.clone(), false)
-        };
-
-        // Input guardrails ran alongside the first turn; a tripwire aborts the run.
-        if let Some(task) = pending_input_guardrails.take() {
-            let results = task
-                .await
-                .map_err(|e| AgentsError::internal(format!("input guardrail task failed: {e}")))?;
-            for r in &results {
-                if r.output.tripwire_triggered {
-                    return Err(InputGuardrailTripwireTriggered { result: r.clone() }.into());
-                }
-            }
-            input_guardrail_results.extend(results);
-        }
-
-        let parts = split_response_output(&response);
-        // Python separates handoff tool calls from plain ones while recording, so the names the
-        // turn enabled have to be known before the items are built.
-        let handoff_names: Vec<String> = enabled_handoffs
-            .iter()
-            .map(|h| h.tool_name.clone())
-            .collect();
-        if !from_resume {
-            record_response_items(
-                &parts,
-                &handoff_names,
-                &current_agent.name,
-                &events,
-                &mut generated_items,
-            )
-            .await?;
-        }
-
-        if parts.function_calls.is_empty() {
-            match final_output_without_tools(
-                &parts,
-                &response,
-                &input,
-                &mut generated_items,
-                &current_agent,
-                &options,
-                &context,
-            )
-            .await?
-            {
-                TurnOutput::Final(final_output) => {
-                    return finalize_run(
-                        input,
-                        generated_items,
-                        raw_responses,
-                        final_output,
-                        &current_agent,
-                        max_turns,
-                        usage,
-                        &context,
-                        options.hooks.as_ref(),
-                        &options.run_config.output_guardrails,
-                        input_guardrail_results,
-                        None,
-                        session_writer.as_deref_mut(),
-                    )
-                    .await;
-                }
-                TurnOutput::Again => {
-                    for item in &response.output {
-                        current_input_items.push(apply_reasoning_item_id_policy(
-                            item,
-                            options.run_config.reasoning_item_id_policy,
-                        ));
-                    }
-                    continue;
-                }
-            }
-        }
-
-        // Python records tool usage for the turn so `tool_choice` can be reset on the next
-        // turn (`AgentToolUseTracker.record_processed_response`).
-        agents_used_tools.insert(current_agent.name.clone());
-
-        let mut handoff_calls: Vec<(Handoff, Value, String)> = Vec::new();
-        let mut tool_calls: Vec<Value> = Vec::new();
-        for call in &parts.function_calls {
-            let (name, _args, call_id) = required_function_call_parts(call)?;
-            match enabled_handoffs.iter().find(|h| h.tool_name == name) {
-                Some(h) => handoff_calls.push((h.clone(), call.clone(), call_id)),
-                None => tool_calls.push(call.clone()),
-            }
-        }
-
-        let (tool_results, interrupted) = execute_turn_tools(
-            plan_tool_calls(
-                &current_agent,
-                &tools,
-                &tool_calls,
-                &resolutions_map,
-                &generated_items,
-                &options.run_config,
-                &context,
-            )
-            .await?,
-            &current_agent,
-            &context,
-            &options,
-            &mut generated_items,
-            &nested_agent_runs,
-            max_tool_concurrency,
-            &tool_guardrail_log,
-            &events,
-        )
-        .await?
-        .expect("execute_turn_tools always reports a result");
-        if let Some(signal) = interrupted {
-            for (call_id, state) in signal.nested_states {
-                nested_agent_runs.insert(call_id, state);
-            }
-            for interruption in &signal.interruptions {
-                generated_items.push(RunItem::ToolInterruption(interruption.clone()));
-            }
-            return Ok(interrupted_result(
-                input,
-                generated_items,
-                raw_responses,
-                Arc::new(current_agent.clone()),
-                max_turns,
-                usage,
-                signal.interruptions,
-                InterruptSnapshot {
-                    starting_agent_name,
-                    current_input_items,
-                    turn,
-                    previous_response_id,
-                    model_settings,
-                    pending_response: response,
-                    resolutions: live_resolutions,
-                    nested_agent_runs,
-                    session_saved_items: 0,
-                    session_input_saved: false,
-                    input_guardrail_results: input_guardrail_results.clone(),
-                },
-            ));
-        }
-        // Clear nested states for completed outer tool calls.
-        for (_tool, _output, call_id) in &tool_results {
-            nested_agent_runs.remove(call_id);
-        }
-
-        // Python builds a `ToolCallOutputItem` for every completed tool result *before*
-        // deciding whether one of them is the final output
-        // (`_build_tool_result_items`, then `check_for_final_output_from_tools`), so a
-        // `stop_on_first_tool` run still records the sibling outputs it produced.
-        for (_tool, output, call_id) in &tool_results {
-            push_tool_output(
-                &events,
-                &mut generated_items,
-                &current_agent.name,
-                call_id,
-                output,
-            )
-            .await;
-        }
-
-        if perform_handoff(
-            &handoff_calls,
-            &response,
-            &tool_results,
-            &mut current_agent,
-            &mut known_agents,
-            &mut current_input_items,
-            &mut generated_items,
-            original_input_len,
-            &events,
-            &options,
-            &context,
-        )
-        .await?
-        {
-            // A handoff ended this agent's span; the new agent's starts with its first turn.
-            agent_span_due = true;
-            continue;
-        }
-
-        if let Some(output) = tool_use_behavior_output(
-            &current_agent.tool_use_behavior,
-            &current_agent,
-            &tool_results,
-            &context,
-        ) {
-            return finalize_run(
-                input,
-                generated_items,
-                raw_responses,
-                output,
-                &current_agent,
-                max_turns,
-                usage,
-                &context,
-                options.hooks.as_ref(),
-                &options.run_config.output_guardrails,
-                input_guardrail_results,
-                Some(&options.run_config),
-                session_writer.as_deref_mut(),
-            )
-            .await;
-        }
-
-        record_turn_output(
-            &response,
-            &tool_results,
-            &current_agent.name,
-            &events,
-            &mut generated_items,
-            &mut current_input_items,
-            options.run_config.reasoning_item_id_policy,
-        )
-        .await;
-    }
+    TurnLoop::new(LoopInit {
+        starting_agent,
+        start,
+        options,
+        events,
+        snapshot,
+        tool_guardrail_log,
+        session_writer,
+        workflow,
+        max_tool_concurrency,
+    })?
+    .run()
+    .await
 }

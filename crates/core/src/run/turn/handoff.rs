@@ -21,6 +21,18 @@ use crate::run::resolve::collect_agents;
 use crate::run::tools::{push_tool_output, value_to_tool_string, MULTIPLE_HANDOFFS_MESSAGE};
 use crate::tracing::handoff_span;
 
+/// What a handoff reads from the turn that requested it.
+#[derive(Clone, Copy)]
+pub(crate) struct HandoffTurn<'a> {
+    pub(crate) handoff_calls: &'a [(Handoff, Value, String)],
+    pub(crate) response: &'a ModelResponse,
+    pub(crate) tool_results: &'a [(FunctionTool, Value, String)],
+    pub(crate) original_input_len: usize,
+    pub(crate) events: &'a Option<EventTx>,
+    pub(crate) options: &'a RunOptions,
+    pub(crate) context: &'a RunContextWrapper,
+}
+
 /// Performs the first handoff of the turn and switches the loop to its target agent.
 ///
 /// Python (`execute_tools_and_side_effects`) performs only the first handoff; any extra one is
@@ -28,20 +40,22 @@ use crate::tracing::handoff_span;
 ///
 /// `agent` is replaced in place, and `current_input_items` is rewritten when the handoff's filter
 /// or history nesting applies, so both are `&mut`.
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn perform_handoff(
-    handoff_calls: &[(Handoff, Value, String)],
-    response: &ModelResponse,
-    tool_results: &[(FunctionTool, Value, String)],
+    turn: HandoffTurn<'_>,
     agent: &mut Agent,
     known_agents: &mut HashMap<String, Agent>,
     current_input_items: &mut Vec<Value>,
     generated_items: &mut Vec<RunItem>,
-    original_input_len: usize,
-    events: &Option<EventTx>,
-    options: &RunOptions,
-    context: &RunContextWrapper,
 ) -> Result<bool, AgentsError> {
+    let HandoffTurn {
+        handoff_calls,
+        response,
+        tool_results,
+        original_input_len,
+        events,
+        options,
+        context,
+    } = turn;
     if handoff_calls.is_empty() {
         return Ok(false);
     }

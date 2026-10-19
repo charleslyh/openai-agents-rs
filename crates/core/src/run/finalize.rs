@@ -17,26 +17,51 @@ use crate::usage::Usage;
 use super::config::{resolve_blocked_message, RunConfig};
 use super::session_writer::SessionWriter;
 
+/// What a run has accumulated by the time it ends, whether it finished or paused.
+pub(crate) struct RunRecord {
+    pub(crate) input: InputLike,
+    pub(crate) new_items: Vec<RunItem>,
+    pub(crate) raw_responses: Vec<ModelResponse>,
+    pub(crate) max_turns: Option<usize>,
+    pub(crate) usage: Usage,
+}
+
+/// The surroundings [`finalize_run`] consults while it ends the run.
+pub(crate) struct FinalizeEnv<'a> {
+    pub(crate) context: &'a RunContextWrapper,
+    pub(crate) hooks: Option<&'a Arc<dyn RunHooks>>,
+    pub(crate) extra_output_guardrails: &'a [OutputGuardrail],
+    pub(crate) input_guardrail_results: Vec<InputGuardrailResult>,
+    /// Set when the final output came from a tool, so a blocked output is withheld.
+    pub(crate) tool_origin: Option<&'a RunConfig>,
+    pub(crate) session_writer: Option<&'a mut SessionWriter>,
+}
+
 /// Run `on_agent_end` hooks plus output guardrails, then build the final [`RunResult`].
 ///
 /// Python runs output guardrails concurrently after the final output is known and raises
 /// `OutputGuardrailTripwireTriggered` if any of them tripped.
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn finalize_run(
-    input: InputLike,
-    new_items: Vec<RunItem>,
-    raw_responses: Vec<ModelResponse>,
+    record: RunRecord,
     final_output: Value,
     agent: &Agent,
-    max_turns: Option<usize>,
-    usage: Usage,
-    context: &RunContextWrapper,
-    hooks: Option<&Arc<dyn RunHooks>>,
-    extra_output_guardrails: &[OutputGuardrail],
-    input_guardrail_results: Vec<InputGuardrailResult>,
-    tool_origin: Option<&RunConfig>,
-    session_writer: Option<&mut SessionWriter>,
+    env: FinalizeEnv<'_>,
 ) -> Result<RunResult, AgentsError> {
+    let RunRecord {
+        input,
+        new_items,
+        raw_responses,
+        max_turns,
+        usage,
+    } = record;
+    let FinalizeEnv {
+        context,
+        hooks,
+        extra_output_guardrails,
+        input_guardrail_results,
+        tool_origin,
+        session_writer,
+    } = env;
     // Python closes the turn span before the run's end hooks and output guardrails.
     let _outside_turn = crate::tracing::leave_turn_span();
     if let Some(h) = hooks {
@@ -85,13 +110,15 @@ pub(crate) async fn finalize_run(
     }
 
     let mut result = finished_result(
-        input,
-        new_items,
-        raw_responses,
+        RunRecord {
+            input,
+            new_items,
+            raw_responses,
+            max_turns,
+            usage,
+        },
         final_output,
         Arc::new(agent.clone()),
-        max_turns,
-        usage,
     );
     result.input_guardrail_results = input_guardrail_results;
     result.output_guardrail_results = output_guardrail_results;
@@ -99,14 +126,17 @@ pub(crate) async fn finalize_run(
 }
 
 pub(crate) fn finished_result(
-    input: InputLike,
-    new_items: Vec<RunItem>,
-    raw_responses: Vec<ModelResponse>,
+    record: RunRecord,
     final_output: Value,
     last_agent: Arc<Agent>,
-    max_turns: Option<usize>,
-    usage: Usage,
 ) -> RunResult {
+    let RunRecord {
+        input,
+        new_items,
+        raw_responses,
+        max_turns,
+        usage,
+    } = record;
     RunResult {
         input,
         new_items,
@@ -126,17 +156,19 @@ pub(crate) fn finished_result(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn interrupted_result(
-    input: InputLike,
-    new_items: Vec<RunItem>,
-    raw_responses: Vec<ModelResponse>,
+    record: RunRecord,
     last_agent: Arc<Agent>,
-    max_turns: Option<usize>,
-    usage: Usage,
     interruptions: Vec<ToolInterruptionItem>,
     interrupt_state: InterruptSnapshot,
 ) -> RunResult {
+    let RunRecord {
+        input,
+        new_items,
+        raw_responses,
+        max_turns,
+        usage,
+    } = record;
     RunResult {
         input,
         new_items,
