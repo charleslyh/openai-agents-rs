@@ -181,27 +181,39 @@ pub(crate) async fn run_loop(
     Ok(result)
 }
 
-/// Check every tool reachable from `root` for the types it declared via `Tool::requires`.
+/// Check every tool and capability reachable from `root` for the types it declared via
+/// `Tool::requires` / `CapabilityParts::require`.
 ///
 /// Walks handoff targets too (agent graphs can be cyclic, so names are visited once) and reports
-/// the first missing type with the agent, tool and type names, so the fix is obvious: add the
-/// value with `RunOptions::with(value)`.
+/// the first missing type with the agent, the tool or capability, and the type, so the fix is
+/// obvious: add the value with `RunOptions::with(value)`.
 fn validate_tool_requirements(
     root: &Agent,
     extensions: &crate::extensions::Extensions,
 ) -> Result<(), AgentsError> {
+    let missing_in = |requires: &[crate::extensions::TypeRequirement]| {
+        requires
+            .iter()
+            .find(|requirement| !extensions.contains_type(requirement.type_id()))
+            .copied()
+    };
     let mut seen = std::collections::HashSet::new();
     let mut stack = vec![root];
     while let Some(agent) = stack.pop() {
         if !seen.insert(agent.name.clone()) {
             continue;
         }
-        for tool in &agent.tools {
-            let Some(missing) = tool
-                .requires()
-                .iter()
-                .find(|requirement| !extensions.contains_type(requirement.type_id()))
-            else {
+        let tools = agent
+            .local_tools()
+            .map(|tool| (format!("tool `{}`", tool.name), tool.requires()));
+        let capabilities = agent.capabilities().iter().map(|c| {
+            (
+                format!("capability `{}`", c.name()),
+                c.parts().requires.as_slice(),
+            )
+        });
+        for (owner, requires) in tools.chain(capabilities) {
+            let Some(missing) = missing_in(requires) else {
                 continue;
             };
             let held = extensions.known_type_names();
@@ -211,9 +223,8 @@ fn validate_tool_requirements(
                 format!("the run holds: {}", held.join(", "))
             };
             return Err(crate::error::UserError::new(format!(
-                "tool `{}` of agent `{}` requires a value of type `{}`, but the run does not \
+                "{owner} of agent `{}` requires a value of type `{}`, but the run does not \
                  carry one ({held}); add it with `RunOptions::with(value)`",
-                tool.name,
                 agent.name,
                 missing.type_name(),
             ))

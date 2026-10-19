@@ -132,6 +132,7 @@ bench(`cargo bench -p openai-agents --bench run_loop`,本机):
 | 工具/模型中间件 | 完成。新增 `tool_middleware.rs`(`ToolMiddleware` trait + `FunctionTool::with_middleware`,onion 组合,可短路)与 `model_middleware.rs`(`ModelMiddleware` trait,挂在 `ModelOptions::middleware`,在 `call_model_input_filter` 之后按添加顺序执行)。仅覆盖请求改写;包装响应/流是后续工作,登记在 `DEVIATIONS.md` |
 | `Tool::requires` + 启动期校验 | 完成。`extensions.rs` 新增 `TypeRequirement`;`FunctionTool::require::<T>()` 声明依赖,`run/agent_loop.rs` 的 `validate_tool_requirements` 在第一个 turn 前遍历可达 agent 图(含 handoff 目标)逐一检查,缺失类型报错带 agent 名、工具名、类型名、修复提示;不声明的工具不受影响(仍是运行时失败) |
 | 类型化 `Reasoning` + 模型名后缀 | 完成。`ModelSettings::reasoning` 由 `Option<Value>` 改为 `Option<Reasoning>`(`effort`/`summary` 为开放枚举,未知值原样往返;`extra` 承载 `mode` 等未建模字段;`TryFrom<Value>` 兼容旧写法);`RunOptions::reasoning(..)` 链式设置。适配层:Responses 发 `reasoning` 对象;Chat Completions 补上 Python 已有的 `reasoning_effort` 映射(此前缺失,示例 25 只能走 `extra_args`)。`"o4-mini:high"` 这类后缀在按名解析时剥离并填入 effort(显式设置优先,X-006) |
+| `Capability` 具名组合 | 完成。`agent/capability.rs`(放在 `agent` 模块内,不扩大已登记的 8 模块环):`Capability` trait + `CapabilityParts`(tools / instructions / 输入输出护栏 / 默认 model settings / requires)+ `CapabilityParts::named(..)`;`Agent::capability(..)` 挂载时计算一次 parts,与 agent 自身字段分开存放,在读取点合并(`enabled_tools`、`resolve_instructions`、输入/输出护栏、`prepare_turn` 的 settings、启动期 requires 校验),因此 builder 调用顺序无关、"整体挂载 = 手工给零件"有等价测试(`behavior_capability.rs`)。**未含**:hooks(agent 只有一个 hooks 槽,需组合器);5 个内置 bundle 随 M3/M4 的 crate 落地 |
 
 ### 新增发现(扫描时顺带)
 

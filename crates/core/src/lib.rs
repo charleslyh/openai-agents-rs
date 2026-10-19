@@ -38,6 +38,7 @@ pub mod utf8_stream;
 pub use agent::{
     Agent, FunctionToolResult, ToolUseBehavior, ToolsToFinalOutputFn, ToolsToFinalOutputResult,
 };
+pub use agent::{Capability, CapabilityParts, MountedCapability, NamedCapability};
 pub use agent_output::{
     output_schema, AgentOutputSchema, AgentOutputSchemaBase, CustomOutputSchema,
 };

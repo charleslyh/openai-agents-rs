@@ -73,7 +73,7 @@ pub(crate) async fn finalize_run(
 
     let guardrails: Vec<OutputGuardrail> = extra_output_guardrails
         .iter()
-        .chain(agent.output_guardrails.iter())
+        .chain(agent.all_output_guardrails())
         .cloned()
         .collect();
     let mut output_guardrail_results = Vec::new();

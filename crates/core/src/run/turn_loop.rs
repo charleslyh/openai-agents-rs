@@ -79,7 +79,7 @@ impl InputGuardrails {
             .run_config
             .input_guardrails
             .iter()
-            .chain(agent.input_guardrails.iter())
+            .chain(agent.all_input_guardrails())
             .filter(|_| !resuming)
             .cloned()
             .partition(|g| g.run_in_parallel);

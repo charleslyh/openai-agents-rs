@@ -1,8 +1,12 @@
 //! Agent definition (Python: `agents.agent.Agent` subset).
 
+pub mod capability;
+
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+
+pub use capability::{Capability, CapabilityParts, MountedCapability, NamedCapability};
 
 use crate::agent_output::AgentOutputSchemaBase;
 use crate::error::AgentsError;
@@ -167,6 +171,8 @@ pub struct Agent {
     pub mcp_servers: Vec<Arc<dyn McpServer>>,
     /// How MCP tools become function tools (Python: `Agent.mcp_config`).
     pub mcp_config: McpConfig,
+    /// Mounted [`Capability`] bundles (Rust-only); add with [`Agent::capability`].
+    capabilities: Vec<MountedCapability>,
 }
 
 impl std::fmt::Debug for Agent {
@@ -183,6 +189,7 @@ impl std::fmt::Debug for Agent {
             .field("reset_tool_choice", &self.reset_tool_choice)
             .field("model_bound", &self.model.is_some())
             .field("mcp_servers", &self.mcp_servers)
+            .field("capabilities", &self.capabilities)
             .finish()
     }
 }
@@ -207,6 +214,7 @@ impl Agent {
             hooks: None,
             mcp_servers: Vec::new(),
             mcp_config: McpConfig::default(),
+            capabilities: Vec::new(),
         }
     }
 
@@ -243,14 +251,28 @@ impl Agent {
     }
 
     /// Resolve the system prompt for a run.
+    ///
+    /// Mounted capabilities append their instruction paragraphs, separated by a blank line.
     pub async fn resolve_instructions(&self, context: &RunContextWrapper) -> Option<String> {
-        match &self.instructions {
+        let own = match &self.instructions {
             Some(Instructions::Static(s)) => Some(s.clone()),
             Some(Instructions::Dynamic(f)) => {
                 Some(f(context.clone(), Arc::new(self.clone())).await)
             }
             None => None,
+        };
+        let mut extra = self.capability_instructions().peekable();
+        if extra.peek().is_none() {
+            return own;
         }
+        let mut out = own.unwrap_or_default();
+        for paragraph in extra {
+            if !out.is_empty() {
+                out.push_str("\n\n");
+            }
+            out.push_str(paragraph);
+        }
+        Some(out)
     }
 
     /// Set input guardrails.
@@ -324,10 +346,11 @@ impl Agent {
         self.output_type.as_deref()
     }
 
-    /// Enabled tools for this turn (evaluates each tool's `is_enabled`).
+    /// Enabled tools for this turn (evaluates each tool's `is_enabled`): the agent's own, then
+    /// those of its capabilities.
     pub async fn enabled_tools(&self, context: &RunContextWrapper) -> Vec<FunctionTool> {
         let mut out = Vec::new();
-        for tool in &self.tools {
+        for tool in self.local_tools() {
             if tool.is_enabled.resolve(context, self).await {
                 out.push(tool.clone());
             }

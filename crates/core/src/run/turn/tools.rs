@@ -150,7 +150,7 @@ pub(crate) async fn prepare_turn(
     // `maybe_reset_tool_choice`), so `tool_choice` is cleared once the agent has used tools —
     // including when the previous turn ended early via `stop_on_first_tool` / `StopAtTools`.
     let mut model_settings = agent
-        .model_settings
+        .effective_model_settings()
         .resolve(options.run_config.model.settings.as_ref());
     if agent.reset_tool_choice && agents_used_tools.contains(&agent.name) {
         model_settings.tool_choice = None;

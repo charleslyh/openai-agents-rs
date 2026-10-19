@@ -60,6 +60,8 @@ entry will be `0.1.0`.
   `Tool::requires` / `FunctionTool::require::<T>()` checked before the first turn, and
   `ToolMiddleware` / `ModelMiddleware`.
 - A `:<effort>` model-name suffix (`"o4-mini:high"`) for names resolved through a provider.
+- `Capability` / `CapabilityParts`: named bundles of tools, instructions, guardrails, default model
+  settings and required extensions, mounted with `Agent::capability(..)`.
 
 ### Removed
 
