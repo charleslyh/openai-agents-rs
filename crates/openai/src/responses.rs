@@ -195,7 +195,14 @@ impl Model for OpenAIResponsesModel {
             }
             None => {
                 // The gateway never sent `response.completed`: synthesize the terminal event so
-                // consumers still see one, continuing the sequence numbering.
+                // consumers still see one, continuing the sequence numbering. A dropped
+                // connection looks the same, and the usage below is then not the real one.
+                ::tracing::warn!(
+                    model = %self.model,
+                    items = items.len(),
+                    "responses stream ended without `response.completed`; the reply may be \
+                     truncated and its usage is unknown"
+                );
                 let output: Vec<ResponseOutputItem> = items.into_values().collect();
                 let id = response_id
                     .clone()

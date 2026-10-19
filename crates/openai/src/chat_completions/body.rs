@@ -28,16 +28,17 @@ pub(super) fn build_chat_body(
     }
     // Python: structured output becomes `response_format` for Chat Completions.
     if let Some(schema) = request.output_schema.filter(|s| !s.is_plain_text()) {
-        if let Ok(schema_value) = schema.json_schema() {
-            body["response_format"] = json!({
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "final_output",
-                    "schema": schema_value,
-                    "strict": schema.is_strict_json_schema(),
-                }
-            });
-        }
+        let schema_value = schema
+            .json_schema()
+            .map_err(|e| ModelError::Behavior(format!("invalid output JSON schema: {e}")))?;
+        body["response_format"] = json!({
+            "type": "json_schema",
+            "json_schema": {
+                "name": "final_output",
+                "schema": schema_value,
+                "strict": schema.is_strict_json_schema(),
+            }
+        });
     }
     // Applied last, like Python: `extra_args` collides with anything already in the request
     // and `extra_body` overrides everything.
@@ -133,7 +134,6 @@ pub(super) fn chat_payload_to_model_response(
     })
 }
 
-#[allow(dead_code)]
 /// Python (`openai_chatcompletions.py`): the request counts even when the provider omits usage.
 fn chat_usage_or_completed_request(usage: Option<&Value>) -> Usage {
     match usage.filter(|u| !u.is_null()) {

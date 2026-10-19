@@ -99,7 +99,9 @@ impl ChatStreamLayout {
     pub(super) async fn open_message_item(&mut self, emitter: &mut WireEventEmitter<'_>) -> usize {
         if !self.message_open {
             // Python: reasoning takes index 0, then every tool call known at this point.
-            let index = usize::from(self.reasoning_open) + self.calls.len();
+            let announced_any = self.calls.values().any(|c| c.announced);
+            let known_calls = if announced_any { self.calls.len() } else { 0 };
+            let index = usize::from(self.reasoning_open) + known_calls;
             self.message_open = true;
             self.message_index = Some(index);
             emitter
@@ -188,7 +190,14 @@ impl ChatStreamLayout {
             }
         }
         let announced = self.calls.values().filter(|c| c.announced).count();
-        let output_index = usize::from(self.reasoning_open) + announced;
+        let reasoning = usize::from(self.reasoning_open);
+        // Python: calls announced after the message item slot in behind it.
+        let output_index = match self.message_index {
+            Some(message) if announced >= message.saturating_sub(reasoning) => {
+                reasoning + announced + 1
+            }
+            _ => reasoning + announced,
+        };
         let (id, name) = {
             let call = self.calls.entry(index).or_default();
             call.output_index = output_index;
@@ -209,5 +218,65 @@ impl ChatStreamLayout {
             )
             .await;
         output_index
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Index of the `added` event for each opened item, in emission order.
+    async fn drive(
+        steps: impl FnOnce(&mut ChatStreamLayout, &mut WireEventEmitter<'_>) -> Vec<Step>,
+    ) -> Vec<usize> {
+        let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+        let mut layout = ChatStreamLayout::default();
+        let mut emitter = WireEventEmitter::new(&tx);
+        let steps = steps(&mut layout, &mut emitter);
+        let mut indices = Vec::new();
+        for step in steps {
+            match step {
+                Step::Message => {
+                    layout.open_message(&mut emitter).await;
+                    indices.push(layout.message_index());
+                }
+                Step::Call(i) => {
+                    layout.call_name(i, "f");
+                    indices.push(layout.register_call(&mut emitter, i).await);
+                }
+            }
+        }
+        drop(tx);
+        while rx.recv().await.is_some() {}
+        indices
+    }
+
+    enum Step {
+        Message,
+        Call(usize),
+    }
+
+    fn unique(indices: &[usize]) -> bool {
+        let mut seen = std::collections::BTreeSet::new();
+        indices.iter().all(|i| seen.insert(*i))
+    }
+
+    #[tokio::test]
+    async fn message_then_call_do_not_share_an_output_index() {
+        let got = drive(|_, _| vec![Step::Message, Step::Call(0)]).await;
+        assert_eq!(got, vec![0, 1]);
+    }
+
+    #[tokio::test]
+    async fn call_then_message_then_call_get_distinct_indices() {
+        let got = drive(|_, _| vec![Step::Call(0), Step::Message, Step::Call(1)]).await;
+        assert!(unique(&got), "{got:?}");
+        assert_eq!(got, vec![0, 1, 2]);
+    }
+
+    #[tokio::test]
+    async fn calls_only_keep_insertion_order() {
+        let got = drive(|_, _| vec![Step::Call(0), Step::Call(1)]).await;
+        assert_eq!(got, vec![0, 1]);
     }
 }

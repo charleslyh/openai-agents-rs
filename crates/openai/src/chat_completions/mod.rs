@@ -354,6 +354,13 @@ impl Model for OpenAIChatCompletionsModel {
             }
         }
 
+        if finish_reason.is_none() {
+            ::tracing::warn!(
+                model = %self.model,
+                "chat completions stream ended without a finish_reason; the reply may be truncated"
+            );
+        }
+
         // Python: a stream that ends with nothing to show is explained by its finish reason.
         // Filtered output becomes a refusal; a completion cut off before any visible token is a
         // budget problem and an error.
