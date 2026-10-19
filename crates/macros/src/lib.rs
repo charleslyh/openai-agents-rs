@@ -22,31 +22,22 @@ use syn::{
 ///
 /// let tool = add(); // -> FunctionTool
 /// ```
+///
+/// Supported options: `name`, `description`, `needs_approval` (alias `needs_resolution`) and
+/// `timeout` (seconds, e.g. `timeout = 5`). Unknown options are compile errors.
 #[proc_macro_attribute]
 pub fn function_tool(attr: TokenStream, item: TokenStream) -> TokenStream {
     let args = parse_macro_input!(attr with Punctuated::<Meta, Token![,]>::parse_terminated);
-    let mut name_override: Option<String> = None;
-    let mut description_override: Option<String> = None;
-    let mut needs_resolution = false;
-    for meta in args {
-        match meta {
-            Meta::NameValue(nv) if nv.path.is_ident("name") => {
-                name_override = lit_str(&nv.value);
-            }
-            Meta::NameValue(nv) if nv.path.is_ident("description") => {
-                description_override = lit_str(&nv.value);
-            }
-            Meta::NameValue(nv)
-                if nv.path.is_ident("needs_resolution") || nv.path.is_ident("needs_approval") =>
-            {
-                needs_resolution = lit_bool(&nv.value).unwrap_or(false);
-            }
-            Meta::Path(p) if p.is_ident("needs_resolution") || p.is_ident("needs_approval") => {
-                needs_resolution = true;
-            }
-            _ => {}
-        }
-    }
+    let opts = match ToolAttrs::parse(args) {
+        Ok(opts) => opts,
+        Err(err) => return err.to_compile_error().into(),
+    };
+    let ToolAttrs {
+        name: name_override,
+        description: description_override,
+        needs_resolution,
+        timeout_seconds,
+    } = opts;
 
     let input_fn = parse_macro_input!(item as ItemFn);
     let vis = &input_fn.vis;
@@ -183,6 +174,11 @@ pub fn function_tool(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
+    let timeout_call = match timeout_seconds {
+        Some(seconds) => quote! { .with_timeout(#seconds) },
+        None => quote! {},
+    };
+
     let expanded = quote! {
         #impl_fn
 
@@ -197,10 +193,16 @@ pub fn function_tool(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
 
             let __raw_schema = openai_agents::serde_json::to_value(openai_agents::schemars::schema_for!(#args_ident))
-                .expect("function_tool: could not serialize the parameter JSON schema");
+                .unwrap_or_else(|e| panic!(
+                    "function_tool `{}`: could not serialize the parameter JSON schema: {e}",
+                    #tool_name
+                ));
             let mut __schema =
                 openai_agents::strict_schema::ensure_strict_json_schema(&__raw_schema)
-                    .expect("function_tool: parameters cannot be converted to a strict JSON schema");
+                    .unwrap_or_else(|e| panic!(
+                        "function_tool `{}`: parameters cannot be converted to a strict JSON schema: {e}",
+                        #tool_name
+                    ));
             // Python's pydantic schemas do not carry a `$schema` keyword; drop it so the
             // advertised tool schema matches the reference implementation byte for byte.
             if let Some(__root) = __schema.as_object_mut() {
@@ -226,10 +228,90 @@ pub fn function_tool(attr: TokenStream, item: TokenStream) -> TokenStream {
                 },
             )
             .with_needs_resolution(#needs_resolution)
+            #timeout_call
         }
     };
 
     TokenStream::from(expanded)
+}
+
+/// Options accepted by `#[function_tool(...)]`.
+///
+/// Anything outside this list is a compile error: an option that is accepted but ignored (for
+/// example a misspelt `timeout`) would silently run the tool without the limit the author asked for.
+#[derive(Default)]
+struct ToolAttrs {
+    name: Option<String>,
+    description: Option<String>,
+    needs_resolution: bool,
+    timeout_seconds: Option<f64>,
+}
+
+const SUPPORTED_OPTIONS: &str =
+    "`name`, `description`, `needs_approval` (alias `needs_resolution`), `timeout`";
+
+impl ToolAttrs {
+    fn parse(args: Punctuated<Meta, Token![,]>) -> syn::Result<Self> {
+        let mut out = Self::default();
+        for meta in args {
+            match &meta {
+                Meta::NameValue(nv) if nv.path.is_ident("name") => {
+                    out.name = Some(expect_str(&nv.value, "name")?);
+                }
+                Meta::NameValue(nv) if nv.path.is_ident("description") => {
+                    out.description = Some(expect_str(&nv.value, "description")?);
+                }
+                Meta::NameValue(nv)
+                    if nv.path.is_ident("needs_resolution")
+                        || nv.path.is_ident("needs_approval") =>
+                {
+                    out.needs_resolution = lit_bool(&nv.value).ok_or_else(|| {
+                        syn::Error::new_spanned(&nv.value, "expected `true` or `false`")
+                    })?;
+                }
+                Meta::Path(p) if p.is_ident("needs_resolution") || p.is_ident("needs_approval") => {
+                    out.needs_resolution = true;
+                }
+                Meta::NameValue(nv) if nv.path.is_ident("timeout") => {
+                    out.timeout_seconds = Some(expect_seconds(&nv.value)?);
+                }
+                other => {
+                    return Err(syn::Error::new_spanned(
+                        other,
+                        format!(
+                            "unsupported `function_tool` option; supported options: {SUPPORTED_OPTIONS}"
+                        ),
+                    ));
+                }
+            }
+        }
+        Ok(out)
+    }
+}
+
+fn expect_str(expr: &Expr, option: &str) -> syn::Result<String> {
+    lit_str(expr).ok_or_else(|| {
+        syn::Error::new_spanned(expr, format!("`{option}` expects a string literal"))
+    })
+}
+
+/// A positive, finite number of seconds written as an integer or float literal.
+fn expect_seconds(expr: &Expr) -> syn::Result<f64> {
+    let parsed = match expr {
+        Expr::Lit(el) => match &el.lit {
+            Lit::Int(i) => i.base10_parse::<f64>().ok(),
+            Lit::Float(f) => f.base10_parse::<f64>().ok(),
+            _ => None,
+        },
+        _ => None,
+    };
+    match parsed {
+        Some(seconds) if seconds.is_finite() && seconds > 0.0 => Ok(seconds),
+        _ => Err(syn::Error::new_spanned(
+            expr,
+            "`timeout` expects a positive number of seconds, e.g. `timeout = 5` or `timeout = 2.5`",
+        )),
+    }
 }
 
 /// Whether a parameter type is a run/tool context that the SDK injects.
@@ -288,5 +370,42 @@ fn lit_bool(expr: &Expr) -> Option<bool> {
             _ => None,
         },
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(src: &str) -> syn::Result<ToolAttrs> {
+        let args =
+            syn::parse::Parser::parse_str(Punctuated::<Meta, Token![,]>::parse_terminated, src)?;
+        ToolAttrs::parse(args)
+    }
+
+    #[test]
+    fn known_options_are_read() {
+        let a = parse(r#"name = "n", description = "d", needs_approval, timeout = 2.5"#).unwrap();
+        assert_eq!(a.name.as_deref(), Some("n"));
+        assert_eq!(a.description.as_deref(), Some("d"));
+        assert!(a.needs_resolution);
+        assert_eq!(a.timeout_seconds, Some(2.5));
+        assert_eq!(parse("timeout = 5").unwrap().timeout_seconds, Some(5.0));
+    }
+
+    #[test]
+    fn unknown_options_are_errors_not_silently_ignored() {
+        let err = parse("timeut = 5").err().expect("typo must fail");
+        assert!(err.to_string().contains("unsupported"));
+        assert!(parse("retries").is_err());
+    }
+
+    #[test]
+    fn bad_values_are_errors() {
+        assert!(parse("timeout = 0").is_err());
+        assert!(parse("timeout = -1.0").is_err());
+        assert!(parse(r#"timeout = "5""#).is_err());
+        assert!(parse("name = 3").is_err());
+        assert!(parse(r#"needs_approval = "yes""#).is_err());
     }
 }

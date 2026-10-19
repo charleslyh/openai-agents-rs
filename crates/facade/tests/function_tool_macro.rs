@@ -152,3 +152,15 @@ async fn macro_name_override_and_sync_fn() {
     .expect("invoke");
     assert_eq!(out.output, Some(serde_json::json!("hello Ada")));
 }
+
+#[function_tool(description = "Slow", timeout = 2.5)]
+async fn slow() -> String {
+    "ok".into()
+}
+
+/// `timeout = N` must reach the generated tool instead of being silently dropped.
+#[test]
+fn macro_timeout_option_sets_timeout_seconds() {
+    assert_eq!(slow().timeout_seconds, Some(2.5));
+    assert_eq!(greet_person().timeout_seconds, None);
+}
