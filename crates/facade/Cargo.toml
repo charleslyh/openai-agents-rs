@@ -34,6 +34,8 @@ redis = ["dep:openai-agents-sessions", "openai-agents-sessions/redis"]
 postgres = ["dep:openai-agents-sessions", "openai-agents-sessions/postgres"]
 # Trace processors that export: batched console, JSONL files and counters. Off by default.
 observability = ["dep:openai-agents-observability"]
+# Spans as OpenTelemetry spans, in whatever pipeline the process installed.
+otel = ["dep:openai-agents-observability", "openai-agents-observability/otel"]
 
 # Inherits the lint config (including the tracked clippy backlog) from `[workspace.lints]`.
 [lints]

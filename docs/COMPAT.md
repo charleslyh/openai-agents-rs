@@ -237,7 +237,7 @@ dictionaries are merged (`model_settings.py:273`).
 | OpenAI cloud export | N | D-004, not planned |
 | `SpanData` payloads (`input` / `output` / `tools`) | N | Only names and usage are recorded |
 | `BatchedProcessor`, `ConsoleSink`, `JsonlSink`, `Metrics` (feature `observability`) | S | Rust-only: batched export that never blocks the run, and counters over the same stream (X-018) |
-| OpenTelemetry (OTLP) export | N | Planned behind the `otlp` feature |
+| `OtelSink` (feature `otel`) | S | Rust-only: spans into whatever OpenTelemetry pipeline the application installed — OTLP included — through the API only, so no exporter is pulled in (X-018) |
 
 ## Testing
 

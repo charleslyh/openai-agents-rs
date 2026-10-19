@@ -83,6 +83,10 @@ entry will be `0.1.0`.
 - `Metrics` / `MetricsSink` over the same stream: turns, tool calls, tool failure rate, input and
   output tokens, and cost from a `PriceTable`. A model with no price counts as zero, never as an
   estimate.
+- `OtelSink` (`otel` feature): spans as OpenTelemetry spans, in whatever pipeline the process has
+  installed. Only the OpenTelemetry API is depended on, so the exporter — OTLP or anything else —
+  stays the application's choice. The SDK's span and parent ids travel as attributes, because the
+  API assigns ids itself.
 - Facade features `sessions` (`FileSession`, `FileRunStateStore`) and `observability`
   (`BatchedProcessor`, sinks, `Metrics`), both off by default, and two examples: `file_session` and
   `trace_export`.

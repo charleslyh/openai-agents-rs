@@ -13,11 +13,13 @@ workspace = true
 
 [features]
 default = []
-# Export spans as OpenTelemetry spans over OTLP/HTTP. Added with the exporter; a build that does
-# not use it compiles no OpenTelemetry stack.
-# otlp = ["dep:opentelemetry", "dep:opentelemetry-otlp"]
+# Write spans as OpenTelemetry spans, into whatever pipeline the process has installed (an OTLP
+# collector, Jaeger, a vendor SDK). Only the API: the exporter stays the application's choice, and
+# a build that does not use it compiles no OpenTelemetry stack.
+otel = ["dep:opentelemetry"]
 
 [dependencies]
 openai-agents-core = { path = "../core", version = "0.1.0", default-features = false }
+opentelemetry = { version = "0.33", default-features = false, features = ["trace"], optional = true }
 serde_json = { version = "1", features = ["preserve_order"] }
 tracing = "0.1"
