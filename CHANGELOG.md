@@ -46,6 +46,9 @@ entry will be `0.1.0`.
 - Chat Completions now sends `reasoning.effort` as `reasoning_effort`, as Python does. A request
   that also put `reasoning_effort` in `extra_args` now fails with the duplicate-key error.
 - `default_provider()` returns an owned `Arc<dyn ModelProvider>`.
+- **Security:** a resolution given through `RunState` (`approve`, `reject`, `resolve`,
+  `provide_output`) applies only to a call with the same agent, tool and arguments as the paused
+  call it answered; a call whose arguments changed pauses again instead of running.
 - The run loop shares one `Arc<Agent>` per agent instead of deep-copying the agent on every turn,
   handoff and tool call (about 20% faster on `twenty_tools_ten_turns`).
 - **Breaking:** `Agent::resolve_instructions`, `enabled_tools`, `all_function_tools` and

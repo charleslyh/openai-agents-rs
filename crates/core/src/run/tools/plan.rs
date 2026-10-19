@@ -228,7 +228,7 @@ pub(crate) async fn plan_tool_calls(
             continue;
         }
 
-        match resolutions.status(&agent.name, &name, &call_id) {
+        match resolutions.status_for_call(&agent.name, &name, &call_id, &arguments) {
             Some(ToolResolution::Run) => {
                 plan.to_invoke.push((tool, arguments, call_id));
             }

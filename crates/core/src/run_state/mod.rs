@@ -110,7 +110,7 @@ impl RunState {
             nested.resolve(item, resolution);
             return;
         }
-        self.resolutions.resolve(&item.call_id, resolution);
+        self.resolutions.resolve_item(item, resolution);
     }
 
     /// Resolve a pending tool call with a result produced outside the run; the tool is not run
@@ -128,12 +128,7 @@ impl RunState {
             nested.approve(item, always_approve);
             return;
         }
-        self.resolutions.approve(
-            &item.agent_name,
-            &item.tool_name,
-            &item.call_id,
-            always_approve,
-        );
+        self.resolutions.approve_item(item, always_approve);
     }
 
     /// Reject a pending tool call (Python: `RunState.reject`).
@@ -150,13 +145,7 @@ impl RunState {
         let message = rejection_message
             .unwrap_or(DEFAULT_APPROVAL_REJECTION_MESSAGE)
             .to_string();
-        self.resolutions.reject(
-            &item.agent_name,
-            &item.tool_name,
-            &item.call_id,
-            always_reject,
-            message,
-        );
+        self.resolutions.reject_item(item, always_reject, message);
     }
 
     /// Look up how a call is resolved (exact call id, then the sticky approval of agent/tool).
