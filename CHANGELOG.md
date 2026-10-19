@@ -64,6 +64,14 @@ entry will be `0.1.0`.
   environment. `AGENTS_OFFLINE=1` answers locally, so a project can be tried before any key
   exists. New `providers` feature on the facade (off by default) (X-015).
 - `RunOptions::provider(..)` sets the provider that resolves a run's model names.
+- `RunStateStore` (save / load / delete with a TTL) plus `RunStateMigration` and shared schema
+  checks: the contract the file, Redis and Postgres backends implement (X-016).
+- `openai_agents_core::session_contract`: the behaviour every `Session` backend must have, as a
+  suite any backend can run in its own tests. `InMemorySession` and `SqliteSession` pass it
+  (X-017).
+- New crate `openai-agents-sessions` with `FileSession`: a conversation in a JSONL file, locked
+  across processes, rewritten atomically. Session ids are validated (no path traversal, no
+  symlinks), and it passes the contract above.
 - Every preset has a contract test against a mock server: the protocol it speaks, the reasoning
   field that protocol uses, and a capability it lacks refusing the request instead of sending it.
 - **Breaking:** guardrails return a `Verdict`: `Pass`, `Fail { reason, severity }` or
