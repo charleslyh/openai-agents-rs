@@ -2,6 +2,7 @@
 name = "openai-agents-sqlite"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.99"
 description = "SQLite-backed Session for the Rust OpenAI Agents SDK, with the same schema as the Python SDK"
 license = "MIT"
 repository = "https://github.com/charleslyh/openai-agents-rs"

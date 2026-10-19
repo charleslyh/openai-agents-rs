@@ -2,6 +2,7 @@
 name = "openai-agents-openai"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.99"
 description = "OpenAI and OpenAI-compatible model adapters (Chat Completions, Responses) for the Rust OpenAI Agents SDK"
 license = "MIT"
 repository = "https://github.com/charleslyh/openai-agents-rs"

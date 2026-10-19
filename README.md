@@ -260,7 +260,9 @@ let session = CompactingSession::new(
 
 - [`docs/COMPAT.md`](./docs/COMPAT.md) — support matrix
 - [`docs/DEVIATIONS.md`](./docs/DEVIATIONS.md) — intentional differences from Python (must stay current)
-- [`docs/READINESS.md`](./docs/READINESS.md) — capability assessment per agent use case, and improvement backlog
+- [`docs/IMPROVEMENT-PLAN.md`](./docs/IMPROVEMENT-PLAN.md) — where the SDK is heading: milestones, design decisions, and the improvement backlog
+- [`STABILITY.md`](./STABILITY.md) — which parts of the API are stable, and the deprecation policy
+- [`CHANGELOG.md`](./CHANGELOG.md) — what changed in each release
 - [`docs/MIGRATION-FROM-PYTHON.md`](./docs/MIGRATION-FROM-PYTHON.md) — Python → Rust API mapping and what to write yourself
 - [`docs/CONTRIBUTING.md`](./docs/CONTRIBUTING.md) — commit message format and verification
 
