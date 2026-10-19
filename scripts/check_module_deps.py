@@ -47,6 +47,7 @@ EXTENSIONS = {
     "openai-agents-mcp",
     "openai-agents-openai",
     "openai-agents-sqlite",
+    "openai-agents-observability",
     "openai-agents-sessions",
     "openai-agents-testing",
 }
@@ -63,6 +64,7 @@ CRATE_DEPS: dict[str, set[str]] = {
     "openai-agents-mcp": {CORE},
     "openai-agents-openai": {CORE},
     "openai-agents-sqlite": {CORE},
+    "openai-agents-observability": {CORE},
     "openai-agents-sessions": {CORE},
     "openai-agents-testing": {CORE},
     PROVIDERS: {CORE, "openai-agents-openai"},

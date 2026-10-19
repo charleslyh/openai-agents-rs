@@ -75,6 +75,14 @@ entry will be `0.1.0`.
 - `FileRunStateStore`: a paused run per file, signed with HMAC-SHA256 when `AGENTS_STATE_KEY` is
   set, with a TTL and a migration hook. A state edited outside the process fails to load instead
   of resuming.
+- New crate `openai-agents-observability` with `BatchedProcessor`, a `TracingProcessor` that turns
+  spans into JSON in the callback and hands them to a background thread through a bounded queue,
+  so a slow or broken exporter costs the run nothing. A full queue drops the event and counts it
+  (`dropped()`); `force_flush` waits at most 2 s (X-018).
+- `ConsoleSink` and `JsonlSink`: where those events go, one JSON object per line.
+- `Metrics` / `MetricsSink` over the same stream: turns, tool calls, tool failure rate, input and
+  output tokens, and cost from a `PriceTable`. A model with no price counts as zero, never as an
+  estimate.
 - Every preset has a contract test against a mock server: the protocol it speaks, the reasoning
   field that protocol uses, and a capability it lacks refusing the request instead of sending it.
 - **Breaking:** guardrails return a `Verdict`: `Pass`, `Fail { reason, severity }` or

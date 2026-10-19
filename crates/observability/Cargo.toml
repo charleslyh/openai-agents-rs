@@ -1,0 +1,23 @@
+[package]
+name = "openai-agents-observability"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.99"
+description = "Trace processors for the Rust OpenAI Agents SDK: batched export, console, JSONL files, OpenTelemetry"
+license = "MIT"
+repository = "https://github.com/charleslyh/openai-agents-rs"
+
+# Inherits the lint config (including the tracked clippy backlog) from `[workspace.lints]`.
+[lints]
+workspace = true
+
+[features]
+default = []
+# Export spans as OpenTelemetry spans over OTLP/HTTP. Added with the exporter; a build that does
+# not use it compiles no OpenTelemetry stack.
+# otlp = ["dep:opentelemetry", "dep:opentelemetry-otlp"]
+
+[dependencies]
+openai-agents-core = { path = "../core", version = "0.1.0", default-features = false }
+serde_json = { version = "1", features = ["preserve_order"] }
+tracing = "0.1"
