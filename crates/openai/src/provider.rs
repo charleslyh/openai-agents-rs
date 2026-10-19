@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use async_trait::async_trait;
 use openai_agents_core::error::UserError;
 use openai_agents_core::model::provider::ModelProvider;
 use openai_agents_core::model::Model;
@@ -148,14 +149,16 @@ impl CompatibleProvider {
     }
 }
 
+#[async_trait]
 impl ModelProvider for CompatibleProvider {
-    fn get_model(&self, model_name: Option<&str>) -> Result<Arc<dyn Model>, UserError> {
-        self.inner.get_model(model_name)
+    async fn get_model(&self, model_name: Option<&str>) -> Result<Arc<dyn Model>, UserError> {
+        self.inner.get_model(model_name).await
     }
 }
 
+#[async_trait]
 impl ModelProvider for OpenAIProvider {
-    fn get_model(&self, model_name: Option<&str>) -> Result<Arc<dyn Model>, UserError> {
+    async fn get_model(&self, model_name: Option<&str>) -> Result<Arc<dyn Model>, UserError> {
         let name = model_name
             .or(self.default_model.as_deref())
             .ok_or_else(|| {

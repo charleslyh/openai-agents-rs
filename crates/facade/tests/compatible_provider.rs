@@ -115,7 +115,9 @@ async fn compatible_provider_is_routed_by_prefix_and_has_a_default_model() {
     assert_eq!(sent["model"], "qwen2.5", "the prefix is stripped");
 
     let provider = CompatibleProvider::new(&base).default_model("qwen");
-    let model = openai_agents::ModelProvider::get_model(&provider, None).expect("default model");
+    let model = openai_agents::ModelProvider::get_model(&provider, None)
+        .await
+        .expect("default model");
     drop(model);
     assert_eq!(run_with(Arc::new(provider), "qwen").await, "routed");
 }

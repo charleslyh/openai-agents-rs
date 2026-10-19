@@ -34,3 +34,4 @@ pub use crate::run_state::{RunState, ToolResolution};
 pub use crate::runtime::Runtime;
 pub use crate::stream_events::StreamEvent;
 pub use crate::tool::{FunctionTool, NeedsResolution, Tool, ToolContext, ToolOutput};
+pub use async_trait::async_trait;

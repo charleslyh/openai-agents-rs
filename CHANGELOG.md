@@ -51,6 +51,9 @@ entry will be `0.1.0`.
 - **Breaking:** `Agent::resolve_instructions`, `enabled_tools`, `all_function_tools` and
   `enabled_handoffs` take `self: &Arc<Agent>`, and `ToolEnabled::resolve` takes `&Arc<Agent>`.
   Wrap a bare agent with `Arc::new(agent)` to call them.
+- **Breaking:** `ModelProvider::get_model` is `async` so a provider can await credentials or a
+  lookup. Implement it with `#[async_trait]` (re-exported as `openai_agents::async_trait`) and
+  `.await` direct calls.
 
 ### Added
 
@@ -69,6 +72,7 @@ entry will be `0.1.0`.
   settings and required extensions, mounted with `Agent::capability(..)`.
 - `prelude` modules (`openai_agents::prelude`, `openai_agents_core::prelude`) with the types most
   programs need; the facade one also brings `#[function_tool]`.
+- `async_trait` is re-exported at the crate root and in the prelude.
 
 ### Removed
 

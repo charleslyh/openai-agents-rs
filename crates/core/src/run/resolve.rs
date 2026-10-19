@@ -75,10 +75,10 @@ pub(crate) struct ResolvedModel {
 }
 
 impl ResolvedModel {
-    fn named(provider: &dyn ModelProvider, name: &str) -> Result<Self, AgentsError> {
+    async fn named(provider: &dyn ModelProvider, name: &str) -> Result<Self, AgentsError> {
         let (base, name_effort) = ReasoningEffort::split_model_name(name);
         Ok(Self {
-            model: provider.get_model(Some(base))?,
+            model: provider.get_model(Some(base)).await?,
             name_effort,
         })
     }
@@ -107,7 +107,7 @@ impl ResolvedModel {
 /// Order matches Python: `RunConfig.model` (instance or name) → `Agent.model` →
 /// `Agent.model_name`, with names resolved through the configured provider. A name ending in a
 /// known `:<effort>` is resolved without the suffix (Rust-only, X-006).
-pub(crate) fn resolve_model(
+pub(crate) async fn resolve_model(
     agent: &Agent,
     run_config: &RunConfig,
 ) -> Result<ResolvedModel, AgentsError> {
@@ -120,13 +120,13 @@ pub(crate) fn resolve_model(
         return Ok(ResolvedModel::instance(m));
     }
     if let Some(ModelRef::Name(name)) = &run_config.model.model_ref {
-        return ResolvedModel::named(&*provider, name);
+        return ResolvedModel::named(&*provider, name).await;
     }
     if let Some(m) = &agent.model {
         return Ok(ResolvedModel::instance(m));
     }
     if let Some(name) = &agent.model_name {
-        return ResolvedModel::named(&*provider, name);
+        return ResolvedModel::named(&*provider, name).await;
     }
     Err(UserError::new(
         "No model configured. Bind a Model (e.g. ScriptedModel) via `Agent::model`, set \

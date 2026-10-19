@@ -43,6 +43,9 @@ pub use agent::{Capability, CapabilityParts, MountedCapability, NamedCapability}
 pub use agent_output::{
     output_schema, AgentOutputSchema, AgentOutputSchemaBase, CustomOutputSchema,
 };
+/// Re-exported for implementing the async extension traits ([`Model`], [`ModelProvider`],
+/// [`Tool`], [`Session`], ...) without a direct `async-trait` dependency.
+pub use async_trait::async_trait;
 pub use context::{
     chain_input_filters, default_token_counter, estimate_item_tokens, input_filter,
     ContextWindowTrimmer, TokenCounter, ToolOutputTrimmer,

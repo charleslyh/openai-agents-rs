@@ -357,7 +357,7 @@ impl<'a> TurnLoop<'a> {
             &self.context,
         )
         .await?;
-        let resolved = resolve_model(&self.current_agent, &self.options.run_config)?;
+        let resolved = resolve_model(&self.current_agent, &self.options.run_config).await?;
         resolved.apply_to(&mut setup.model_settings);
         let model = resolved.model;
         let (response, resolutions, from_resume) = match self.resume_pending.take() {

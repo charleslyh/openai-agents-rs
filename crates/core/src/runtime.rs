@@ -206,8 +206,9 @@ mod tests {
     use super::*;
 
     struct Marker;
+    #[async_trait::async_trait]
     impl ModelProvider for Marker {
-        fn get_model(
+        async fn get_model(
             &self,
             _name: Option<&str>,
         ) -> Result<Arc<dyn crate::model::Model>, crate::error::UserError> {
@@ -215,13 +216,18 @@ mod tests {
         }
     }
 
-    #[test]
-    fn two_runtimes_do_not_share_their_provider() {
+    #[tokio::test]
+    async fn two_runtimes_do_not_share_their_provider() {
         let a = Runtime::new();
         let b = Runtime::new();
         assert!(a.set_model_provider(Arc::new(Marker)));
         // `b` still has no provider of its own: it reports the actionable missing-provider error.
-        let err = b.provider().get_model(None).err().expect("no provider set");
+        let err = b
+            .provider()
+            .get_model(None)
+            .await
+            .err()
+            .expect("no provider set");
         assert!(err.to_string().contains("set_model_provider"), "{err}");
     }
 

@@ -135,7 +135,8 @@ bench(`cargo bench -p openai-agents --bench run_loop`,本机):
 | `Capability` 具名组合 | 完成。`agent/capability.rs`(放在 `agent` 模块内,不扩大已登记的 8 模块环):`Capability` trait + `CapabilityParts`(tools / instructions / 输入输出护栏 / 默认 model settings / requires)+ `CapabilityParts::named(..)`;`Agent::capability(..)` 挂载时计算一次 parts,与 agent 自身字段分开存放,在读取点合并(`enabled_tools`、`resolve_instructions`、输入/输出护栏、`prepare_turn` 的 settings、启动期 requires 校验),因此 builder 调用顺序无关、"整体挂载 = 手工给零件"有等价测试(`behavior_capability.rs`)。**未含**:hooks(agent 只有一个 hooks 槽,需组合器);5 个内置 bundle 随 M3/M4 的 crate 落地 |
 | 去克隆(路径 A) | 完成(`e48c5ac`)。见 A6 |
 | 术语收敛为 resolution | 完成(`d1a0ca8`)。删除重复的 `RunState::approval_status`;`McpServer::needs_approval_for` 改名 `needs_resolution_for`;人工审批专属名(`approve`/`reject`、MCP `RequireApproval`、`ToolErrorKind::ApprovalRejected`、`StickyDecision`)按 D-048 保留 |
-| `prelude` | 完成。`core::prelude` 35 个名字(按 examples/demo 的导入频次选取:Agent/Runner/RunOptions/RunResult/RunState、工具与 resolution、护栏、handoff、session、model/provider、Reasoning、Runtime、Extensions);facade `prelude` 另加 `#[function_tool]` 并换成 facade 的 `Runner`。README 快速开始与示例 01 已改用。**未含**:把 `ResolutionStore`、`StickyDecision`、序列化辅助等移出顶层(随 examples 迁移一起做) |
+| `prelude` | 完成。`core::prelude` 35 个名字(后加 `async_trait`)(按 examples/demo 的导入频次选取:Agent/Runner/RunOptions/RunResult/RunState、工具与 resolution、护栏、handoff、session、model/provider、Reasoning、Runtime、Extensions);facade `prelude` 另加 `#[function_tool]` 并换成 facade 的 `Runner`。README 快速开始与示例 01 已改用。**未含**:把 `ResolutionStore`、`StickyDecision`、序列化辅助等移出顶层(随 examples 迁移一起做) |
+| `get_model` 改 async | 完成。`ModelProvider::get_model` 为 `async fn`(`async_trait`,root 与 prelude 重导出);`resolve_model` 随之 async,在 turn 内与 Python 同一位置 await;`CachedProvider` 不跨 await 持锁,并发未命中时以先写入者为准共享同一实例(有测试)。X-008 |
 
 ### 新增发现(扫描时顺带)
 
