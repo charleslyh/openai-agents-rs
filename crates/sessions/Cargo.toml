@@ -26,6 +26,9 @@ async-trait = "0.1"
 # Cross-process file locking (`flock` / `LockFileEx`); a second process touching the same session
 # waits instead of interleaving writes.
 fs2 = "0.4"
+# Signing a stored run state so a state edited outside the process is refused, not resumed.
+hmac = "0.12"
+sha2 = "0.10"
 serde_json = { version = "1", features = ["preserve_order"] }
 tokio = { version = "1", features = ["rt"] }
 tracing = "0.1"

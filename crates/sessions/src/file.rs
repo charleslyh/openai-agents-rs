@@ -235,8 +235,8 @@ impl Session for FileSession {
     }
 }
 
-/// Turn a session id into a file name, refusing anything that could leave the directory.
-fn file_name(id: &str) -> Result<String, AgentsError> {
+/// Turn an id into a file name, refusing anything that could leave the directory.
+pub(crate) fn file_name(id: &str) -> Result<String, AgentsError> {
     let reject = |why: &str| {
         UserError::new(format!(
             "session id `{id}` cannot be a file name: {why}. Use letters, digits, `_`, `-` and `.`"

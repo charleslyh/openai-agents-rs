@@ -68,7 +68,7 @@ pub fn finish_load(
     };
     let version = state
         .to_json()
-        .get("schema_version")
+        .get("$schemaVersion")
         .and_then(|v| v.as_str())
         .unwrap_or_default()
         .to_string();

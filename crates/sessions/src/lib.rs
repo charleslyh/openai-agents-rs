@@ -5,6 +5,8 @@
 //! and ships nothing that writes to disk or talks to a server. This crate is where those live:
 //!
 //! * [`FileSession`]: a conversation in a JSONL file, locked across processes.
+//! * [`FileRunStateStore`]: a paused run per file, signed so a state edited outside the process is
+//!   refused instead of resumed.
 //! * Redis (`redis` feature) and Postgres (`postgres` feature) for a session shared by more than
 //!   one machine.
 //!
@@ -12,5 +14,7 @@
 //! the history and not in what the history does.
 
 pub mod file;
+pub mod state_file;
 
 pub use file::FileSession;
+pub use state_file::{FileRunStateStore, STATE_KEY_ENV};

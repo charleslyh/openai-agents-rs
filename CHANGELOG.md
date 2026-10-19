@@ -72,6 +72,9 @@ entry will be `0.1.0`.
 - New crate `openai-agents-sessions` with `FileSession`: a conversation in a JSONL file, locked
   across processes, rewritten atomically. Session ids are validated (no path traversal, no
   symlinks), and it passes the contract above.
+- `FileRunStateStore`: a paused run per file, signed with HMAC-SHA256 when `AGENTS_STATE_KEY` is
+  set, with a TTL and a migration hook. A state edited outside the process fails to load instead
+  of resuming.
 - Every preset has a contract test against a mock server: the protocol it speaks, the reasoning
   field that protocol uses, and a capability it lacks refusing the request instead of sending it.
 - **Breaking:** guardrails return a `Verdict`: `Pass`, `Fail { reason, severity }` or
