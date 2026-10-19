@@ -7,14 +7,30 @@
 //! * [`FileSession`]: a conversation in a JSONL file, locked across processes.
 //! * [`FileRunStateStore`]: a paused run per file, signed so a state edited outside the process is
 //!   refused instead of resumed.
-//! * Redis (`redis` feature) and Postgres (`postgres` feature) for a session shared by more than
-//!   one machine.
+//! * [`RedisSession`] and [`RedisRunStateStore`] (`redis` feature): the same, in a list and a key,
+//!   for a history more than one process shares.
+//! * [`PostgresSession`] and [`PostgresRunStateStore`] (`postgres` feature): the same, in rows, for
+//!   a deployment that already has a database.
 //!
 //! Every backend runs [`openai_agents_core::session_contract`], so they differ in where they put
 //! the history and not in what the history does.
+//!
+//! The crates that talk to a server sit behind features, so a build that keeps history in memory
+//! or in a file compiles no Redis client and no database driver.
 
 pub mod file;
+mod state;
 pub mod state_file;
+
+#[cfg(feature = "postgres")]
+pub mod postgres;
+#[cfg(feature = "redis")]
+pub mod redis;
 
 pub use file::FileSession;
 pub use state_file::{FileRunStateStore, STATE_KEY_ENV};
+
+#[cfg(feature = "postgres")]
+pub use postgres::{PostgresRunStateStore, PostgresSession};
+#[cfg(feature = "redis")]
+pub use redis::{RedisRunStateStore, RedisSession};

@@ -14,22 +14,17 @@
 
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use fs2::FileExt;
-use hmac::{Hmac, Mac};
-use serde_json::{json, Value};
-use sha2::Sha256;
+use serde_json::Value;
 
 use openai_agents_core::error::UserError;
-use openai_agents_core::{
-    finish_load, AgentsError, RunState, RunStateMigration, RunStateStore, RUN_STATE_SCHEMA_VERSION,
-};
+use openai_agents_core::{AgentsError, RunState, RunStateMigration, RunStateStore};
 
 use super::file::file_name;
-
-type HmacSha256 = Hmac<Sha256>;
+use super::state::{decode, key_from_env, to_state, wrap};
 
 /// Where the signing key is read from.
 pub const STATE_KEY_ENV: &str = "AGENTS_STATE_KEY";
@@ -55,17 +50,7 @@ impl FileRunStateStore {
                 dir.display()
             ))
         })?;
-        let key = std::env::var(STATE_KEY_ENV)
-            .ok()
-            .map(|v| v.trim().to_string())
-            .filter(|v| !v.is_empty())
-            .map(String::into_bytes);
-        if key.is_none() {
-            tracing::warn!(
-                "{STATE_KEY_ENV} is not set: paused run states are stored unsigned, so one edited \
-                 outside this process would be resumed"
-            );
-        }
+        let key = key_from_env(STATE_KEY_ENV);
         Ok(Self {
             dir,
             key,
@@ -124,21 +109,7 @@ impl RunStateStore for FileRunStateStore {
     ) -> Result<(), AgentsError> {
         let _lock = self.lock()?;
         let path = self.path_for(key)?;
-        let state_json = state.to_json();
-        // Signed over the exact bytes that are read back, so a key can be compared before anything
-        // is parsed.
-        let canonical = serde_json::to_string(&state_json)
-            .map_err(|e| UserError::new(format!("cannot serialize a paused run: {e}")))?;
-        let mut envelope = json!({
-            "schema_version": RUN_STATE_SCHEMA_VERSION,
-            "state": state_json,
-        });
-        if let Some(ttl) = ttl {
-            envelope["expires_at"] = json!(now_seconds().saturating_add(ttl.as_secs()));
-        }
-        if let Some(key) = &self.key {
-            envelope["mac"] = json!(sign(key, &canonical));
-        }
+        let envelope = wrap(state, ttl, self.key.as_deref())?;
         atomic_write(&path, &envelope)
     }
 
@@ -154,42 +125,12 @@ impl RunStateStore for FileRunStateStore {
         };
         let envelope: Value = serde_json::from_slice(&bytes)
             .map_err(|e| UserError::new(format!("{} is not a stored run: {e}", path.display())))?;
-        if let Some(expires_at) = envelope.get("expires_at").and_then(Value::as_u64) {
-            if now_seconds() >= expires_at {
-                std::fs::remove_file(&path).ok();
-                return Ok(None);
-            }
-        }
-        let state_json = envelope.get("state").cloned().unwrap_or(Value::Null);
-        let canonical = serde_json::to_string(&state_json)
-            .map_err(|e| UserError::new(format!("cannot read the stored run: {e}")))?;
-        match (&self.key, envelope.get("mac").and_then(Value::as_str)) {
-            (Some(key), Some(mac)) if !verify(key, &canonical, mac) => {
-                return Err(UserError::new(format!(
-                    "{} was changed after it was stored: the signature does not match. Delete it \
-                     and start the run again",
-                    path.display()
-                ))
-                .into())
-            }
-            // Signed store, unsigned state: someone removed the signature.
-            (Some(_), None) => {
-                return Err(UserError::new(format!(
-                    "{} carries no signature, but {STATE_KEY_ENV} is set. Delete it and start the \
-                     run again",
-                    path.display()
-                ))
-                .into())
-            }
-            _ => {}
-        }
-        let starting_agent = state_json
-            .get("starting_agent_name")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string();
-        let state = RunState::from_json(&starting_agent, state_json)?;
-        Ok(Some(finish_load(state, self.migrate.as_ref())?))
+        let label = path.display().to_string();
+        let Some(state_json) = decode(&envelope, self.key.as_deref(), &label)? else {
+            std::fs::remove_file(&path).ok();
+            return Ok(None);
+        };
+        Ok(Some(to_state(state_json, self.migrate.as_ref())?))
     }
 
     async fn delete(&self, key: &str) -> Result<(), AgentsError> {
@@ -213,49 +154,6 @@ impl std::fmt::Debug for FileRunStateStore {
     }
 }
 
-fn now_seconds() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or_default()
-}
-
-/// HMAC-SHA256 of `payload`, as lower-case hex.
-fn sign(key: &[u8], payload: &str) -> String {
-    let mut mac = match HmacSha256::new_from_slice(key) {
-        Ok(mac) => mac,
-        Err(_) => return String::new(),
-    };
-    mac.update(payload.as_bytes());
-    hex(mac.finalize().into_bytes().as_slice())
-}
-
-/// Compare without letting the first differing byte change how long it takes.
-fn verify(key: &[u8], payload: &str, mac: &str) -> bool {
-    let expected = sign(key, payload);
-    constant_time_eq(expected.as_bytes(), mac.as_bytes())
-}
-
-fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
-    if left.len() != right.len() {
-        return false;
-    }
-    left.iter()
-        .zip(right.iter())
-        .fold(0u8, |acc, (a, b)| acc | (a ^ b))
-        == 0
-}
-
-fn hex(bytes: &[u8]) -> String {
-    const DIGITS: &[u8; 16] = b"0123456789abcdef";
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        out.push(DIGITS[(byte >> 4) as usize] as char);
-        out.push(DIGITS[(byte & 0xf) as usize] as char);
-    }
-    out
-}
-
 /// Write `value` to `path` through a temporary file, so a crash cannot leave a half state.
 fn atomic_write(path: &Path, value: &Value) -> Result<(), AgentsError> {
     let tmp = path.with_extension("state.json.tmp");
@@ -276,6 +174,9 @@ fn atomic_write(path: &Path, value: &Value) -> Result<(), AgentsError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::now_seconds;
+    use openai_agents_core::RUN_STATE_SCHEMA_VERSION;
+    use serde_json::json;
     use std::sync::Arc;
 
     fn dir(name: &str) -> PathBuf {
@@ -407,17 +308,5 @@ mod tests {
             );
         }
         std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn signing_is_stable_and_comparison_is_exact() {
-        assert_eq!(sign(b"k", "payload"), sign(b"k", "payload"));
-        assert_ne!(sign(b"k", "payload"), sign(b"k", "payload2"));
-        assert!(verify(b"k", "payload", &sign(b"k", "payload")));
-        assert!(!verify(b"k", "payload", &sign(b"k", "other")));
-        assert!(!verify(b"k", "payload", "short"));
-        assert!(constant_time_eq(b"abc", b"abc"));
-        assert!(!constant_time_eq(b"abc", b"abd"));
-        assert!(!constant_time_eq(b"abc", b"ab"));
     }
 }

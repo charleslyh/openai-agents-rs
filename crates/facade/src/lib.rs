@@ -2,9 +2,9 @@
 //!
 //! This crate is the single entry point: it re-exports everything from `openai-agents-core` under
 //! the paths the SDK has always had, and adds the `#[function_tool]` macro. The Cargo features
-//! (`openai`, `mcp`, `sqlite`, `providers`, `sessions`, `observability`) pull in the crate that
-//! implements them. Core knows no concrete model provider; with the `openai` feature, [`Runner`]
-//! installs the OpenAI one as the process default.
+//! (`openai`, `mcp`, `sqlite`, `providers`, `sessions`, `redis`, `postgres`, `observability`) pull
+//! in the crate that implements them. Core knows no concrete model provider; with the `openai`
+//! feature, [`Runner`] installs the OpenAI one as the process default.
 //!
 //! The public surface mirrors `agents/__init__.py` for the supported subset; see
 //! `docs/COMPAT.md` for the support matrix and `docs/DEVIATIONS.md` for recorded differences.
@@ -52,6 +52,14 @@ pub use openai_agents_providers as providers;
 /// A conversation and a paused run in files (Rust-only, X-016 / X-017).
 #[cfg(feature = "sessions")]
 pub use openai_agents_sessions::{FileRunStateStore, FileSession};
+
+/// A conversation and a paused run in Redis (Rust-only, X-016 / X-017).
+#[cfg(feature = "redis")]
+pub use openai_agents_sessions::{RedisRunStateStore, RedisSession};
+
+/// A conversation and a paused run in Postgres (Rust-only, X-016 / X-017).
+#[cfg(feature = "postgres")]
+pub use openai_agents_sessions::{PostgresRunStateStore, PostgresSession};
 
 /// Trace processors that export somewhere, and counters over the same stream
 /// (Rust-only, X-018).

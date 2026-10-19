@@ -13,12 +13,12 @@ workspace = true
 
 [features]
 default = []
-# Redis-backed session and state store: list + TTL, atomic replace via MULTI. Added with the
-# backend, so a build that does not use Redis does not compile the client.
-# redis = ["dep:redis"]
-# Postgres-backed session and state store: parameter binding, table names validated against a
-# allow-list. Added with the backend.
-# postgres = ["dep:sqlx"]
+# Redis-backed session and state store: a list with an optional TTL, `replace_items` in one
+# MULTI. Added with the backend, so a build that does not use Redis compiles no client.
+redis = ["dep:redis"]
+# Postgres-backed session and state store: every value bound, table names validated before they
+# reach SQL. Added with the backend.
+postgres = ["dep:sqlx"]
 
 [dependencies]
 openai-agents-core = { path = "../core", version = "0.1.0", default-features = false }
@@ -32,6 +32,11 @@ sha2 = "0.10"
 serde_json = { version = "1", features = ["preserve_order"] }
 tokio = { version = "1", features = ["rt"] }
 tracing = "0.1"
+redis = { version = "1.7.1", default-features = false, features = ["tokio-comp"], optional = true }
+sqlx = { version = "0.9.0", default-features = false, features = ["postgres", "runtime-tokio", "tls-rustls"], optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+# The Redis tests change a stored state behind the store's back, which is the tampering the
+# signature is there to catch; they need the client for that. Test profile only.
+redis = { version = "1.7.1", default-features = false, features = ["tokio-comp"] }

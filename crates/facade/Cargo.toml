@@ -28,6 +28,10 @@ sqlite = ["dep:openai-agents-sqlite"]
 # `FileSession` (a conversation in a JSONL file) and `FileRunStateStore` (a run that paused for an
 # approval). Off by default: nothing in the core loop needs a file.
 sessions = ["dep:openai-agents-sessions"]
+# `RedisSession` / `RedisRunStateStore`: a history more than one process shares.
+redis = ["dep:openai-agents-sessions", "openai-agents-sessions/redis"]
+# `PostgresSession` / `PostgresRunStateStore`: a history in a database the deployment already has.
+postgres = ["dep:openai-agents-sessions", "openai-agents-sessions/postgres"]
 # Trace processors that export: batched console, JSONL files and counters. Off by default.
 observability = ["dep:openai-agents-observability"]
 

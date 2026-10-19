@@ -86,6 +86,10 @@ entry will be `0.1.0`.
 - Facade features `sessions` (`FileSession`, `FileRunStateStore`) and `observability`
   (`BatchedProcessor`, sinks, `Metrics`), both off by default, and two examples: `file_session` and
   `trace_export`.
+- `RedisSession` and `PostgresSession` (`redis` / `postgres` features): the same conversation
+  contract in a list or in rows, for a history more than one process shares, with `replace_items`
+  atomic in both. Both backends run the shared contract suite, and both ship a `RunStateStore`.
+  Values are bound in every statement; a table name is validated before it reaches SQL.
 - Every preset has a contract test against a mock server: the protocol it speaks, the reasoning
   field that protocol uses, and a capability it lacks refusing the request instead of sending it.
 - **Breaking:** guardrails return a `Verdict`: `Pass`, `Fail { reason, severity }` or
