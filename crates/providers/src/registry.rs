@@ -12,6 +12,7 @@ use openai_agents_core::error::UserError;
 use openai_agents_core::model::provider::ModelProvider;
 use openai_agents_core::model::Model;
 
+use super::catalog::advise;
 use super::spec::{infer_preset, Capabilities, ProviderApi, PRESETS};
 use super::{GuardedModel, Provider, LAST_CHECKED};
 
@@ -252,7 +253,9 @@ impl ModelProvider for ProviderRouter {
                     .iter()
                     .find(|e| e.name == prefix)
                     .ok_or_else(|| self.unknown(prefix))?;
-                Ok(self.guard(entry, entry.provider.get_model(Some(rest)).await?))
+                let model = entry.provider.get_model(Some(rest)).await?;
+                note_model(rest);
+                Ok(self.guard(entry, model))
             }
             _ => {
                 let inferred = infer_preset(name)
@@ -260,7 +263,9 @@ impl ModelProvider for ProviderRouter {
                 let entry = inferred
                     .or_else(|| self.entries.iter().find(|e| e.name == self.default))
                     .ok_or_else(|| self.unknown(&self.default))?;
-                Ok(self.guard(entry, entry.provider.get_model(Some(name)).await?))
+                let model = entry.provider.get_model(Some(name)).await?;
+                note_model(name);
+                Ok(self.guard(entry, model))
             }
         }
     }
@@ -281,6 +286,14 @@ impl ProviderRouter {
                 .collect::<Vec<_>>()
                 .join(", ")
         ))
+    }
+}
+
+/// Say something about a model id the catalogue recognises: retired, superseded, or a near miss.
+/// Never fails a run — the catalogue is a hint.
+fn note_model(model_name: &str) {
+    if let Some(advice) = advise(model_name) {
+        tracing::warn!(model = model_name, "{advice}");
     }
 }
 

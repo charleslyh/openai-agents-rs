@@ -58,6 +58,8 @@ entry will be `0.1.0`.
 - Requests a provider cannot honour are refused before they are sent: reasoning, a JSON schema,
   tool calls, parallel calls, `store`, images and PDFs, reported as `ModelError::Unsupported`
   naming the provider and the capability.
+- A small model catalogue warns when a run names a retired model (and what to use instead), a
+  superseded one, or an id that looks like a typo of a known one (X-014).
 - **Breaking:** guardrails return a `Verdict`: `Pass`, `Fail { reason, severity }` or
   `Transform(content)` (continue with rewritten content, e.g. redacted data).
   `GuardrailFunctionOutput::tripwire_triggered` is now a method; `pass` / `trip` keep working and
