@@ -10,6 +10,7 @@ use openai_agents_core::error::UserError;
 use openai_agents_core::model::provider::ModelProvider;
 use openai_agents_openai::{CompatibleProvider, DefaultOpenAiApi};
 
+use super::guard::GuardedProvider;
 use super::spec::{preset, Capabilities, ProviderApi, ProviderSpec, LAST_CHECKED};
 
 /// A provider built from a preset or from a URL, ready to be registered under a prefix.
@@ -128,11 +129,15 @@ impl Provider {
 
     /// Build the provider.
     ///
-    /// Fails when the preset names a key variable that is unset, or when no endpoint is known.
+    /// Models it hands out are checked against [`Self::capabilities`]: a request the provider
+    /// cannot honour is refused rather than sent. Fails when the preset names a key variable that
+    /// is unset, or when no endpoint is known.
     pub fn build(self) -> Result<Arc<dyn ModelProvider>, UserError> {
+        let name = self.name.clone();
+        let capabilities = self.capabilities();
         let base_url = self
             .base_url
-            .ok_or_else(|| UserError::new(format!("provider `{}` has no endpoint", self.name)))?;
+            .ok_or_else(|| UserError::new(format!("provider `{name}` has no endpoint")))?;
         let key = match self.api_key {
             Some(key) => key,
             None => match self.spec.and_then(|s| s.key_env) {
@@ -158,7 +163,11 @@ impl Provider {
             provider = provider.default_model(model);
         }
         tracing::debug!(provider = %self.name, %base_url, "built a provider from a preset");
-        Ok(Arc::new(provider))
+        Ok(Arc::new(GuardedProvider::new(
+            Arc::new(provider),
+            name,
+            capabilities,
+        )))
     }
 }
 

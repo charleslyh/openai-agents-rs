@@ -166,6 +166,58 @@ impl Model for GuardedModel {
     }
 }
 
+/// A provider whose models are checked against what the provider supports.
+///
+/// This is what [`super::Provider::build`] returns, so a single provider and one reached through
+/// [`super::ProviderRegistry`] behave the same.
+pub struct GuardedProvider {
+    inner: Arc<dyn openai_agents_core::model::provider::ModelProvider>,
+    name: String,
+    capabilities: Capabilities,
+}
+
+impl std::fmt::Debug for GuardedProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GuardedProvider")
+            .field("provider", &self.name)
+            .field(
+                "capabilities",
+                &self.capabilities.supported().collect::<Vec<_>>(),
+            )
+            .finish()
+    }
+}
+
+impl GuardedProvider {
+    /// Wrap `inner`.
+    pub fn new(
+        inner: Arc<dyn openai_agents_core::model::provider::ModelProvider>,
+        name: impl Into<String>,
+        capabilities: Capabilities,
+    ) -> Self {
+        Self {
+            inner,
+            name: name.into(),
+            capabilities,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl openai_agents_core::model::provider::ModelProvider for GuardedProvider {
+    async fn get_model(
+        &self,
+        model_name: Option<&str>,
+    ) -> Result<Arc<dyn Model>, openai_agents_core::error::UserError> {
+        let model = self.inner.get_model(model_name).await?;
+        Ok(Arc::new(GuardedModel::new(
+            model,
+            &self.name,
+            self.capabilities,
+        )))
+    }
+}
+
 /// Walk the input items until `wanted` says yes.
 fn input_mentions(input: &ModelInput<'_>, wanted: impl Fn(&serde_json::Value) -> bool) -> bool {
     match input {

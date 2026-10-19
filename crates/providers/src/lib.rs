@@ -35,7 +35,7 @@ mod registry;
 mod spec;
 
 pub use catalog::{advise, model, ModelEntry, ModelStatus, MODELS};
-pub use guard::GuardedModel;
+pub use guard::{GuardedModel, GuardedProvider};
 pub use offline::{OfflineModel, OfflineProvider};
 pub use provider::{validate_endpoint, Provider};
 pub use registry::{Entry, ProviderRegistry, ProviderRouter};
