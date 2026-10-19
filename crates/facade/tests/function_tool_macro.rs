@@ -73,7 +73,7 @@ async fn macro_deserializes_nested_arguments() {
     )
     .await
     .expect("invoke");
-    assert_eq!(out.output, Some(serde_json::json!("a,b in Paris")));
+    assert_eq!(out.value(), Some(&serde_json::json!("a,b in Paris")));
 }
 
 /// Tool context can be requested as the first parameter and is injected by the SDK.
@@ -95,7 +95,7 @@ async fn macro_injects_tool_context() {
     )
     .await
     .expect("invoke");
-    assert_eq!(out.output, Some(serde_json::json!("call-42:x")));
+    assert_eq!(out.value(), Some(&serde_json::json!("call-42:x")));
     // The context parameter must not leak into the tool's JSON Schema.
     assert!(describe().params_json_schema["properties"]
         .as_object()
@@ -150,7 +150,7 @@ async fn macro_name_override_and_sync_fn() {
     )
     .await
     .expect("invoke");
-    assert_eq!(out.output, Some(serde_json::json!("hello Ada")));
+    assert_eq!(out.value(), Some(&serde_json::json!("hello Ada")));
 }
 
 #[function_tool(description = "Slow", timeout = 2.5)]

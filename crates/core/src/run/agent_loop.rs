@@ -15,6 +15,7 @@ use crate::memory::prepare_input_with_session;
 use crate::result::{RunResult, StreamingSnapshot};
 use crate::run_state::RunState;
 use crate::stream_events::StreamEvent;
+use crate::tool::Tool;
 use crate::tool_guardrails::{ToolInputGuardrailResult, ToolOutputGuardrailResult};
 
 use super::config::RunOptions;
@@ -180,6 +181,51 @@ pub(crate) async fn run_loop(
     Ok(result)
 }
 
+/// Check every tool reachable from `root` for the types it declared via `Tool::requires`.
+///
+/// Walks handoff targets too (agent graphs can be cyclic, so names are visited once) and reports
+/// the first missing type with the agent, tool and type names, so the fix is obvious: add the
+/// value with `RunOptions::with(value)`.
+fn validate_tool_requirements(
+    root: &Agent,
+    extensions: &crate::extensions::Extensions,
+) -> Result<(), AgentsError> {
+    let mut seen = std::collections::HashSet::new();
+    let mut stack = vec![root];
+    while let Some(agent) = stack.pop() {
+        if !seen.insert(agent.name.clone()) {
+            continue;
+        }
+        for tool in &agent.tools {
+            let Some(missing) = tool
+                .requires()
+                .iter()
+                .find(|requirement| !extensions.contains_type(requirement.type_id()))
+            else {
+                continue;
+            };
+            let held = extensions.known_type_names();
+            let held = if held.is_empty() {
+                "the run holds no extensions".to_string()
+            } else {
+                format!("the run holds: {}", held.join(", "))
+            };
+            return Err(crate::error::UserError::new(format!(
+                "tool `{}` of agent `{}` requires a value of type `{}`, but the run does not \
+                 carry one ({held}); add it with `RunOptions::with(value)`",
+                tool.name,
+                agent.name,
+                missing.type_name(),
+            ))
+            .into());
+        }
+        for handoff in &agent.handoffs {
+            stack.push(handoff.agent.as_ref());
+        }
+    }
+    Ok(())
+}
+
 /// Validate the options, open the run's trace and drive the turn loop.
 async fn run_loop_inner(
     starting_agent: Agent,
@@ -191,6 +237,9 @@ async fn run_loop_inner(
     session_writer: Option<&mut SessionWriter>,
 ) -> Result<RunResult, AgentsError> {
     let max_tool_concurrency = validate_run_options(&options)?;
+    // Rust-only: a tool that declared `Tool::requires` must find its type before the first model
+    // turn, not from inside the call. Reported like the other option errors, before any work.
+    validate_tool_requirements(&starting_agent, options.run_context().extensions())?;
     let workflow = options
         .run_config
         .tracing

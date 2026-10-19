@@ -15,7 +15,7 @@ use crate::lifecycle::RunHooks;
 use crate::run_context::RunContextWrapper;
 use crate::run_state::RunState;
 use crate::tool::{
-    default_tool_timeout_error_message, FunctionTool, ToolContext, ToolResult, ToolTimeoutBehavior,
+    default_tool_timeout_error_message, FunctionTool, ToolContext, ToolOutput, ToolTimeoutBehavior,
 };
 use crate::tool_guardrails::{run_tool_input_guardrails, run_tool_output_guardrails};
 use crate::tracing::function_span;
@@ -103,7 +103,7 @@ pub(crate) async fn execute_planned_tools(
                     return Ok::<_, AgentsError>((
                         tool,
                         call_id,
-                        ToolResult::output(Value::String(message)),
+                        ToolOutput::output(Value::String(message)),
                     ));
                 }
                 if let Some(h) = &hooks {
@@ -141,7 +141,7 @@ pub(crate) async fn execute_planned_tools(
                                     Some(format) => format(&context, &AgentsError::from(timeout)),
                                     None => default_tool_timeout_error_message(&tool.name, seconds),
                                 };
-                                Ok(ToolResult::output(Value::String(message)))
+                                Ok(ToolOutput::output(Value::String(message)))
                             }
                         }
                     }
@@ -159,7 +159,7 @@ pub(crate) async fn execute_planned_tools(
                             data: Some(json!({ "tool_name": tool.name })),
                         });
                         let message = tool.failure_error_function.handle(&context, error)?;
-                        ToolResult::output(Value::String(message))
+                        ToolOutput::output(Value::String(message))
                     }
                 };
                 let mut result = result;

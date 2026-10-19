@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 
 use crate::agent::Agent;
 use crate::error::AgentsError;
-use crate::tool::{FunctionTool, ToolResult};
+use crate::tool::{FunctionTool, ToolOutput};
 
 use super::agent_loop::take_nested_resume_state;
 use super::config::RunOptions;
@@ -82,13 +82,13 @@ fn build_agent_as_tool(agent: &Agent, config: AsToolConfig) -> FunctionTool {
 
                 if result.is_interrupted() {
                     let nested_state = result.to_state()?;
-                    return Ok(ToolResult::interrupted(
+                    return Ok(ToolOutput::interrupted(
                         result.interruptions.clone(),
                         nested_state,
                     ));
                 }
 
-                Ok(ToolResult::output(result.final_output))
+                Ok(ToolOutput::output(result.final_output))
             }
         },
     )

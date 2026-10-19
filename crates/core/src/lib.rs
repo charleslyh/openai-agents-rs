@@ -17,6 +17,7 @@ pub mod lifecycle;
 pub mod mcp;
 pub mod memory;
 pub mod model;
+pub mod model_middleware;
 pub mod model_settings;
 pub mod result;
 pub mod retry;
@@ -29,6 +30,7 @@ pub mod strict_schema;
 pub(crate) mod support;
 pub mod tool;
 pub mod tool_guardrails;
+pub mod tool_middleware;
 pub mod tracing;
 pub mod usage;
 pub mod utf8_stream;
@@ -49,7 +51,7 @@ pub use error::{
     OutputGuardrailTripwireTriggered, ToolInputGuardrailTripwireTriggered,
     ToolOutputGuardrailTripwireTriggered, ToolTimeoutError, UserError,
 };
-pub use extensions::Extensions;
+pub use extensions::{Extensions, TypeRequirement};
 pub use guardrail::{
     input_guardrail, output_guardrail, GuardrailFunctionOutput, InputGuardrail,
     InputGuardrailResult, OutputGuardrail, OutputGuardrailResult,
@@ -78,6 +80,7 @@ pub use model::{
     CallModelData, CallModelInputFilter, MissingProvider, Model, ModelInputData, ModelProvider,
     ModelRef, ModelRequest, ModelTracing, MultiProvider,
 };
+pub use model_middleware::ModelMiddleware;
 pub use model_settings::{ModelSettings, ToolChoice, Truncation, Verbosity};
 pub use result::{CancelMode, RunResult, RunResultStreaming, StreamingSnapshot};
 pub use retry::{
@@ -109,15 +112,16 @@ pub use serde;
 pub use serde_json;
 pub use stream_events::{RunItemStreamName, StreamEvent};
 pub use tool::{
-    FunctionTool, IsEnabledFn, NeedsResolution, ToolContext, ToolEnabled, ToolFailureHandling,
-    ToolResult, ToolTimeoutBehavior, DEFAULT_APPROVAL_REJECTION_MESSAGE,
-    DEFAULT_TOOL_ERROR_MESSAGE,
+    FunctionTool, IsEnabledFn, NeedsResolution, Tool, ToolContext, ToolEnabled,
+    ToolFailureHandling, ToolOutput, ToolPolicy, ToolSpec, ToolTimeoutBehavior,
+    DEFAULT_APPROVAL_REJECTION_MESSAGE, DEFAULT_TOOL_ERROR_MESSAGE,
 };
 pub use tool_guardrails::{
     ToolGuardrailBehavior, ToolGuardrailFunctionOutput, ToolInputGuardrail, ToolInputGuardrailData,
     ToolInputGuardrailResult, ToolOutputGuardrail, ToolOutputGuardrailData,
     ToolOutputGuardrailResult,
 };
+pub use tool_middleware::{NextTool, ToolMiddleware};
 pub use tracing::TracingConfig;
 pub use usage::{InputTokensDetails, OutputTokensDetails, RequestUsage, Usage};
 

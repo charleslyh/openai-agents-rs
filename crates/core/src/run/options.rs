@@ -20,6 +20,7 @@ use crate::handoffs::{HandoffHistoryMapper, HandoffInputFilter};
 use crate::items::ReasoningItemIdPolicy;
 use crate::memory::{SessionInputCallback, SessionSettings};
 use crate::model::{CallModelData, CallModelInputFilter, ModelInputData, ModelProvider, ModelRef};
+use crate::model_middleware::ModelMiddleware;
 use crate::model_settings::ModelSettings;
 use crate::tracing::TracingConfig;
 
@@ -75,6 +76,9 @@ pub struct ModelOptions {
     pub reasoning_item_id_policy: Option<ReasoningItemIdPolicy>,
     /// Edit the model input just before each call (Python: `RunConfig.call_model_input_filter`).
     pub input_filter: Option<CallModelInputFilter>,
+    /// Extra request-rewriting steps, run in order after `input_filter`
+    /// (Rust-only, see [`crate::model_middleware`]).
+    pub middleware: Vec<Arc<dyn ModelMiddleware>>,
 }
 
 impl ModelOptions {
@@ -109,6 +113,14 @@ impl ModelOptions {
         self.input_filter = Some(Arc::new(move |data| Box::pin(f(data))));
         self
     }
+
+    /// Append a [`ModelMiddleware`] step, run after `input_filter` and after any middleware
+    /// added earlier.
+    #[must_use]
+    pub fn middleware(mut self, middleware: impl ModelMiddleware + 'static) -> Self {
+        self.middleware.push(Arc::new(middleware));
+        self
+    }
 }
 
 impl std::fmt::Debug for ModelOptions {
@@ -119,6 +131,7 @@ impl std::fmt::Debug for ModelOptions {
             .field("settings", &self.settings)
             .field("reasoning_item_id_policy", &self.reasoning_item_id_policy)
             .field("input_filter", &flag(&self.input_filter))
+            .field("middleware", &self.middleware.len())
             .finish()
     }
 }
@@ -341,5 +354,42 @@ impl std::fmt::Debug for ToolOptions {
             .field("error_formatter", &flag(&self.error_formatter))
             .field("guardrail_blocked_message", &self.guardrail_blocked_message)
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use async_trait::async_trait;
+
+    use super::*;
+    use crate::agent::Agent;
+    use crate::run_context::RunContextWrapper;
+
+    struct Prefix(&'static str);
+
+    #[async_trait]
+    impl ModelMiddleware for Prefix {
+        async fn prepare(
+            &self,
+            mut data: ModelInputData,
+            _agent: &Agent,
+            _context: &RunContextWrapper,
+        ) -> Result<ModelInputData, AgentsError> {
+            data.instructions = Some(format!(
+                "{}{}",
+                self.0,
+                data.instructions.unwrap_or_default()
+            ));
+            Ok(data)
+        }
+    }
+
+    #[test]
+    fn model_options_carries_middleware_in_the_order_added() {
+        let model = ModelOptions::new()
+            .middleware(Prefix("x-"))
+            .middleware(Prefix("y-"));
+        assert_eq!(model.middleware.len(), 2);
+        assert_eq!(model.middleware[0].name(), "model_middleware");
     }
 }

@@ -19,6 +19,37 @@ use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// A type a tool (eventually: a capability or guardrail) needs in [`Extensions`].
+///
+/// Declared with [`TypeRequirement::of`] and checked before the first model turn, so a missing
+/// dependency is reported as an actionable error naming the agent and the tool, instead of
+/// surfacing later from inside a tool call.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TypeRequirement {
+    type_id: TypeId,
+    type_name: &'static str,
+}
+
+impl TypeRequirement {
+    /// Describe the requirement for `T`.
+    pub fn of<T: Any>() -> Self {
+        Self {
+            type_id: TypeId::of::<T>(),
+            type_name: std::any::type_name::<T>(),
+        }
+    }
+
+    /// The required type.
+    pub fn type_id(&self) -> TypeId {
+        self.type_id
+    }
+
+    /// The required type's name, for error messages.
+    pub fn type_name(&self) -> &'static str {
+        self.type_name
+    }
+}
+
 /// A shared, type-erased value stored in [`Extensions`].
 pub type ContextValue = Arc<dyn Any + Send + Sync>;
 
@@ -98,6 +129,11 @@ impl Extensions {
     /// Whether a value of type `T` is present.
     pub fn contains<T: Any + Send + Sync>(&self) -> bool {
         self.slots.contains_key(&TypeId::of::<T>())
+    }
+
+    /// Whether a value of the given type is present.
+    pub fn contains_type(&self, type_id: TypeId) -> bool {
+        self.slots.contains_key(&type_id)
     }
 
     /// Number of stored values.

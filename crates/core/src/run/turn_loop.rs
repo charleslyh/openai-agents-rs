@@ -515,7 +515,8 @@ impl<'a> TurnLoop<'a> {
         Ok(response)
     }
 
-    /// The instructions and input items for this call, after `call_model_input_filter`.
+    /// The instructions and input items for this call, after `call_model_input_filter` and any
+    /// `ModelMiddleware`.
     async fn model_input(&self) -> Result<(Option<String>, Vec<ResponseInputItem>), AgentsError> {
         // Python: `instructions` may be a callable of `(context, agent)`.
         let instructions = self.current_agent.resolve_instructions(&self.context).await;
@@ -525,7 +526,7 @@ impl<'a> TurnLoop<'a> {
         };
         // Python (`maybe_filter_model_input`): the filter runs before the LLM hooks and only
         // affects this call.
-        let data = match &self.options.run_config.model.input_filter {
+        let mut data = match &self.options.run_config.model.input_filter {
             Some(filter) => {
                 filter(CallModelData {
                     model_data: data,
@@ -536,6 +537,13 @@ impl<'a> TurnLoop<'a> {
             }
             None => data,
         };
+        // Rust-only extension on top of the Python-parity filter above (see
+        // `crate::model_middleware`): each step runs in the order it was added.
+        for middleware in &self.options.run_config.model.middleware {
+            data = middleware
+                .prepare(data, &self.current_agent, &self.context)
+                .await?;
+        }
         Ok((data.instructions, data.input))
     }
 

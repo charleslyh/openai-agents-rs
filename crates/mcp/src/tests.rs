@@ -288,7 +288,7 @@ async fn invoke(tool: &FunctionTool, arguments: &str) -> Result<Value, AgentsErr
     );
     (tool.on_invoke_tool)(context, arguments.to_string())
         .await
-        .map(|r| r.output.unwrap())
+        .map(|r| r.value().cloned().unwrap())
 }
 
 async fn convert(client: McpClient, config: McpConfig) -> Result<Vec<FunctionTool>, AgentsError> {
