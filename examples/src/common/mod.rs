@@ -80,6 +80,20 @@ pub fn model() -> Result<Arc<dyn Model>, Box<dyn std::error::Error>> {
     }
 }
 
+/// The configured model, or the offline model when no key is set.
+///
+/// Examples whose point is something else — a session, an exporter — can then be run by anyone,
+/// with or without credentials.
+pub fn model_or_offline() -> Result<Arc<dyn Model>, Box<dyn std::error::Error>> {
+    match std::env::var("OPENAI_API_KEY") {
+        Ok(_) => model(),
+        Err(_) => {
+            eprintln!("OPENAI_API_KEY is not set: answering with the offline model");
+            Ok(Arc::new(openai_agents::providers::OfflineModel))
+        }
+    }
+}
+
 fn openai_env(
     api: ExampleApi,
 ) -> Result<(String, String, Option<String>), Box<dyn std::error::Error>> {

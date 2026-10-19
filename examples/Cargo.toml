@@ -151,6 +151,14 @@ path = "src/27_verdict_transform.rs"
 name = "zero_config"
 path = "src/28_zero_config.rs"
 
+[[example]]
+name = "file_session"
+path = "src/29_file_session.rs"
+
+[[example]]
+name = "trace_export"
+path = "src/30_trace_export.rs"
+
 # The sources are user-facing code, so they live at the repository root rather than inside
 # `crates/facade`. They depend on the facade the way a user's project would.
 #
@@ -165,7 +173,7 @@ async-trait = "0.1"
 # `mcp` is needed by the `mcp` example only (a real MCP server over stdio: the example's own
 # binary re-executed with `--mcp-server`). Every example in this package compiles the
 # `openai-agents-mcp` crate too because of it.
-openai-agents = { path = "../crates/facade", version = "0.1.0", features = ["openai", "mcp", "providers"] }
+openai-agents = { path = "../crates/facade", version = "0.1.0", features = ["openai", "mcp", "providers", "sessions", "observability"] }
 serde = { version = "1", features = ["derive"] }
 schemars = "1"
 serde_json = { version = "1", features = ["preserve_order"] }

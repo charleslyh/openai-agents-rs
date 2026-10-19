@@ -83,6 +83,9 @@ entry will be `0.1.0`.
 - `Metrics` / `MetricsSink` over the same stream: turns, tool calls, tool failure rate, input and
   output tokens, and cost from a `PriceTable`. A model with no price counts as zero, never as an
   estimate.
+- Facade features `sessions` (`FileSession`, `FileRunStateStore`) and `observability`
+  (`BatchedProcessor`, sinks, `Metrics`), both off by default, and two examples: `file_session` and
+  `trace_export`.
 - Every preset has a contract test against a mock server: the protocol it speaks, the reasoning
   field that protocol uses, and a capability it lacks refusing the request instead of sending it.
 - **Breaking:** guardrails return a `Verdict`: `Pass`, `Fail { reason, severity }` or

@@ -22,6 +22,8 @@ The SDK is a Cargo workspace. `openai-agents` (the facade, `crates/facade`) re-e
 | `models` (OpenAI provider, Responses / Chat Completions) | `openai-agents-openai` | `crates/openai`; facade feature **`openai`** (on by default) |
 | `mcp` | `openai-agents-mcp` | `crates/mcp`; the `McpServer` contract stays in core, facade feature **`mcp`** (**off** by default, D6) |
 | `extensions` (`sqlite`) / `SqliteSession` | `openai-agents-sqlite` | `crates/sqlite`; facade feature `sqlite` |
+| — (Rust-only) `FileSession`, `FileRunStateStore` | `openai-agents-sessions` | `crates/sessions`; facade feature `sessions` (**off** by default, X-016 / X-017) |
+| — (Rust-only) batched trace export, sinks, metrics | `openai-agents-observability` | `crates/observability`; facade feature `observability` (**off** by default, X-018) |
 | `testing` | `openai-agents-testing` | `crates/testing`; re-exported as `openai_agents::testing` (D2) |
 | `decorators` (`@function_tool`) | `openai-agents-macros` | `crates/macros`; `#[function_tool]` |
 | `realtime`, `voice`, `prompts`, `computer`, `editor`, `repl` | — | Not ported |
@@ -196,6 +198,9 @@ dictionaries are merged (`model_settings.py:273`).
 | `Session` trait, `InMemorySession` | S | `RunOptions.session` (D-027) |
 | `RunConfig.session_input_callback`, `SessionSettings.limit` | S | Checked against Python (D-027) |
 | `SqliteSession` (feature `sqlite`) | S | Python-compatible schema; files interchangeable (D-038) |
+| `FileSession` (feature `sessions`) | S | Rust-only: JSONL, locked across processes; passes the shared `Session` contract (X-017) |
+| Shared `Session` contract (`core::session_contract`) | S | Rust-only: the suite every backend runs (X-017) |
+| `RunStateStore`, `FileRunStateStore` (feature `sessions`) | S | Rust-only: a run that paused for an approval, stored and reloaded (X-016) |
 | OpenAI-conversations session, `responses.compact` compaction | X | OpenAI-hosted |
 | `ToolOutputTrimmer` | P | Checked against Python; string outputs only (D-039) |
 | `ContextWindowTrimmer`, `chain_input_filters` | S | New, provider-neutral (D-039) |
@@ -229,6 +234,8 @@ dictionaries are merged (`model_settings.py:273`).
 | speech / transcription spans | N | |
 | OpenAI cloud export | N | D-004, not planned |
 | `SpanData` payloads (`input` / `output` / `tools`) | N | Only names and usage are recorded |
+| `BatchedProcessor`, `ConsoleSink`, `JsonlSink`, `Metrics` (feature `observability`) | S | Rust-only: batched export that never blocks the run, and counters over the same stream (X-018) |
+| OpenTelemetry (OTLP) export | N | Planned behind the `otlp` feature |
 
 ## Testing
 

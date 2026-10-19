@@ -2,8 +2,9 @@
 //!
 //! This crate is the single entry point: it re-exports everything from `openai-agents-core` under
 //! the paths the SDK has always had, and adds the `#[function_tool]` macro. The Cargo features
-//! (`openai`, `mcp`, `sqlite`, `providers`) pull in the crate that implements them. Core knows no concrete model
-//! provider; with the `openai` feature, [`Runner`] installs the OpenAI one as the process default.
+//! (`openai`, `mcp`, `sqlite`, `providers`, `sessions`, `observability`) pull in the crate that
+//! implements them. Core knows no concrete model provider; with the `openai` feature, [`Runner`]
+//! installs the OpenAI one as the process default.
 //!
 //! The public surface mirrors `agents/__init__.py` for the supported subset; see
 //! `docs/COMPAT.md` for the support matrix and `docs/DEVIATIONS.md` for recorded differences.
@@ -47,6 +48,15 @@ pub use openai_agents_sqlite::SqliteSession;
 /// Provider presets, discovery and the capability matrix.
 #[cfg(feature = "providers")]
 pub use openai_agents_providers as providers;
+
+/// A conversation and a paused run in files (Rust-only, X-016 / X-017).
+#[cfg(feature = "sessions")]
+pub use openai_agents_sessions::{FileRunStateStore, FileSession};
+
+/// Trace processors that export somewhere, and counters over the same stream
+/// (Rust-only, X-018).
+#[cfg(feature = "observability")]
+pub use openai_agents_observability as observability;
 
 /// Attribute macro: turn a function into a [`FunctionTool`] constructor (Python: `@function_tool`).
 pub use openai_agents_macros::function_tool;

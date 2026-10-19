@@ -25,6 +25,11 @@ mcp = ["dep:openai-agents-mcp"]
 providers = ["dep:openai-agents-providers"]
 # `SqliteSession`: file or in-memory conversation storage, same schema as the Python SDK.
 sqlite = ["dep:openai-agents-sqlite"]
+# `FileSession` (a conversation in a JSONL file) and `FileRunStateStore` (a run that paused for an
+# approval). Off by default: nothing in the core loop needs a file.
+sessions = ["dep:openai-agents-sessions"]
+# Trace processors that export: batched console, JSONL files and counters. Off by default.
+observability = ["dep:openai-agents-observability"]
 
 # Inherits the lint config (including the tracked clippy backlog) from `[workspace.lints]`.
 [lints]
@@ -39,6 +44,8 @@ openai-agents-openai = { path = "../openai", version = "0.1.0", optional = true 
 openai-agents-mcp = { path = "../mcp", version = "0.1.0", optional = true }
 openai-agents-sqlite = { path = "../sqlite", version = "0.1.0", optional = true }
 openai-agents-providers = { path = "../providers", version = "0.1.0", optional = true }
+openai-agents-sessions = { path = "../sessions", version = "0.1.0", optional = true }
+openai-agents-observability = { path = "../observability", version = "0.1.0", optional = true }
 
 [dev-dependencies]
 async-trait = "0.1"
