@@ -29,6 +29,7 @@ pub mod tool;
 pub mod tool_guardrails;
 pub mod tracing;
 pub mod usage;
+pub mod utf8_stream;
 
 pub use agent::{
     Agent, FunctionToolResult, ToolUseBehavior, ToolsToFinalOutputFn, ToolsToFinalOutputResult,

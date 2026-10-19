@@ -73,6 +73,7 @@ pub(crate) fn is_json_response(resp: &reqwest::Response) -> bool {
 /// `[DONE]` terminators and non-`data:` lines (comments, `event:`) are skipped.
 pub(crate) struct SseReader {
     buffer: String,
+    decoder: openai_agents_core::utf8_stream::Utf8Stream,
 }
 
 impl SseReader {
@@ -80,12 +81,13 @@ impl SseReader {
     pub(crate) fn new() -> Self {
         Self {
             buffer: String::new(),
+            decoder: Default::default(),
         }
     }
 
     /// Append raw bytes from the HTTP byte stream.
     pub(crate) fn feed(&mut self, chunk: &[u8]) {
-        self.buffer.push_str(&String::from_utf8_lossy(chunk));
+        self.buffer.push_str(&self.decoder.push(chunk));
     }
 
     /// Drain the next complete `data:` payload, if one is buffered.
@@ -114,5 +116,23 @@ impl SseReader {
             );
         }
         None
+    }
+}
+
+#[cfg(test)]
+mod sse_tests {
+    use super::SseReader;
+
+    #[test]
+    fn multibyte_text_split_across_chunks_is_not_corrupted() {
+        let line = "data: {\"delta\":\"你好🙂\"}\n\n".as_bytes().to_vec();
+        for split in 1..line.len() {
+            let mut reader = SseReader::new();
+            reader.feed(&line[..split]);
+            let early = reader.next_event();
+            reader.feed(&line[split..]);
+            let event = early.or_else(|| reader.next_event()).expect("event");
+            assert_eq!(event.expect("json")["delta"], "你好🙂", "split at {split}");
+        }
     }
 }
