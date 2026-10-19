@@ -100,8 +100,8 @@ bench(`cargo bench -p openai-agents --bench run_loop`,本机):
 | `allow(clippy::too_many_arguments)` | 4 | 0(`RunRecord`/`FinalizeEnv`/`ToolTurn`/`HandoffTurn` 收参) |
 | `allow(unused_assignments)`、非测试 `allow(dead_code)` | 1 / 2 | 0 / 0 |
 | `run_loop_inner` | 约 640 行、7 参数 | 约 35 行;循环体拆入 `run/turn_loop.rs` 的 `TurnLoop`,每个阶段一个方法 |
-| `cargo test --workspace --all-features` | 288 | 305 通过 / 0 失败 |
-| `cargo test --no-default-features` | - | 229 通过 / 0 失败 |
+| `cargo test --workspace --all-features` | 288 | 305 通过 / 0 失败(进入 M1 前);322 通过 / 0 失败(`Runtime` 落地后) |
+| `cargo test --no-default-features` | - | 229 通过 / 0 失败(进入 M1 前);246 通过 / 0 失败(`Runtime` 落地后) |
 | bench(`twenty_tools_ten_turns`) | 347 µs | 345 µs,其余场景在噪声内 |
 | clippy / fmt / rustdoc `-D warnings`、`check_module_deps`、`check_runner_api`、`sync_vendor --check` | 通过 | 通过 |
 | Rust 侧 `parity_scenarios`(对 golden) | 通过 | 通过 |
@@ -116,6 +116,18 @@ bench(`cargo bench -p openai-agents --bench run_loop`,本机):
 - **Python oracle 已在 `.venv`(Python 3.12)中跑通**:`.venv/bin/python conformance/run_parity.py --check` 全部 `golden unchanged`,`cargo test --test parity_scenarios` 通过。
 - **`A5`(`catch_unwind`)未动**:按计划放到 M1。
 - **B13-B22 未动**:均为"重构中顺带"。
+
+## M1 进展(持续更新)
+
+| 项 | 状态 |
+| --- | --- |
+| D1(context 是否泛型化) | 已决议:不泛型化。`docs/refactor/09-d1-context-generics.md` |
+| `Extensions`:按类型取值的业务数据 | 完成(`643c8bf`)。`RunOptions::with(v)` / `ctx.get::<T>()` / `ctx.require::<T>()`,`RunOptions::context` 与 `context::<T>()` 保留并共用同一存储 |
+| `RunConfig` 分组 options | 完成(`cb225d6`)。24 个平铺字段拆为 `ModelOptions` / `TracingOptions` / `SessionOptions` / `HandoffOptions` / `ToolOptions` 加两个护栏列表,均可链式构造;`Debug` 改为派生 |
+| `RunOptions` 链式方法 + `non_exhaustive` | 完成(`c9a08e3`)。`RunOptions::new().max_turns(5).temperature(0.2).session(s)`;`tune()` 原地改单个 model setting |
+| `Runtime`(provider 注册表 + 阻塞 runtime) | 完成。9 处全局简化:provider 三处、阻塞 runtime 一处、facade 的 `Once` 一处合并进 `Runtime`;`set_default_model_provider_factory` 降为 `Runtime::global()` 的薄封装 |
+| 追踪全局开关与 processor | **未完成**。仍在 `tracing` 模块的 `static`;`Runtime::tracing_disabled` / `set_tracing_disabled` 只是转发。迁移需要把 `Runtime` 穿到每个 `agent_span()` / `turn_span()` 调用点,单独一步做 |
+| handoff history wrappers | **未完成**。仍在 `handoffs::history` 的 `static`。需要 `HandoffOptions` 或 `Runtime` 传递,与 `nest_handoff_history` 的签名一起改 |
 
 ### 新增发现(扫描时顺带)
 

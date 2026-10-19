@@ -110,3 +110,21 @@ fn missing_provider_is_actionable() {
         .expect("must fail");
     assert!(err.to_string().contains("No ModelProvider"), "{err}");
 }
+
+/// Two `Runtime` instances keep their default providers independent (Rust-only, D-047 follow-up:
+/// the process-wide `Runtime::global()` still backs `set_default_model_provider_factory`).
+#[test]
+fn separate_runtimes_do_not_share_a_default_provider() {
+    use openai_agents::Runtime;
+
+    let a = Runtime::new();
+    let b = Runtime::new();
+    assert!(a.set_model_provider(Arc::new(ScriptedProvider)));
+    assert!(a.provider().get_model(Some("anything")).is_ok());
+    let err = b
+        .provider()
+        .get_model(Some("anything"))
+        .err()
+        .expect("b has no provider of its own");
+    assert!(err.to_string().contains("No ModelProvider"), "{err}");
+}

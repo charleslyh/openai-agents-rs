@@ -101,6 +101,7 @@ TIERS: dict[str, int] = {
     "mcp": 2,
     "model": 2,
     "context": 2,
+    "runtime": 2,
     "result": 2,
     # 3 — orchestration
     "run": 3,

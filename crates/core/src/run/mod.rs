@@ -236,20 +236,9 @@ fn spawn_streamed(
     RunResultStreaming::new(snapshot, max_turns, rx).with_task(task)
 }
 
-/// The runtime behind `run_blocking` when the caller has none of its own.
+/// The runtime behind `run_blocking` when the caller has none of its own (`Runtime::global()`'s).
 fn shared_runtime() -> Result<&'static tokio::runtime::Runtime, AgentsError> {
-    static RUNTIME: std::sync::OnceLock<Result<tokio::runtime::Runtime, String>> =
-        std::sync::OnceLock::new();
-    RUNTIME
-        .get_or_init(|| {
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .thread_name("openai-agents-blocking")
-                .build()
-                .map_err(|e| e.to_string())
-        })
-        .as_ref()
-        .map_err(|e| AgentsError::internal(format!("could not start a Tokio runtime: {e}")))
+    crate::runtime::Runtime::global().blocking_handle()
 }
 
 /// Run a future to completion on the calling thread's behalf, whatever the thread is doing.

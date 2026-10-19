@@ -1,11 +1,12 @@
 //! Resolving named agents and the model to call.
 
 use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use crate::agent::Agent;
 use crate::error::{AgentsError, UserError};
-use crate::model::{MissingProvider, Model, ModelProvider, ModelRef};
+use crate::model::{Model, ModelProvider, ModelRef};
+use crate::runtime::Runtime;
 
 use super::config::RunConfig;
 
@@ -37,14 +38,8 @@ pub(crate) fn resolve_agent_by_name(root: &Agent, name: &str) -> Result<Agent, A
     Err(UserError::new(format!("Agent `{name}` not found in starting agent graph")).into())
 }
 
-type ProviderFactory = Box<dyn Fn() -> Arc<dyn ModelProvider> + Send + Sync>;
-
-static DEFAULT_PROVIDER_FACTORY: OnceLock<ProviderFactory> = OnceLock::new();
-static DEFAULT_MODEL_PROVIDER: OnceLock<Arc<dyn ModelProvider>> = OnceLock::new();
-static MISSING_PROVIDER: OnceLock<Arc<dyn ModelProvider>> = OnceLock::new();
-
-/// Register how to build the process-wide default [`ModelProvider`], used when
-/// `RunConfig.model_provider` is not set (Python: the default `MultiProvider` behind `RunConfig`).
+/// Register how to build [`Runtime::global()`]'s default [`ModelProvider`], used when
+/// `RunConfig.model.provider` is not set (Python: the default `MultiProvider` behind `RunConfig`).
 ///
 /// Core knows no concrete provider. A crate that does (the `openai-agents` crate with its
 /// `openai` feature) registers a factory here, and core calls it once, the first time a model
@@ -52,25 +47,19 @@ static MISSING_PROVIDER: OnceLock<Arc<dyn ModelProvider>> = OnceLock::new();
 /// provider keeps that moment lazy: configuration such as environment variables is read when it
 /// is first needed, not when the factory is registered.
 ///
-/// The default can be registered once per process. Returns `false`, leaving the earlier one in
-/// place, if there already is one. Choose a provider for a single run with
-/// `RunConfig.model_provider` instead.
+/// Thin wrapper over [`Runtime::global().set_model_provider_factory`](Runtime::set_model_provider_factory);
+/// prefer building an explicit [`Runtime`] in new code. The default can be registered once per
+/// process. Returns `false`, leaving the earlier one in place, if there already is one. Choose a
+/// provider for a single run with `RunConfig.model.provider` instead.
 pub fn set_default_model_provider_factory(
     factory: impl Fn() -> Arc<dyn ModelProvider> + Send + Sync + 'static,
 ) -> bool {
-    DEFAULT_PROVIDER_FACTORY.set(Box::new(factory)).is_ok()
+    Runtime::global().set_model_provider_factory(factory)
 }
 
-/// The default provider: the one the registered factory builds, or, when none is registered, one
-/// that fails with an actionable message.
-pub fn default_provider() -> &'static Arc<dyn ModelProvider> {
-    if let Some(provider) = DEFAULT_MODEL_PROVIDER.get() {
-        return provider;
-    }
-    match DEFAULT_PROVIDER_FACTORY.get() {
-        Some(factory) => DEFAULT_MODEL_PROVIDER.get_or_init(|| factory()),
-        None => MISSING_PROVIDER.get_or_init(|| Arc::new(MissingProvider)),
-    }
+/// The default provider: [`Runtime::global()`]'s provider.
+pub fn default_provider() -> Arc<dyn ModelProvider> {
+    Runtime::global().provider()
 }
 
 /// Resolve the model for a turn.
@@ -81,8 +70,8 @@ pub(crate) fn resolve_model(
     agent: &Agent,
     run_config: &RunConfig,
 ) -> Result<Arc<dyn Model>, AgentsError> {
-    let provider: &Arc<dyn ModelProvider> = match &run_config.model.provider {
-        Some(p) => p,
+    let provider: Arc<dyn ModelProvider> = match &run_config.model.provider {
+        Some(p) => Arc::clone(p),
         None => default_provider(),
     };
 

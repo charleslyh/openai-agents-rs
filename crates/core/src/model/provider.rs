@@ -98,10 +98,10 @@ pub struct MissingProvider;
 impl ModelProvider for MissingProvider {
     fn get_model(&self, model_name: Option<&str>) -> Result<Arc<dyn Model>, UserError> {
         Err(UserError::new(format!(
-            "No ModelProvider can resolve `{}`. Set `RunConfig.model_provider`, or install a \
-             process-wide default with `set_default_model_provider_factory`. The `openai-agents` crate \
-             installs an OpenAI one when its `openai` feature is on and `OPENAI_API_KEY` or \
-             `OPENAI_BASE_URL` is set.",
+            "No ModelProvider can resolve `{}`. Set `RunConfig.model.provider`, or install a \
+             default with `Runtime::set_model_provider` / `set_model_provider_factory` (the \
+             `openai-agents` crate installs an OpenAI one on `Runtime::global()` when its \
+             `openai` feature is on and `OPENAI_API_KEY` or `OPENAI_BASE_URL` is set).",
             model_name.unwrap_or("<default>")
         )))
     }

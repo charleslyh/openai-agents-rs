@@ -81,13 +81,13 @@ impl Runner {
     }
 }
 
-/// Register OpenAI as the default model provider, once per process.
+/// Register OpenAI as `Runtime::global()`'s default model provider, once per process.
+///
+/// `Runtime::set_model_provider_factory` is itself idempotent (backed by `OnceLock::set`), so no
+/// extra `Once` guard is needed here.
 #[cfg(feature = "openai")]
 fn install_default_provider() {
-    static INSTALL: std::sync::Once = std::sync::Once::new();
-    INSTALL.call_once(|| {
-        openai_agents_core::set_default_model_provider_factory(default_model_provider);
-    });
+    openai_agents_core::Runtime::global().set_model_provider_factory(default_model_provider);
 }
 
 /// Without the `openai` feature there is nothing to install: core falls back to a provider that
