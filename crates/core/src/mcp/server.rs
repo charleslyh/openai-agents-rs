@@ -44,8 +44,8 @@ pub trait McpServer: std::fmt::Debug + Send + Sync {
     /// Forget a cached tool list.
     fn invalidate_tools_cache(&self) {}
 
-    /// Whether calls of `tool` need approval.
-    fn needs_approval_for(&self, _tool: &McpTool) -> NeedsResolution {
+    /// Whether calls of `tool` pause for a resolution (e.g. human approval).
+    fn needs_resolution_for(&self, _tool: &McpTool) -> NeedsResolution {
         NeedsResolution::Fixed(false)
     }
 

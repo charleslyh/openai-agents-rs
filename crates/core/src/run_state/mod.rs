@@ -172,16 +172,6 @@ impl RunState {
         self.resolutions.status(agent_name, tool_name, call_id)
     }
 
-    /// Python name of [`Self::resolution_status`].
-    pub fn approval_status(
-        &self,
-        agent_name: &str,
-        tool_name: &str,
-        call_id: &str,
-    ) -> Option<ToolResolution> {
-        self.resolution_status(agent_name, tool_name, call_id)
-    }
-
     fn find_nested_mut(&mut self, item: &ToolInterruptionItem) -> Option<&mut RunState> {
         let owned_key = self.nested_agent_runs.iter().find_map(|(k, nested)| {
             if nested.contains_call(item.call_id.as_str()) {

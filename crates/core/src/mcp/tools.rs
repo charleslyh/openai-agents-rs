@@ -71,7 +71,7 @@ fn to_function_tool(
         .or_else(|| tool.title.clone())
         .unwrap_or_default();
 
-    let needs_approval = server.needs_approval_for(&tool);
+    let needs_resolution = server.needs_resolution_for(&tool);
     let invoker = {
         let server = Arc::clone(server);
         let tool = tool.clone();
@@ -107,7 +107,7 @@ fn to_function_tool(
     };
     let mut function_tool = FunctionTool::new(tool.name.clone(), description, schema, invoker);
     function_tool.strict_json_schema = strict;
-    function_tool.needs_resolution = needs_approval;
+    function_tool.needs_resolution = needs_resolution;
     function_tool
 }
 

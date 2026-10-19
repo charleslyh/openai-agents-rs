@@ -685,8 +685,8 @@ impl McpServer for FaultyMcpServer {
         self.inner.invalidate_tools_cache();
     }
 
-    fn needs_approval_for(&self, tool: &McpTool) -> openai_agents::NeedsResolution {
-        self.inner.needs_approval_for(tool)
+    fn needs_resolution_for(&self, tool: &McpTool) -> openai_agents::NeedsResolution {
+        self.inner.needs_resolution_for(tool)
     }
 
     fn use_structured_content(&self) -> bool {

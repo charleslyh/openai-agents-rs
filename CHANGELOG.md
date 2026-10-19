@@ -75,3 +75,6 @@ entry will be `0.1.0`.
   `ApprovalStore`. Use `NeedsResolution`, `with_needs_resolution`, `with_needs_resolution_fn`,
   `ToolInterruptionItem`, `ToolResolution` and `ResolutionStore`. The `needs_approval` macro option
   is still accepted.
+- `RunState::approval_status`; use `RunState::resolution_status`.
+- **Breaking:** `McpServer::needs_approval_for` is renamed `needs_resolution_for`. Human-approval
+  names (`approve` / `reject`, MCP `RequireApproval`, `ToolErrorKind::ApprovalRejected`) stay.

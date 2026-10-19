@@ -320,7 +320,7 @@ impl McpServer for McpClient {
             .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
     }
 
-    fn needs_approval_for(&self, tool: &McpTool) -> NeedsResolution {
+    fn needs_resolution_for(&self, tool: &McpTool) -> NeedsResolution {
         self.require_approval.for_tool(&tool.name)
     }
 
