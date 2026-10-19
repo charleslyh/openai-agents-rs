@@ -228,6 +228,58 @@ async fn a_failing_summarizer_never_loses_history() {
     assert!(session.compact().await.is_err());
 }
 
+/// A summarizer that is down is not asked again at the end of every run.
+#[tokio::test]
+async fn a_failed_compaction_cools_down_instead_of_retrying_every_write() {
+    let summarizer = Arc::new(RecordingSummarizer {
+        fail: true,
+        ..Default::default()
+    });
+    let store = InMemorySession::shared("s");
+    let session = CompactingSession::new(store.clone(), summarizer.clone())
+        .trigger_items(2)
+        .keep_recent_turns(1);
+    let turn = |n: usize| vec![user(&format!("t{n}")), assistant(&format!("a{n}"))];
+    for n in 0..4 {
+        session.add_items(turn(n)).await.expect("add_items");
+    }
+    assert_eq!(
+        summarizer.calls.lock().unwrap().len(),
+        1,
+        "later writes must skip the failing summarizer during the cool-down"
+    );
+    // An explicit compaction still tries.
+    assert!(session.compact().await.is_err());
+    assert_eq!(summarizer.calls.lock().unwrap().len(), 2);
+}
+
+/// A summarizer that never answers cannot hold a write hostage.
+#[tokio::test(start_paused = true)]
+async fn a_hanging_summarizer_times_out() {
+    struct Hangs;
+    #[async_trait]
+    impl Summarizer for Hangs {
+        async fn summarize(&self, _: Option<&str>, _: &[Value]) -> Result<String, AgentsError> {
+            std::future::pending().await
+        }
+    }
+    let store = InMemorySession::shared("s");
+    let session = CompactingSession::new(store.clone(), Arc::new(Hangs))
+        .trigger_items(2)
+        .keep_recent_turns(1)
+        .summarize_timeout(std::time::Duration::from_secs(5));
+    session
+        .add_items(vec![
+            user("t1"),
+            assistant("a1"),
+            user("t2"),
+            assistant("a2"),
+        ])
+        .await
+        .expect("the write itself succeeds");
+    assert_eq!(store.get_items(None).await.unwrap().len(), 4);
+}
+
 #[tokio::test]
 async fn model_summarizer_sends_a_transcript_and_returns_the_text() {
     let summary_model = Arc::new(ScriptedModel::new([ModelStep::from(

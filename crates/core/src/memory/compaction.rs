@@ -10,6 +10,7 @@
 //! call from its output (turns are replaced as a whole).
 
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use serde_json::Value;
@@ -27,6 +28,15 @@ use crate::usage::Usage;
 
 /// Estimated tokens of stored history above which compaction starts, when no trigger is set.
 pub const DEFAULT_TRIGGER_TOKENS: usize = 8_000;
+
+/// How long one summarization call may take before it counts as failed.
+pub const DEFAULT_SUMMARIZE_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// After an automatic compaction fails, how long later writes skip trying again.
+///
+/// Without it a summarizer that is down or slow would be called, and waited for, at the end of
+/// every single run.
+pub const DEFAULT_FAILURE_COOLDOWN: Duration = Duration::from_secs(60);
 
 /// Writes the summary that replaces old turns.
 #[async_trait]
@@ -201,7 +211,7 @@ impl Summarizer for ModelSummarizer {
             .await?;
         self.usage
             .lock()
-            .expect("summarizer usage")
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .add(&response.usage);
         let text: String = response
             .output
@@ -217,7 +227,10 @@ impl Summarizer for ModelSummarizer {
     }
 
     fn usage(&self) -> Usage {
-        self.usage.lock().expect("summarizer usage").clone()
+        self.usage
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 }
 
@@ -246,6 +259,10 @@ pub struct CompactingSession {
     trigger_items: Option<usize>,
     keep_recent_turns: usize,
     counter: TokenCounter,
+    summarize_timeout: Duration,
+    failure_cooldown: Duration,
+    /// When set, automatic compaction is skipped until this instant.
+    retry_at: Mutex<Option<Instant>>,
     writes: AsyncMutex<()>,
 }
 
@@ -271,8 +288,42 @@ impl CompactingSession {
             trigger_items: None,
             keep_recent_turns: 2,
             counter: default_token_counter(),
+            summarize_timeout: DEFAULT_SUMMARIZE_TIMEOUT,
+            failure_cooldown: DEFAULT_FAILURE_COOLDOWN,
+            retry_at: Mutex::new(None),
             writes: AsyncMutex::new(()),
         }
+    }
+
+    /// Give up on a summarization call after `timeout` (default
+    /// `DEFAULT_SUMMARIZE_TIMEOUT`).
+    pub fn summarize_timeout(mut self, timeout: Duration) -> Self {
+        self.summarize_timeout = timeout;
+        self
+    }
+
+    /// After a failed automatic compaction, skip further automatic attempts for `cooldown`
+    /// (default `DEFAULT_FAILURE_COOLDOWN`). An explicit [`compact`](Self::compact) always
+    /// tries.
+    pub fn failure_cooldown(mut self, cooldown: Duration) -> Self {
+        self.failure_cooldown = cooldown;
+        self
+    }
+
+    fn cooling_down(&self) -> bool {
+        let guard = self
+            .retry_at
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        guard.is_some_and(|at| Instant::now() < at)
+    }
+
+    fn set_cooldown(&self, failed: bool) {
+        let at = failed.then(|| Instant::now() + self.failure_cooldown);
+        *self
+            .retry_at
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = at;
     }
 
     /// Compact when the stored history exceeds this many (estimated) tokens.
@@ -348,10 +399,17 @@ impl CompactingSession {
         let earlier: Vec<String> = pinned.iter().filter_map(summary_text).collect();
         let previous = (!earlier.is_empty()).then(|| earlier.join("\n\n"));
         let old_items: Vec<Value> = old.iter().flatten().cloned().collect();
-        let notes = self
-            .summarizer
-            .summarize(previous.as_deref(), &old_items)
-            .await?;
+        let notes = tokio::time::timeout(
+            self.summarize_timeout,
+            self.summarizer.summarize(previous.as_deref(), &old_items),
+        )
+        .await
+        .map_err(|_| {
+            AgentsError::from(ModelError::Behavior(format!(
+                "the summarizer did not answer within {:?}",
+                self.summarize_timeout
+            )))
+        })??;
 
         let mut compacted: Vec<Value> = pinned
             .into_iter()
@@ -381,12 +439,20 @@ impl Session for CompactingSession {
     async fn add_items(&self, items: Vec<Value>) -> Result<(), AgentsError> {
         let _writes = self.writes.lock().await;
         self.inner.add_items(items).await?;
-        if let Err(error) = self.compact_locked(false).await {
-            ::tracing::warn!(
-                session = self.inner.session_id(),
-                %error,
-                "context compaction failed; the stored history was left unchanged"
-            );
+        if self.cooling_down() {
+            return Ok(());
+        }
+        match self.compact_locked(false).await {
+            Ok(_) => self.set_cooldown(false),
+            Err(error) => {
+                self.set_cooldown(true);
+                ::tracing::warn!(
+                    session = self.inner.session_id(),
+                    %error,
+                    "context compaction failed; the stored history was left unchanged and \
+                     automatic compaction pauses for a while"
+                );
+            }
         }
         Ok(())
     }
