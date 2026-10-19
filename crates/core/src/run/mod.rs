@@ -68,12 +68,8 @@ pub(crate) async fn run_shared(
     .await
 }
 
-/// [`Runner::run_state`] for an agent that is already shared.
-pub(crate) async fn run_state_shared(
-    starting_agent: Arc<Agent>,
-    state: RunState,
-    options: RunOptions,
-) -> Result<RunResult, AgentsError> {
+/// Refuse a state that was paused by a different starting agent or agent graph.
+fn check_resumable(state: &RunState, starting_agent: &Arc<Agent>) -> Result<(), AgentsError> {
     if state.starting_agent_name != starting_agent.name {
         return Err(UserError::new(format!(
             "RunState starting agent `{}` does not match `{}`",
@@ -81,6 +77,28 @@ pub(crate) async fn run_state_shared(
         ))
         .into());
     }
+    if let Some(saved) = state.agent_graph() {
+        let current = resolve::agent_graph_fingerprint(starting_agent);
+        if saved != current {
+            return Err(UserError::new(format!(
+                "RunState was paused with a different agent graph under `{}` (agents, tools or \
+                 handoffs changed since the pause: {saved} vs {current}). Resume with the same \
+                 agents, or call `RunState::allow_agent_graph_change()` to resume anyway",
+                starting_agent.name
+            ))
+            .into());
+        }
+    }
+    Ok(())
+}
+
+/// [`Runner::run_state`] for an agent that is already shared.
+pub(crate) async fn run_state_shared(
+    starting_agent: Arc<Agent>,
+    state: RunState,
+    options: RunOptions,
+) -> Result<RunResult, AgentsError> {
+    check_resumable(&state, &starting_agent)?;
     hitl::run_resolving(
         starting_agent,
         LoopStart::Resume {
@@ -124,7 +142,7 @@ impl Runner {
         options: RunOptions,
     ) -> RunResultStreaming {
         spawn_streamed(
-            starting_agent,
+            Arc::new(starting_agent),
             LoopStart::Fresh {
                 input: input.into(),
                 prepared: None,
@@ -139,13 +157,8 @@ impl Runner {
         state: RunState,
         options: RunOptions,
     ) -> Result<RunResultStreaming, AgentsError> {
-        if state.starting_agent_name != starting_agent.name {
-            return Err(UserError::new(format!(
-                "RunState starting agent `{}` does not match `{}`",
-                state.starting_agent_name, starting_agent.name
-            ))
-            .into());
-        }
+        let starting_agent = Arc::new(starting_agent);
+        check_resumable(&state, &starting_agent)?;
         Ok(spawn_streamed(
             starting_agent,
             LoopStart::Resume {
@@ -196,7 +209,7 @@ impl Runner {
 }
 
 fn spawn_streamed(
-    starting_agent: Agent,
+    starting_agent: Arc<Agent>,
     start: LoopStart,
     options: RunOptions,
 ) -> RunResultStreaming {
@@ -218,7 +231,7 @@ fn spawn_streamed(
             .into())
         } else {
             run_loop(
-                Arc::new(starting_agent),
+                starting_agent,
                 start,
                 options,
                 Some(tx.clone()),

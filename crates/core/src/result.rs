@@ -55,6 +55,8 @@ pub struct RunResult {
 #[derive(Debug, Clone)]
 pub(crate) struct InterruptSnapshot {
     pub(crate) starting_agent_name: String,
+    /// Fingerprint of the starting agent's graph at the pause (X-011).
+    pub(crate) agent_graph: Option<String>,
     pub(crate) current_input_items: Vec<ResponseInputItem>,
     pub(crate) turn: usize,
     pub(crate) previous_response_id: Option<String>,
@@ -137,6 +139,7 @@ impl RunResult {
         Ok(RunState {
             input: self.input.clone(),
             starting_agent_name: snap.starting_agent_name.clone(),
+            agent_graph: snap.agent_graph.clone(),
             current_agent_name: self.last_agent_name.clone(),
             current_input_items: snap.current_input_items.clone(),
             generated_items: self.new_items.clone(),

@@ -31,7 +31,9 @@ use crate::usage::Usage;
 use super::agent_loop::{emit, AbortOnDrop, EventTx, LoopStart, SharedToolGuardrailLog};
 use super::config::RunOptions;
 use super::finalize::{finalize_run, finished_result, interrupted_result, FinalizeEnv, RunRecord};
-use super::resolve::{collect_agents, resolve_agent_by_name, resolve_model};
+use super::resolve::{
+    agent_graph_fingerprint, collect_agents, resolve_agent_by_name, resolve_model,
+};
 use super::session_writer::SessionWriter;
 use super::tools::{plan_tool_calls, push_tool_output};
 use super::turn::{
@@ -214,7 +216,7 @@ pub(super) struct TurnLoop<'a> {
     max_tool_concurrency: Option<usize>,
     guardrails: InputGuardrails,
 
-    starting_agent_name: String,
+    starting_agent: Arc<Agent>,
     current_agent: Arc<Agent>,
     /// Every agent reachable so far by name, for handoffs bound late (`handoff_to_name`).
     known_agents: HashMap<String, Arc<Agent>>,
@@ -255,7 +257,7 @@ impl<'a> TurnLoop<'a> {
             TracingConfig::includes_task_and_turn_spans(options.run_config.tracing.config.as_ref());
         let task_guard = use_task_and_turn_spans.then(|| task_span(&workflow));
 
-        let starting_agent_name = starting_agent.name.clone();
+        let starting = Arc::clone(&starting_agent);
         let mut known_agents = HashMap::new();
         collect_agents(&starting_agent, &mut known_agents);
         let resuming = matches!(start, LoopStart::Resume { .. });
@@ -295,7 +297,7 @@ impl<'a> TurnLoop<'a> {
             context,
             max_tool_concurrency,
             guardrails,
-            starting_agent_name,
+            starting_agent: starting,
             current_agent,
             known_agents,
             agents_used_tools: HashSet::new(),
@@ -869,7 +871,8 @@ impl<'a> TurnLoop<'a> {
                 .push(RunItem::ToolInterruption(interruption.clone()));
         }
         let snapshot = InterruptSnapshot {
-            starting_agent_name: self.starting_agent_name.clone(),
+            starting_agent_name: self.starting_agent.name.clone(),
+            agent_graph: Some(agent_graph_fingerprint(&self.starting_agent)),
             current_input_items: std::mem::take(&mut self.current_input_items),
             turn: self.turn,
             previous_response_id: self.previous_response_id.take(),

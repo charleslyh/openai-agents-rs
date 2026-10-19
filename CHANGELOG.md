@@ -49,6 +49,9 @@ entry will be `0.1.0`.
 - **Security:** a resolution given through `RunState` (`approve`, `reject`, `resolve`,
   `provide_output`) applies only to a call with the same agent, tool and arguments as the paused
   call it answered; a call whose arguments changed pauses again instead of running.
+- A paused `RunState` records a fingerprint of the agent graph; resuming it with agents whose
+  names, tools or handoffs changed fails with a `UserError`. Call
+  `RunState::allow_agent_graph_change()` to resume anyway.
 - The run loop shares one `Arc<Agent>` per agent instead of deep-copying the agent on every turn,
   handoff and tool call (about 20% faster on `twenty_tools_ten_turns`).
 - **Breaking:** `Agent::resolve_instructions`, `enabled_tools`, `all_function_tools` and

@@ -139,6 +139,7 @@ bench(`cargo bench -p openai-agents --bench run_loop`,本机):
 | `get_model` 改 async | 完成。`ModelProvider::get_model` 为 `async fn`(`async_trait`,root 与 prelude 重导出);`resolve_model` 随之 async,在 turn 内与 Python 同一位置 await;`CachedProvider` 不跨 await 持锁,并发未命中时以先写入者为准共享同一实例(有测试)。X-008 |
 | HITL `resolve_with` | 完成。`run/hitl.rs`:`RunOptions::resolve_with(闭包)` 在 `Runner::run`/`run_state`/`run_blocking` 内循环"暂停 → 回调 → `RunState::resolve` → 恢复",复用原有 resolution 路径(嵌套 `as_tool`、`max_turns`、session 行为与手写循环一致);流式运行设置了 resolver 时返回 `UserError`(fail-closed)。示例 12 的审批样板从约 34 行降到 7 行,显式持久化流程保留在 `HITL_MODE=persist`。X-009 |
 | 审批摘要绑定 | 完成。`ResolutionStore` 新增私有 `bindings`:经 `RunState` 给出的决议记录 `(agent, tool, arguments)`,`plan_tool_calls` 改用 `status_for_call` 校验,不匹配则视为未决(重新暂停或走 sticky)并告警。state JSON 中 `by_call.<id>.bound` 为新增可选字段,旧状态照常可读,不升 schema 版本。存储完整参数而非摘要:避免 core 引入哈希依赖,且比摘要更严格;防篡改由 M3 的 HMAC 负责。X-010 |
+| RunState agent 图指纹 | 完成。`run/resolve.rs::agent_graph_fingerprint`(FNV-1a 64,长度前缀,按名排序:agent 名、本地与 capability 工具名、handoff 工具名;不含 MCP 与 `is_enabled`),只在暂停时计算一次(热路径无开销);`run_state`/`run_state_streamed` 统一走 `check_resumable`(名字 + 指纹),不一致返回 `UserError`;`RunState::allow_agent_graph_change()` 放行。state JSON 新增可选 `agent_graph`,旧状态不校验。X-011 |
 
 ### 新增发现(扫描时顺带)
 

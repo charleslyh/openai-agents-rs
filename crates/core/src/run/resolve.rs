@@ -24,6 +24,49 @@ pub(crate) fn collect_agents(root: &Arc<Agent>, into: &mut HashMap<String, Arc<A
     }
 }
 
+/// A stable fingerprint of the agent graph reachable from `root` (Rust-only, X-011).
+///
+/// Covers each agent's name, its own and capability tools (by name) and its handoffs (by tool
+/// name), sorted, so the order agents and tools were added in does not matter. Dynamic parts
+/// (MCP tools, `is_enabled`) are left out. FNV-1a 64 is enough: this detects resuming a state
+/// with the wrong agents, it is not an integrity check.
+pub(crate) fn agent_graph_fingerprint(root: &Arc<Agent>) -> String {
+    let mut agents = HashMap::new();
+    collect_agents(root, &mut agents);
+    let mut names: Vec<&String> = agents.keys().collect();
+    names.sort();
+
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut feed = |field: &str| {
+        // Length-prefixed, so ("ab", "c") and ("a", "bc") differ.
+        for byte in (field.len() as u64)
+            .to_le_bytes()
+            .iter()
+            .chain(field.as_bytes())
+        {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(0x0100_0000_01b3);
+        }
+    };
+    for name in names {
+        let agent = &agents[name];
+        feed(name);
+        let mut tools: Vec<&str> = agent.local_tools().map(|t| t.name.as_str()).collect();
+        tools.sort_unstable();
+        feed(&tools.len().to_string());
+        tools.into_iter().for_each(&mut feed);
+        let mut handoffs: Vec<&str> = agent
+            .handoffs
+            .iter()
+            .map(|h| h.tool_name.as_str())
+            .collect();
+        handoffs.sort_unstable();
+        feed(&handoffs.len().to_string());
+        handoffs.into_iter().for_each(&mut feed);
+    }
+    format!("fnv1a64:{hash:016x}")
+}
+
 pub(crate) fn resolve_agent_by_name(
     root: &Arc<Agent>,
     name: &str,

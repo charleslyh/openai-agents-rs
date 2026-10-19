@@ -58,6 +58,9 @@ pub struct RunState {
     pub input: InputLike,
     /// Agent that started the run (name).
     pub starting_agent_name: String,
+    /// Fingerprint of the starting agent's graph when the run paused (X-011); `None` for states
+    /// written before fingerprints existed, or after [`Self::allow_agent_graph_change`].
+    pub(crate) agent_graph: Option<String>,
     /// Agent active when paused.
     pub current_agent_name: String,
     /// Conversation items already sent / to send on the next model turn.
@@ -99,6 +102,23 @@ pub struct RunState {
 }
 
 impl RunState {
+    /// Fingerprint of the agent graph the run paused with (Rust-only, X-011).
+    ///
+    /// Resuming checks it against the agent passed to [`crate::run::Runner::run_state`]: same
+    /// agent names, tools and handoffs. `None` skips the check.
+    pub fn agent_graph(&self) -> Option<&str> {
+        self.agent_graph.as_deref()
+    }
+
+    /// Resume even though the agents changed since the pause (tools or handoffs added, renamed
+    /// or removed); the agent names in the state must still resolve.
+    pub fn allow_agent_graph_change(&mut self) {
+        self.agent_graph = None;
+        for nested in self.nested_agent_runs.values_mut() {
+            nested.allow_agent_graph_change();
+        }
+    }
+
     /// Pending interruptions (Python: `get_interruptions`).
     pub fn get_interruptions(&self) -> Vec<ToolInterruptionItem> {
         self.interruptions.clone()
@@ -209,6 +229,7 @@ impl RunState {
         json!({
             "$schemaVersion": RUN_STATE_SCHEMA_VERSION,
             "starting_agent_name": self.starting_agent_name,
+            "agent_graph": self.agent_graph,
             "current_agent_name": self.current_agent_name,
             "input": serialize_input(&self.input),
             "current_input_items": self.current_input_items,
@@ -286,6 +307,10 @@ impl RunState {
                     .ok_or_else(|| UserError::new("RunState missing input"))?,
             )?,
             starting_agent_name: saved_start.to_string(),
+            agent_graph: value
+                .get("agent_graph")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
             current_agent_name: value
                 .get("current_agent_name")
                 .and_then(|v| v.as_str())
