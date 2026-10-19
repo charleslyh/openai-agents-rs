@@ -69,6 +69,38 @@ fn bench_parallel_tools(c: &mut Criterion) {
     });
 }
 
+/// 20 registered tools, 10 tool turns: the per-turn cost that scales with the agent's size.
+///
+/// The runner re-derives the enabled tool list and hands the agent to callbacks every turn, so
+/// this is the scenario where a deep clone of `Agent` shows up as a measurable regression.
+fn bench_many_tools_many_turns(c: &mut Criterion) {
+    let rt = Runtime::new().expect("runtime");
+    c.bench_function("twenty_tools_ten_turns", |b| {
+        b.iter(|| {
+            let mut steps: Vec<ModelStep> = (0..10)
+                .map(|turn| {
+                    ModelStep::output(vec![function_call(
+                        format!("tool_{}", turn % 20),
+                        json!({"n": turn}),
+                        format!("c{turn}"),
+                    )])
+                })
+                .collect();
+            steps.push(ModelStep::output(vec![assistant_message("done")]));
+            let model = Arc::new(ScriptedModel::new(steps));
+            let tools: Vec<_> = (0..20)
+                .map(|i| FunctionTool::constant(format!("tool_{i}"), "bench tool", "ok"))
+                .collect();
+            let agent = Agent::new("a").model(model).tools(tools);
+            let opts = RunOptions {
+                max_turns: Some(12),
+                ..RunOptions::default()
+            };
+            rt.block_on(Runner::run(&agent, "ping", opts)).expect("run")
+        })
+    });
+}
+
 /// `stop_on_first_tool`: how cheap the "stop" paths are compared with `run_llm_again`.
 fn bench_stop_on_first_tool(c: &mut Criterion) {
     let rt = Runtime::new().expect("runtime");
@@ -126,6 +158,7 @@ criterion_group!(
     bench_single_turn,
     bench_one_tool_then_answer,
     bench_parallel_tools,
+    bench_many_tools_many_turns,
     bench_stop_on_first_tool,
     bench_session_round_trip,
     bench_strict_schema
