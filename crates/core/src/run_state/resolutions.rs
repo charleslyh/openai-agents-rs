@@ -30,6 +30,22 @@ pub enum ToolResolution {
     },
 }
 
+impl ToolResolution {
+    /// Do not run the tool; the model receives `message`.
+    pub fn reject(message: impl Into<String>) -> Self {
+        Self::Reject {
+            message: message.into(),
+        }
+    }
+
+    /// Do not run the tool; the model receives `output` as the call's result.
+    pub fn output(output: impl Into<Value>) -> Self {
+        Self::Output {
+            output: output.into(),
+        }
+    }
+}
+
 /// Sticky always-approve / always-reject for `(agent_name, tool_name)`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StickyDecision {

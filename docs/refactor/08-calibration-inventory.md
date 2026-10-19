@@ -137,6 +137,7 @@ bench(`cargo bench -p openai-agents --bench run_loop`,本机):
 | 术语收敛为 resolution | 完成(`d1a0ca8`)。删除重复的 `RunState::approval_status`;`McpServer::needs_approval_for` 改名 `needs_resolution_for`;人工审批专属名(`approve`/`reject`、MCP `RequireApproval`、`ToolErrorKind::ApprovalRejected`、`StickyDecision`)按 D-048 保留 |
 | `prelude` | 完成。`core::prelude` 35 个名字(后加 `async_trait`)(按 examples/demo 的导入频次选取:Agent/Runner/RunOptions/RunResult/RunState、工具与 resolution、护栏、handoff、session、model/provider、Reasoning、Runtime、Extensions);facade `prelude` 另加 `#[function_tool]` 并换成 facade 的 `Runner`。README 快速开始与示例 01 已改用。**未含**:把 `ResolutionStore`、`StickyDecision`、序列化辅助等移出顶层(随 examples 迁移一起做) |
 | `get_model` 改 async | 完成。`ModelProvider::get_model` 为 `async fn`(`async_trait`,root 与 prelude 重导出);`resolve_model` 随之 async,在 turn 内与 Python 同一位置 await;`CachedProvider` 不跨 await 持锁,并发未命中时以先写入者为准共享同一实例(有测试)。X-008 |
+| HITL `resolve_with` | 完成。`run/hitl.rs`:`RunOptions::resolve_with(闭包)` 在 `Runner::run`/`run_state`/`run_blocking` 内循环"暂停 → 回调 → `RunState::resolve` → 恢复",复用原有 resolution 路径(嵌套 `as_tool`、`max_turns`、session 行为与手写循环一致);流式运行设置了 resolver 时返回 `UserError`(fail-closed)。示例 12 的审批样板从约 34 行降到 7 行,显式持久化流程保留在 `HITL_MODE=persist`。X-009 |
 
 ### 新增发现(扫描时顺带)
 

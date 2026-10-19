@@ -13,6 +13,7 @@ mod as_tool;
 pub mod config;
 pub mod errors;
 mod finalize;
+mod hitl;
 pub mod options;
 mod resolve;
 mod session_writer;
@@ -34,6 +35,7 @@ pub use options::{HandoffOptions, ModelOptions, SessionOptions, ToolOptions, Tra
 pub use resolve::{default_provider, set_default_model_provider_factory};
 
 pub use as_tool::AsToolConfig;
+pub use hitl::ToolResolver;
 
 use std::sync::{Arc, Mutex};
 
@@ -55,15 +57,13 @@ pub(crate) async fn run_shared(
     input: InputLike,
     options: RunOptions,
 ) -> Result<RunResult, AgentsError> {
-    run_loop(
+    hitl::run_resolving(
         starting_agent,
         LoopStart::Fresh {
             input,
             prepared: None,
         },
         options,
-        None,
-        None,
     )
     .await
 }
@@ -81,14 +81,12 @@ pub(crate) async fn run_state_shared(
         ))
         .into());
     }
-    run_loop(
+    hitl::run_resolving(
         starting_agent,
         LoopStart::Resume {
             state: Box::new(state),
         },
         options,
-        None,
-        None,
     )
     .await
 }
@@ -210,14 +208,24 @@ fn spawn_streamed(
     }));
     let snap = Arc::clone(&snapshot);
     let task = tokio::spawn(async move {
-        let result = run_loop(
-            Arc::new(starting_agent),
-            start,
-            options,
-            Some(tx.clone()),
-            Some(Arc::clone(&snap)),
-        )
-        .await;
+        // Fail closed rather than ignore the resolver: a streamed run hands its pause back to the
+        // caller (drain the stream, then `to_state`), so there is no point to resolve in-process.
+        let result = if options.resolver.is_some() {
+            Err(UserError::new(
+                "RunOptions::resolve_with is not supported by streamed runs; resolve \
+                 `RunResultStreaming::interruptions` and resume with `run_state_streamed`",
+            )
+            .into())
+        } else {
+            run_loop(
+                Arc::new(starting_agent),
+                start,
+                options,
+                Some(tx.clone()),
+                Some(Arc::clone(&snap)),
+            )
+            .await
+        };
         match result {
             Ok(r) => {
                 let mut s = snap

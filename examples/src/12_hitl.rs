@@ -1,18 +1,23 @@
 //! Human-in-the-loop approvals
 //!
+//! By default the run asks for each paused call through `RunOptions::resolve_with` and carries
+//! on by itself. `HITL_MODE=persist` shows the explicit flow instead: the paused run is saved as
+//! JSON, loaded back, resolved and resumed, which is what a run that outlives the process needs.
+//!
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //! Non-interactive: `HITL_AUTO=approve` or `HITL_AUTO=reject`.
 //!
 //! ```bash
 //! cargo run -p openai-agents-examples --example hitl
 //! HITL_AUTO=approve cargo run -p openai-agents-examples --example hitl
+//! HITL_MODE=persist HITL_AUTO=approve cargo run -p openai-agents-examples --example hitl
 //! ```
 
 mod common;
 
 use std::path::Path;
 
-use openai_agents::{function_tool, Agent, FunctionTool, RunOptions, RunState, Runner};
+use openai_agents::prelude::*;
 
 #[function_tool(description = "Get the weather for a given city")]
 async fn get_weather(city: String) -> String {
@@ -59,7 +64,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let input = "What is the weather and temperature in Oakland?";
 
-    let mut result = Runner::run(&agent, input, RunOptions::default()).await?;
+    let result = if std::env::var("HITL_MODE").as_deref() == Ok("persist") {
+        run_with_saved_state(&agent, input).await?
+    } else {
+        let options = RunOptions::new().resolve_with(|call| async move {
+            println!("\nTool call: {} {}", call.tool_name, call.arguments);
+            match common::confirm("Do you approve this tool call?") {
+                Ok(true) => ToolResolution::Run,
+                _ => ToolResolution::reject("The user rejected this tool call."),
+            }
+        });
+        Runner::run(&agent, input, options).await?
+    };
+
+    println!("\n{}", "=".repeat(80));
+    println!("Final Output:");
+    println!("{}", "=".repeat(80));
+    println!("{}", result.final_output_as_str().unwrap_or_default());
+    Ok(())
+}
+
+/// The explicit flow: save the paused run, load it back, resolve each call, resume.
+async fn run_with_saved_state(
+    agent: &Agent,
+    input: &str,
+) -> Result<RunResult, Box<dyn std::error::Error>> {
+    let mut result = Runner::run(agent, input, RunOptions::new()).await?;
     let path = Path::new(".cache/agent_patterns/human_in_the_loop/result.json");
 
     while result.is_interrupted() {
@@ -94,12 +124,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         println!("\nResuming agent execution...");
-        result = Runner::run_state(&agent, state, RunOptions::default()).await?;
+        result = Runner::run_state(agent, state, RunOptions::new()).await?;
     }
-
-    println!("\n{}", "=".repeat(80));
-    println!("Final Output:");
-    println!("{}", "=".repeat(80));
-    println!("{}", result.final_output_as_str().unwrap_or_default());
-    Ok(())
+    Ok(result)
 }

@@ -6,13 +6,16 @@ use std::sync::Arc;
 use crate::agent::Agent;
 use crate::extensions::Extensions;
 use crate::guardrail::{InputGuardrail, OutputGuardrail};
+use crate::items::ToolInterruptionItem;
 use crate::lifecycle::RunHooks;
 use crate::memory::Session;
 use crate::model::ModelRef;
 use crate::model_settings::ModelSettings;
 use crate::run_context::{ContextValue, RunContextWrapper};
+use crate::run_state::ToolResolution;
 
 use super::errors::RunErrorHandlers;
+use super::hitl::ToolResolver;
 use super::options::{HandoffOptions, ModelOptions, SessionOptions, ToolOptions, TracingOptions};
 
 /// Default max turns (Python: `DEFAULT_MAX_TURNS = 10`).
@@ -286,6 +289,9 @@ pub struct RunOptions {
     pub session: Option<Arc<dyn Session>>,
     /// Handlers that turn run errors into a final output (Python: `error_handlers=`).
     pub error_handlers: RunErrorHandlers,
+    /// Resolves paused tool calls in-process instead of returning them (Rust-only, X-009); set
+    /// with [`RunOptions::resolve_with`].
+    pub resolver: Option<ToolResolver>,
 }
 
 impl Default for RunOptions {
@@ -301,6 +307,7 @@ impl Default for RunOptions {
             hooks: None,
             session: None,
             error_handlers: RunErrorHandlers::default(),
+            resolver: None,
         }
     }
 }
@@ -324,6 +331,35 @@ impl RunOptions {
     #[must_use]
     pub fn context<T: std::any::Any + Send + Sync>(mut self, value: T) -> Self {
         self.context = Some(Arc::new(value));
+        self
+    }
+
+    /// Resolve paused tool calls with `resolve` instead of returning them (Rust-only, X-009).
+    ///
+    /// When a tool call needs resolution (human approval, or work done elsewhere), the run asks
+    /// `resolve` about each paused call and resumes, until it finishes. Without it the run returns
+    /// early with [`RunResult::interruptions`](crate::result::RunResult::interruptions). Streamed
+    /// runs fail with a `UserError` when a resolver is set.
+    ///
+    /// ```
+    /// use openai_agents_core::{RunOptions, ToolResolution};
+    ///
+    /// let options = RunOptions::new().resolve_with(|call| async move {
+    ///     if call.tool_name == "delete_file" {
+    ///         ToolResolution::reject("Deleting files is not allowed.")
+    ///     } else {
+    ///         ToolResolution::Run
+    ///     }
+    /// });
+    /// # let _ = options;
+    /// ```
+    #[must_use]
+    pub fn resolve_with<F, Fut>(mut self, resolve: F) -> Self
+    where
+        F: Fn(ToolInterruptionItem) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = ToolResolution> + Send + 'static,
+    {
+        self.resolver = Some(ToolResolver::new(resolve));
         self
     }
 
@@ -459,6 +495,7 @@ impl std::fmt::Debug for RunOptions {
             .field("extensions", &self.extensions)
             .field("has_hooks", &self.hooks.is_some())
             .field("has_session", &self.session.is_some())
+            .field("has_resolver", &self.resolver.is_some())
             .finish()
     }
 }

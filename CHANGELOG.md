@@ -73,6 +73,8 @@ entry will be `0.1.0`.
 - `prelude` modules (`openai_agents::prelude`, `openai_agents_core::prelude`) with the types most
   programs need; the facade one also brings `#[function_tool]`.
 - `async_trait` is re-exported at the crate root and in the prelude.
+- `RunOptions::resolve_with(|call| async { .. })` resolves paused tool calls in-process and
+  resumes until the run finishes; `ToolResolution::reject(..)` / `::output(..)` constructors.
 
 ### Removed
 

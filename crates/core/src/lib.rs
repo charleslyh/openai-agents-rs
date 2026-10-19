@@ -102,7 +102,7 @@ pub use run::{
     RunErrorHandler, RunErrorHandlerInput, RunErrorHandlerResult, RunErrorHandlers,
     RunHandledError, RunOptions, Runner, SessionOptions, ToolErrorFormatter,
     ToolErrorFormatterArgs, ToolErrorKind, ToolExecutionConfig, ToolNameCollisionPolicy,
-    ToolNotFoundBehavior, ToolOptions, TracingOptions, DEFAULT_MAX_TURNS,
+    ToolNotFoundBehavior, ToolOptions, ToolResolver, TracingOptions, DEFAULT_MAX_TURNS,
     OUTPUT_GUARDRAIL_BLOCKED_TOOL_OUTPUT,
 };
 pub use run_context::{ContextValue, RunContextWrapper};
