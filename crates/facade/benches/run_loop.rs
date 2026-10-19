@@ -92,10 +92,7 @@ fn bench_many_tools_many_turns(c: &mut Criterion) {
                 .map(|i| FunctionTool::constant(format!("tool_{i}"), "bench tool", "ok"))
                 .collect();
             let agent = Agent::new("a").model(model).tools(tools);
-            let opts = RunOptions {
-                max_turns: Some(12),
-                ..RunOptions::default()
-            };
+            let opts = RunOptions::new().max_turns(12);
             rt.block_on(Runner::run(&agent, "ping", opts)).expect("run")
         })
     });

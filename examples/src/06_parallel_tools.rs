@@ -13,9 +13,7 @@
 
 mod common;
 
-use openai_agents::{
-    function_tool, Agent, ModelSettings, RunConfig, RunOptions, Runner, ToolExecutionConfig,
-};
+use openai_agents::{function_tool, Agent, RunOptions, Runner, ToolExecutionConfig, ToolOptions};
 
 #[function_tool(description = "Get the weather for one city")]
 async fn get_weather(city: String) -> String {
@@ -33,16 +31,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .model(common::model()?)
         .tools(vec![get_weather()]);
 
-    let mut run_config = RunConfig::default();
-    run_config.model.settings = Some(ModelSettings {
-        parallel_tool_calls: Some(true),
-        ..Default::default()
-    });
-    run_config.tools.execution = Some(ToolExecutionConfig {
+    let mut options = RunOptions::new().tune(|s| s.parallel_tool_calls = Some(true));
+    options.run_config.tools = ToolOptions::new().execution(ToolExecutionConfig {
         max_function_tool_concurrency: Some(4),
     });
-    let mut options = RunOptions::default();
-    options.run_config = run_config;
 
     let input = "Compare the weather in Paris and Tokyo.";
     let result = Runner::run(&agent, input, options).await?;

@@ -449,3 +449,47 @@ fn run_options_default_names_the_workflow() {
     );
     assert!(!options.run_config.tracing.disabled);
 }
+
+/// One chain replaces the nested `RunOptions { run_config: RunConfig { model_settings .. } }`.
+#[test]
+fn run_options_chain_sets_model_knobs_in_one_line() {
+    use openai_agents::{ModelSettings, RunOptions};
+
+    let options = RunOptions::new()
+        .max_turns(3)
+        .temperature(0.2)
+        .max_tokens(64)
+        .workflow_name("chain");
+    let settings = options
+        .run_config
+        .model
+        .settings
+        .as_ref()
+        .expect("settings");
+    assert_eq!(options.max_turns, Some(3));
+    assert_eq!(settings.temperature, Some(0.2));
+    assert_eq!(settings.max_tokens, Some(64));
+    assert_eq!(
+        options.run_config.tracing.workflow_name.as_deref(),
+        Some("chain")
+    );
+
+    // `tune` edits the settings already there instead of replacing them.
+    let options = options.tune(|s| s.top_p = Some(0.9));
+    let settings = options
+        .run_config
+        .model
+        .settings
+        .as_ref()
+        .expect("settings");
+    assert_eq!(settings.temperature, Some(0.2));
+    assert_eq!(settings.top_p, Some(0.9));
+
+    // A whole settings value replaces them.
+    let options = options.model_settings(ModelSettings::default());
+    assert_eq!(
+        options.run_config.model.settings,
+        Some(ModelSettings::default())
+    );
+    assert_eq!(RunOptions::new().unlimited_turns().max_turns, None);
+}

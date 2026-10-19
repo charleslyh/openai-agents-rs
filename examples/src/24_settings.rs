@@ -13,9 +13,7 @@
 
 mod common;
 
-use openai_agents::{
-    retry_policies, Agent, ModelRetrySettings, ModelSettings, RunConfig, RunOptions, Runner,
-};
+use openai_agents::{retry_policies, Agent, ModelRetrySettings, RunOptions, Runner};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -23,16 +21,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .instructions("Answer briefly.")
         .model(common::model()?);
 
-    let mut run_config = RunConfig::default();
-    run_config.model.settings = Some(ModelSettings {
-        temperature: Some(0.2),
+    let options = RunOptions::new()
+        .max_turns(5)
+        .temperature(0.2)
         // Up to two retries when the connection fails; never for other errors.
-        retry: Some(ModelRetrySettings::new(2, retry_policies::network_error())),
-        ..Default::default()
-    });
-    let mut options = RunOptions::default();
-    options.max_turns = Some(5);
-    options.run_config = run_config;
+        .tune(|s| s.retry = Some(ModelRetrySettings::new(2, retry_policies::network_error())));
 
     let input = "Hello!";
     let result = Runner::run(&agent, input, options).await?;

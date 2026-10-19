@@ -8,6 +8,8 @@ use crate::extensions::Extensions;
 use crate::guardrail::{InputGuardrail, OutputGuardrail};
 use crate::lifecycle::RunHooks;
 use crate::memory::Session;
+use crate::model::ModelRef;
+use crate::model_settings::ModelSettings;
 use crate::run_context::{ContextValue, RunContextWrapper};
 
 use super::errors::RunErrorHandlers;
@@ -249,9 +251,16 @@ impl RunConfig {
 
 /// Per-call options for [`crate::run::Runner::run`] / [`crate::run::Runner::run_streamed`].
 ///
-/// [`RunOptions::default()`] supplies the default turn limit and workflow name, so prefer
-/// `RunOptions { field, ..Default::default() }` over a full literal.
+/// Start from [`RunOptions::new`] and chain what the call needs:
+///
+/// ```ignore
+/// let options = RunOptions::new().max_turns(5).temperature(0.2).session(session);
+/// ```
+///
+/// [`RunOptions::default()`] supplies the default turn limit and workflow name. The struct is
+/// `#[non_exhaustive]`, so a literal does not compile outside this crate; assign fields or chain.
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct RunOptions {
     /// Max turns before [`crate::error::MaxTurnsExceeded`].
     pub max_turns: Option<usize>,
@@ -315,6 +324,109 @@ impl RunOptions {
     #[must_use]
     pub fn context<T: std::any::Any + Send + Sync>(mut self, value: T) -> Self {
         self.context = Some(Arc::new(value));
+        self
+    }
+
+    /// Stop with [`crate::error::MaxTurnsExceeded`] after `turns` turns.
+    #[must_use]
+    pub fn max_turns(mut self, turns: usize) -> Self {
+        self.max_turns = Some(turns);
+        self
+    }
+
+    /// Remove the turn limit (Python: `max_turns=None`).
+    #[must_use]
+    pub fn unlimited_turns(mut self) -> Self {
+        self.max_turns = None;
+        self
+    }
+
+    /// Replace the whole [`RunConfig`].
+    #[must_use]
+    pub fn config(mut self, run_config: RunConfig) -> Self {
+        self.run_config = run_config;
+        self
+    }
+
+    /// Run `model` (an instance or a name) instead of each agent's own.
+    #[must_use]
+    pub fn model(mut self, model: impl Into<ModelRef>) -> Self {
+        self.run_config.model.model_ref = Some(model.into());
+        self
+    }
+
+    /// Merge `settings` over the agent's model settings.
+    #[must_use]
+    pub fn model_settings(mut self, settings: ModelSettings) -> Self {
+        self.run_config.model.settings = Some(settings);
+        self
+    }
+
+    /// Edit the run-level model settings in place, starting from the current ones.
+    ///
+    /// `options.tune(|s| s.temperature = Some(0.2))` is the one-line way to change one knob.
+    #[must_use]
+    pub fn tune(mut self, edit: impl FnOnce(&mut ModelSettings)) -> Self {
+        edit(
+            self.run_config
+                .model
+                .settings
+                .get_or_insert_with(Default::default),
+        );
+        self
+    }
+
+    /// Sampling temperature for every model call of the run.
+    #[must_use]
+    pub fn temperature(self, temperature: f32) -> Self {
+        self.tune(|s| s.temperature = Some(temperature))
+    }
+
+    /// Output token limit for every model call of the run.
+    #[must_use]
+    pub fn max_tokens(self, max_tokens: u32) -> Self {
+        self.tune(|s| s.max_tokens = Some(max_tokens))
+    }
+
+    /// Name the root trace.
+    #[must_use]
+    pub fn workflow_name(mut self, name: impl Into<String>) -> Self {
+        self.run_config.tracing.workflow_name = Some(name.into());
+        self
+    }
+
+    /// Conversation memory for the run.
+    #[must_use]
+    pub fn session(mut self, session: Arc<dyn Session>) -> Self {
+        self.session = Some(session);
+        self
+    }
+
+    /// Run-level lifecycle hooks.
+    #[must_use]
+    pub fn hooks(mut self, hooks: Arc<dyn RunHooks>) -> Self {
+        self.hooks = Some(hooks);
+        self
+    }
+
+    /// Chain onto a previous Responses API response.
+    #[must_use]
+    pub fn previous_response_id(mut self, id: impl Into<String>) -> Self {
+        self.previous_response_id = Some(id.into());
+        self
+    }
+
+    /// Continue a server-side conversation.
+    #[must_use]
+    pub fn conversation_id(mut self, id: impl Into<String>) -> Self {
+        self.conversation_id = Some(id.into());
+        self
+    }
+
+    /// Turn run errors into outputs with `handlers`.
+    #[must_use]
+    pub fn error_handlers(mut self, handlers: RunErrorHandlers) -> Self {
+        self.error_handlers = handlers;
         self
     }
 

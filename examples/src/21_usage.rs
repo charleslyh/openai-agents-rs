@@ -13,7 +13,7 @@
 
 mod common;
 
-use openai_agents::{Agent, ModelSettings, RunConfig, RunOptions, Runner};
+use openai_agents::{Agent, RunOptions, Runner};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -21,13 +21,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .instructions("Answer briefly.")
         .model(common::model()?);
 
-    let mut run_config = RunConfig::default();
-    run_config.model.settings = Some(ModelSettings {
-        include_usage: Some(true),
-        ..Default::default()
-    });
-    let mut options = RunOptions::default();
-    options.run_config = run_config;
+    let options = RunOptions::new().tune(|s| s.include_usage = Some(true));
 
     let input = "Summarise what an agent SDK does.";
     let result = Runner::run(&agent, input, options).await?;

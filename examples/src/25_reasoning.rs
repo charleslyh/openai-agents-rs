@@ -26,7 +26,7 @@ use std::io::{self, Write};
 
 use openai_agents::model::wire_events::{self, WireEvent};
 use openai_agents::serde_json::{json, Map};
-use openai_agents::{Agent, ModelSettings, RunConfig, RunOptions, Runner, StreamEvent};
+use openai_agents::{Agent, ModelSettings, RunOptions, Runner, StreamEvent};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -54,12 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .instructions("Solve the problem. Give the answer in one short sentence.")
         .model(common::model()?);
 
-    let mut options = RunOptions::default();
-    options.run_config = {
-        let mut c = RunConfig::default();
-        c.model.settings = Some(settings);
-        c
-    };
+    let options = RunOptions::new().model_settings(settings);
 
     let input = common::example_input(
         "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. \
