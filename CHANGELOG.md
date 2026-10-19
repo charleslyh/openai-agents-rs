@@ -55,6 +55,9 @@ entry will be `0.1.0`.
 - New crate `openai-agents-providers`: presets for DeepSeek, Gemini, Groq, OpenRouter, Anthropic and
   Ollama, `ProviderRegistry::from_env()` discovery, `prefix/model` routing with inference,
   a capability matrix and `UnsupportedCapability` (X-013).
+- Requests a provider cannot honour are refused before they are sent: reasoning, a JSON schema,
+  tool calls, parallel calls, `store`, images and PDFs, reported as `ModelError::Unsupported`
+  naming the provider and the capability.
 - **Breaking:** guardrails return a `Verdict`: `Pass`, `Fail { reason, severity }` or
   `Transform(content)` (continue with rewritten content, e.g. redacted data).
   `GuardrailFunctionOutput::tripwire_triggered` is now a method; `pass` / `trip` keep working and

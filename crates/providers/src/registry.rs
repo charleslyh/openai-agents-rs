@@ -13,7 +13,7 @@ use openai_agents_core::model::provider::ModelProvider;
 use openai_agents_core::model::Model;
 
 use super::spec::{infer_preset, Capabilities, ProviderApi, PRESETS};
-use super::{Provider, LAST_CHECKED};
+use super::{GuardedModel, Provider, LAST_CHECKED};
 
 /// How many `AGENTS_PROVIDER_{N}_...` endpoints are scanned.
 const CUSTOM_SLOTS: usize = 9;
@@ -243,7 +243,7 @@ impl ModelProvider for ProviderRouter {
                 .iter()
                 .find(|e| e.name == self.default)
                 .ok_or_else(|| self.unknown("<default>"))?;
-            return entry.provider.get_model(None).await;
+            return Ok(self.guard(entry, entry.provider.get_model(None).await?));
         };
         match name.split_once('/') {
             Some((prefix, rest)) if !prefix.is_empty() && !rest.is_empty() => {
@@ -252,7 +252,7 @@ impl ModelProvider for ProviderRouter {
                     .iter()
                     .find(|e| e.name == prefix)
                     .ok_or_else(|| self.unknown(prefix))?;
-                entry.provider.get_model(Some(rest)).await
+                Ok(self.guard(entry, entry.provider.get_model(Some(rest)).await?))
             }
             _ => {
                 let inferred = infer_preset(name)
@@ -260,13 +260,18 @@ impl ModelProvider for ProviderRouter {
                 let entry = inferred
                     .or_else(|| self.entries.iter().find(|e| e.name == self.default))
                     .ok_or_else(|| self.unknown(&self.default))?;
-                entry.provider.get_model(Some(name)).await
+                Ok(self.guard(entry, entry.provider.get_model(Some(name)).await?))
             }
         }
     }
 }
 
 impl ProviderRouter {
+    /// Wrap a model so a request the provider cannot honour is refused, not half-sent.
+    fn guard(&self, entry: &Entry, model: Arc<dyn Model>) -> Arc<dyn Model> {
+        Arc::new(GuardedModel::new(model, &entry.name, entry.capabilities))
+    }
+
     fn unknown(&self, prefix: &str) -> UserError {
         UserError::new(format!(
             "no model provider is registered for `{prefix}`; registered: {}",

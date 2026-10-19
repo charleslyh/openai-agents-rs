@@ -27,10 +27,12 @@
 
 #![deny(missing_docs)]
 
+mod guard;
 mod provider;
 mod registry;
 mod spec;
 
+pub use guard::GuardedModel;
 pub use provider::{validate_endpoint, Provider};
 pub use registry::{Entry, ProviderRegistry, ProviderRouter};
 pub use spec::{
