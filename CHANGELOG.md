@@ -87,6 +87,11 @@ entry will be `0.1.0`.
   installed. Only the OpenTelemetry API is depended on, so the exporter — OTLP or anything else —
   stays the application's choice. The SDK's span and parent ids travel as attributes, because the
   API assigns ids itself.
+- New crate `openai-agents-tools` (X-019): `calculator` (a parser, not `eval`), `clock` (one
+  RFC 3339 shape), `file_read` / `file_list` (one directory, nothing outside it: `..`, symlinks
+  that leave and absolute paths refused) and `web_fetch` (`webfetch` feature: private, loopback,
+  link-local and reserved addresses refused at connect time, including the `9.`/`11.`/`21.`/`30.`
+  blocks; cross-origin redirects refused; 1 MiB response cap).
 - Facade features `sessions` (`FileSession`, `FileRunStateStore`) and `observability`
   (`BatchedProcessor`, sinks, `Metrics`), both off by default, and two examples: `file_session` and
   `trace_export`.
