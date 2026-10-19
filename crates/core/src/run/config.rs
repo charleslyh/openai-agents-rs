@@ -83,7 +83,7 @@ impl OutputGuardrailBlockedMessage {
 pub(crate) fn resolve_blocked_message(
     run_config: &RunConfig,
     guardrail_name: &str,
-    agent: &Agent,
+    agent: &Arc<Agent>,
     context: &RunContextWrapper,
 ) -> String {
     let default = OUTPUT_GUARDRAIL_BLOCKED_TOOL_OUTPUT.to_string();
@@ -94,7 +94,7 @@ pub(crate) fn resolve_blocked_message(
             let args = OutputGuardrailBlockedMessageArgs {
                 default_message: default.clone(),
                 guardrail_name: guardrail_name.to_string(),
-                agent: Arc::new(agent.clone()),
+                agent: Arc::clone(agent),
                 run_context: context.clone(),
             };
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| format(args)))

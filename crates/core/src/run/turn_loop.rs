@@ -49,7 +49,7 @@ type SplitCalls = (Vec<(Handoff, Value, String)>, Vec<Value>);
 
 /// Everything [`TurnLoop::new`] needs.
 pub(super) struct LoopInit<'a> {
-    pub(super) starting_agent: Agent,
+    pub(super) starting_agent: Arc<Agent>,
     pub(super) start: LoopStart,
     pub(super) options: RunOptions,
     pub(super) events: Option<EventTx>,
@@ -74,7 +74,7 @@ struct InputGuardrails {
 
 impl InputGuardrails {
     /// A resumed run already has the results of its guardrails, so it gets none.
-    fn new(options: &RunOptions, agent: &Agent, input: &InputLike, resuming: bool) -> Self {
+    fn new(options: &RunOptions, agent: &Arc<Agent>, input: &InputLike, resuming: bool) -> Self {
         let (parallel, blocking): (Vec<InputGuardrail>, Vec<InputGuardrail>) = options
             .run_config
             .input_guardrails
@@ -87,7 +87,7 @@ impl InputGuardrails {
             blocking: Some(blocking),
             parallel: Some(parallel),
             pending: None,
-            agent: Arc::new(agent.clone()),
+            agent: Arc::clone(agent),
             input: input.clone(),
         }
     }
@@ -123,7 +123,7 @@ fn tripwire(results: &[InputGuardrailResult]) -> Result<(), AgentsError> {
 
 /// Where a run stands when its loop starts: fresh, or restored from a paused [`RunState`].
 struct Progress {
-    current_agent: Agent,
+    current_agent: Arc<Agent>,
     input: InputLike,
     original_input_len: usize,
     current_input_items: Vec<Value>,
@@ -141,7 +141,7 @@ struct Progress {
 impl Progress {
     fn restore(
         start: LoopStart,
-        starting_agent: Agent,
+        starting_agent: Arc<Agent>,
         previous_response_id: Option<String>,
         context: &RunContextWrapper,
     ) -> Result<Self, AgentsError> {
@@ -215,9 +215,9 @@ pub(super) struct TurnLoop<'a> {
     guardrails: InputGuardrails,
 
     starting_agent_name: String,
-    current_agent: Agent,
+    current_agent: Arc<Agent>,
     /// Every agent reachable so far by name, for handoffs bound late (`handoff_to_name`).
-    known_agents: HashMap<String, Agent>,
+    known_agents: HashMap<String, Arc<Agent>>,
     /// Agents that have emitted tool calls, used to reset `tool_choice` (Python:
     /// `AgentToolUseTracker` + `maybe_reset_tool_choice`).
     agents_used_tools: HashSet<String>,
@@ -418,7 +418,7 @@ impl<'a> TurnLoop<'a> {
             return Ok(Some(finished_result(
                 record,
                 Value::Null,
-                Arc::new(self.current_agent.clone()),
+                Arc::clone(&self.current_agent),
             )));
         }
         // Python (`run.py:1506-1507`): the turn counter is incremented first and only compared
@@ -532,7 +532,7 @@ impl<'a> TurnLoop<'a> {
             Some(filter) => {
                 filter(CallModelData {
                     model_data: data,
-                    agent: Arc::new(self.current_agent.clone()),
+                    agent: Arc::clone(&self.current_agent),
                     context: self.context.clone(),
                 })
                 .await?
@@ -884,7 +884,7 @@ impl<'a> TurnLoop<'a> {
         let record = self.take_record();
         interrupted_result(
             record,
-            Arc::new(self.current_agent.clone()),
+            Arc::clone(&self.current_agent),
             signal.interruptions,
             snapshot,
         )

@@ -4,6 +4,7 @@
 //! agent and rewrites the conversation, and it is long enough to hide the rest.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use serde_json::Value;
 
@@ -42,8 +43,8 @@ pub(crate) struct HandoffTurn<'a> {
 /// or history nesting applies, so both are `&mut`.
 pub(crate) async fn perform_handoff(
     turn: HandoffTurn<'_>,
-    agent: &mut Agent,
-    known_agents: &mut HashMap<String, Agent>,
+    agent: &mut Arc<Agent>,
+    known_agents: &mut HashMap<String, Arc<Agent>>,
     current_input_items: &mut Vec<Value>,
     generated_items: &mut Vec<RunItem>,
 ) -> Result<bool, AgentsError> {
@@ -122,8 +123,8 @@ pub(crate) async fn perform_handoff(
     generated_items.push(out_item);
     current_input_items.push(ItemHelpers::function_call_output(&call_id, transfer));
 
-    let source_agent = agent.clone();
-    *agent = if h.late_bound {
+    // Only the `Arc`s move: the previous agent stays alive for the hooks below.
+    let target = if h.late_bound {
         known_agents.get(&h.agent.name).cloned().ok_or_else(|| {
             UserError::new(format!(
                 "Handoff `{}` targets agent `{}`, which is not reachable from the starting \
@@ -132,8 +133,9 @@ pub(crate) async fn perform_handoff(
             ))
         })?
     } else {
-        (*h.agent).clone()
+        Arc::clone(&h.agent)
     };
+    let source_agent = std::mem::replace(agent, target);
     collect_agents(agent, known_agents);
 
     // Python: `hooks.on_handoff(context, from_agent, to_agent)` and the agent-level

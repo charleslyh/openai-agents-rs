@@ -27,7 +27,7 @@ use super::plan::ToolPlan;
 pub(crate) async fn execute_planned_tools(
     plan: &ToolPlan,
     nested_resume: &HashMap<String, RunState>,
-    agent: &Agent,
+    agent: &Arc<Agent>,
     context: &RunContextWrapper,
     hooks: Option<&Arc<dyn RunHooks>>,
     max_concurrency: Option<usize>,
@@ -69,7 +69,7 @@ pub(crate) async fn execute_planned_tools(
             let arguments = arguments.clone();
             let call_id = call_id.clone();
             let resume_map = resume_map.clone();
-            let agent = agent.clone();
+            let agent = Arc::clone(agent);
             let guardrail_log = Arc::clone(guardrail_log);
             let context = context.clone();
             let hooks = hooks.clone();
@@ -85,12 +85,11 @@ pub(crate) async fn execute_planned_tools(
                 let hook_ctx = ctx.clone();
                 // Python: input guardrails run before the start hooks; a rejection replaces the
                 // call, so neither the hooks, the body nor the output guardrails run.
-                let guardrail_agent = Arc::new(agent.clone());
                 let mut input_results = Vec::new();
                 let rejection = run_tool_input_guardrails(
                     &tool.tool_input_guardrails,
                     &ctx,
-                    &guardrail_agent,
+                    &agent,
                     &mut input_results,
                 )
                 .await;
@@ -170,7 +169,7 @@ pub(crate) async fn execute_planned_tools(
                     let guarded = run_tool_output_guardrails(
                         &tool.tool_output_guardrails,
                         &hook_ctx,
-                        &guardrail_agent,
+                        &agent,
                         result.output.clone().unwrap_or(Value::Null),
                         &mut output_results,
                     )

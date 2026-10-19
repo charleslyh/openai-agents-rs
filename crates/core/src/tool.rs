@@ -207,11 +207,15 @@ impl ToolEnabled {
         Self::Dynamic(Arc::new(move |ctx, agent| Box::pin(f(ctx, agent))))
     }
 
-    /// Evaluate the policy.
-    pub async fn resolve(&self, context: &RunContextWrapper, agent: &crate::agent::Agent) -> bool {
+    /// Evaluate the policy. The agent is shared with the callback, not copied.
+    pub async fn resolve(
+        &self,
+        context: &RunContextWrapper,
+        agent: &Arc<crate::agent::Agent>,
+    ) -> bool {
         match self {
             Self::Fixed(v) => *v,
-            Self::Dynamic(f) => f(context.clone(), Arc::new(agent.clone())).await,
+            Self::Dynamic(f) => f(context.clone(), Arc::clone(agent)).await,
         }
     }
 }

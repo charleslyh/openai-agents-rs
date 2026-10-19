@@ -189,7 +189,7 @@ pub(crate) async fn record_response_items(
 pub(crate) struct TurnEnd<'a> {
     pub(crate) input: &'a InputLike,
     pub(crate) raw_responses: &'a [ModelResponse],
-    pub(crate) agent: &'a Agent,
+    pub(crate) agent: &'a Arc<Agent>,
     pub(crate) max_turns: Option<usize>,
     pub(crate) options: &'a RunOptions,
 }

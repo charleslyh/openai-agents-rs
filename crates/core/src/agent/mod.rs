@@ -253,12 +253,13 @@ impl Agent {
     /// Resolve the system prompt for a run.
     ///
     /// Mounted capabilities append their instruction paragraphs, separated by a blank line.
-    pub async fn resolve_instructions(&self, context: &RunContextWrapper) -> Option<String> {
+    pub async fn resolve_instructions(
+        self: &Arc<Self>,
+        context: &RunContextWrapper,
+    ) -> Option<String> {
         let own = match &self.instructions {
             Some(Instructions::Static(s)) => Some(s.clone()),
-            Some(Instructions::Dynamic(f)) => {
-                Some(f(context.clone(), Arc::new(self.clone())).await)
-            }
+            Some(Instructions::Dynamic(f)) => Some(f(context.clone(), Arc::clone(self)).await),
             None => None,
         };
         let mut extra = self.capability_instructions().peekable();
@@ -348,7 +349,7 @@ impl Agent {
 
     /// Enabled tools for this turn (evaluates each tool's `is_enabled`): the agent's own, then
     /// those of its capabilities.
-    pub async fn enabled_tools(&self, context: &RunContextWrapper) -> Vec<FunctionTool> {
+    pub async fn enabled_tools(self: &Arc<Self>, context: &RunContextWrapper) -> Vec<FunctionTool> {
         let mut out = Vec::new();
         for tool in self.local_tools() {
             if tool.is_enabled.resolve(context, self).await {
@@ -361,7 +362,7 @@ impl Agent {
     /// Every function tool for this turn: the enabled local tools, then those of the MCP
     /// servers (Python: `Agent.get_all_tools`).
     pub async fn all_function_tools(
-        &self,
+        self: &Arc<Self>,
         context: &RunContextWrapper,
     ) -> Result<Vec<FunctionTool>, AgentsError> {
         let mut tools = self.enabled_tools(context).await;
@@ -375,7 +376,7 @@ impl Agent {
     }
 
     /// Enabled handoffs for this turn (evaluates each handoff's `is_enabled`).
-    pub async fn enabled_handoffs(&self, context: &RunContextWrapper) -> Vec<Handoff> {
+    pub async fn enabled_handoffs(self: &Arc<Self>, context: &RunContextWrapper) -> Vec<Handoff> {
         let mut out = Vec::new();
         for h in &self.handoffs {
             if h.is_enabled.resolve(context, self).await {

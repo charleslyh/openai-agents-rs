@@ -47,6 +47,52 @@ use crate::run_state::RunState;
 
 use agent_loop::{run_loop, LoopStart};
 
+/// [`Runner::run`] for an agent that is already shared: the agent is wrapped once per run at
+/// the public entry, and nested runs (`Agent::as_tool`) reuse their `Arc` instead of copying the
+/// agent again for every call.
+pub(crate) async fn run_shared(
+    starting_agent: Arc<Agent>,
+    input: InputLike,
+    options: RunOptions,
+) -> Result<RunResult, AgentsError> {
+    run_loop(
+        starting_agent,
+        LoopStart::Fresh {
+            input,
+            prepared: None,
+        },
+        options,
+        None,
+        None,
+    )
+    .await
+}
+
+/// [`Runner::run_state`] for an agent that is already shared.
+pub(crate) async fn run_state_shared(
+    starting_agent: Arc<Agent>,
+    state: RunState,
+    options: RunOptions,
+) -> Result<RunResult, AgentsError> {
+    if state.starting_agent_name != starting_agent.name {
+        return Err(UserError::new(format!(
+            "RunState starting agent `{}` does not match `{}`",
+            state.starting_agent_name, starting_agent.name
+        ))
+        .into());
+    }
+    run_loop(
+        starting_agent,
+        LoopStart::Resume {
+            state: Box::new(state),
+        },
+        options,
+        None,
+        None,
+    )
+    .await
+}
+
 /// Facade entry point (Python: `Runner`).
 pub struct Runner;
 
@@ -57,17 +103,7 @@ impl Runner {
         input: impl Into<InputLike>,
         options: RunOptions,
     ) -> Result<RunResult, AgentsError> {
-        run_loop(
-            starting_agent.clone(),
-            LoopStart::Fresh {
-                input: input.into(),
-                prepared: None,
-            },
-            options,
-            None,
-            None,
-        )
-        .await
+        run_shared(Arc::new(starting_agent.clone()), input.into(), options).await
     }
 
     /// Resume a paused run after approve/reject (Python: `Runner.run(agent, state)`).
@@ -76,23 +112,7 @@ impl Runner {
         state: RunState,
         options: RunOptions,
     ) -> Result<RunResult, AgentsError> {
-        if state.starting_agent_name != starting_agent.name {
-            return Err(UserError::new(format!(
-                "RunState starting agent `{}` does not match `{}`",
-                state.starting_agent_name, starting_agent.name
-            ))
-            .into());
-        }
-        run_loop(
-            starting_agent.clone(),
-            LoopStart::Resume {
-                state: Box::new(state),
-            },
-            options,
-            None,
-            None,
-        )
-        .await
+        run_state_shared(Arc::new(starting_agent.clone()), state, options).await
     }
 
     /// Run in streaming mode (Python: `Runner.run_streamed`).
@@ -191,7 +211,7 @@ fn spawn_streamed(
     let snap = Arc::clone(&snapshot);
     let task = tokio::spawn(async move {
         let result = run_loop(
-            starting_agent,
+            Arc::new(starting_agent),
             start,
             options,
             Some(tx.clone()),

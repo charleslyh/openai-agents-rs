@@ -189,7 +189,7 @@ pub(crate) fn build_run_error_data(
     input: &InputLike,
     items: &[RunItem],
     raw_responses: &[ModelResponse],
-    agent: &Agent,
+    agent: &Arc<Agent>,
     policy: Option<ReasoningItemIdPolicy>,
 ) -> RunErrorData {
     let output: Vec<Value> = items
@@ -205,7 +205,7 @@ pub(crate) fn build_run_error_data(
         history,
         output,
         raw_responses: raw_responses.to_vec(),
-        last_agent: Arc::new(agent.clone()),
+        last_agent: Arc::clone(agent),
     }
 }
 

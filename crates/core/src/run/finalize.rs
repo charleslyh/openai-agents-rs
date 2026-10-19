@@ -44,7 +44,7 @@ pub(crate) struct FinalizeEnv<'a> {
 pub(crate) async fn finalize_run(
     record: RunRecord,
     final_output: Value,
-    agent: &Agent,
+    agent: &Arc<Agent>,
     env: FinalizeEnv<'_>,
 ) -> Result<RunResult, AgentsError> {
     let RunRecord {
@@ -78,10 +78,9 @@ pub(crate) async fn finalize_run(
         .collect();
     let mut output_guardrail_results = Vec::new();
     if !guardrails.is_empty() {
-        let agent = Arc::new(agent.clone());
         let futs = guardrails.iter().map(|g| {
             let g = g.clone();
-            let agent = Arc::clone(&agent);
+            let agent = Arc::clone(agent);
             let output = final_output.clone();
             let ctx = context.clone();
             async move { g.run(agent, output, ctx).await }
@@ -98,7 +97,7 @@ pub(crate) async fn finalize_run(
             // does the session.
             if let Some(run_config) = tool_origin {
                 let placeholder =
-                    resolve_blocked_message(run_config, &result.guardrail_name, &agent, context);
+                    resolve_blocked_message(run_config, &result.guardrail_name, agent, context);
                 if let Some(writer) = session_writer {
                     writer.save_blocked_turn(&new_items, &placeholder).await?;
                 }
@@ -118,7 +117,7 @@ pub(crate) async fn finalize_run(
             usage,
         },
         final_output,
-        Arc::new(agent.clone()),
+        Arc::clone(agent),
     );
     result.input_guardrail_results = input_guardrail_results;
     result.output_guardrail_results = output_guardrail_results;

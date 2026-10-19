@@ -37,7 +37,7 @@ bench(`cargo bench -p openai-agents --bench run_loop`,本机):
 | A3 | `core/src/tool.rs:106-142`、`run_state/` | 同义别名并存:`NeedsApproval/NeedsResolution`、`ToolApprovalItem/ToolInterruptionItem`、`ApprovalStore/ResolutionStore`、`ApprovalDecision/ToolResolution` | 立即修:保留 resolution 一套 |
 | A4 | `run_state/mod.rs:187`、`openai/src/chat_completions/body.rs:136` | `allow(dead_code)` | 立即修 |
 | A5 | `core/src/run/config.rs:104` | `catch_unwind` 兜底 | 接受(先核实原因,M1 随 Arc 改造处理) |
-| A6 | `Arc::new(agent.clone())` 共 11 处 | 热路径深拷贝 | 重构中顺带(M1 路径 A) |
+| A6 | `Arc::new(agent.clone())` 共 11 处 | 热路径深拷贝 | 已修(M1 路径 A):循环内全部共享 `Arc<Agent>`,只剩公共入口每次运行 1 次、`as_tool` 构造时 1 次;`twenty_tools_ten_turns` 345µs → 265µs(-20%) |
 | A7 | 全局状态 9 处 | `resolve.rs` 三个 OnceLock 等 | 重构中顺带(M1 Runtime) |
 
 ## B. 可靠性与资源

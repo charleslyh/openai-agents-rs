@@ -94,7 +94,7 @@ pub(crate) async fn emit(tx: &Option<EventTx>, event: StreamEvent) {
 /// Spans created anywhere inside the run must respect `RunConfig.tracing_disabled`, not just
 /// the global switch (Python: `RunConfig.tracing_disabled` short-circuits the whole trace).
 pub(crate) async fn run_loop(
-    starting_agent: Agent,
+    starting_agent: Arc<Agent>,
     start: LoopStart,
     options: RunOptions,
     events: Option<EventTx>,
@@ -239,7 +239,7 @@ fn validate_tool_requirements(
 
 /// Validate the options, open the run's trace and drive the turn loop.
 async fn run_loop_inner(
-    starting_agent: Agent,
+    starting_agent: Arc<Agent>,
     start: LoopStart,
     options: RunOptions,
     events: Option<EventTx>,

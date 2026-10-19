@@ -1,5 +1,7 @@
 //! `Agent.as_tool`: run an agent as a function tool (Python: `Agent.as_tool`).
 
+use std::sync::Arc;
+
 use serde_json::{json, Value};
 
 use crate::agent::Agent;
@@ -8,7 +10,6 @@ use crate::tool::{FunctionTool, ToolOutput};
 
 use super::agent_loop::take_nested_resume_state;
 use super::config::RunOptions;
-use super::Runner;
 
 /// Options for [`Agent::as_tool`] (Python: `Agent.as_tool` kwargs subset).
 ///
@@ -41,7 +42,8 @@ impl Agent {
 
 /// Build an `Agent.as_tool` FunctionTool (Python: `Agent.as_tool`).
 fn build_agent_as_tool(agent: &Agent, config: AsToolConfig) -> FunctionTool {
-    let nested_agent = agent.clone();
+    // Shared by every call of the tool; each call starts a run on the same `Arc`.
+    let nested_agent = Arc::new(agent.clone());
     let tool_name = config
         .name
         .unwrap_or_else(|| crate::handoffs::transform_string_function_style(&nested_agent.name));
@@ -66,7 +68,7 @@ fn build_agent_as_tool(agent: &Agent, config: AsToolConfig) -> FunctionTool {
             "additionalProperties": false
         }),
         move |ctx, args| {
-            let nested_agent = nested_agent.clone();
+            let nested_agent = Arc::clone(&nested_agent);
             async move {
                 let input_text = extract_as_tool_input(&args)?;
                 let mut opts = RunOptions::default();
@@ -75,9 +77,9 @@ fn build_agent_as_tool(agent: &Agent, config: AsToolConfig) -> FunctionTool {
                 }
 
                 let result = if let Some(state) = take_nested_resume_state(&ctx.tool_call_id) {
-                    Runner::run_state(&nested_agent, state, opts).await?
+                    super::run_state_shared(nested_agent, state, opts).await?
                 } else {
-                    Runner::run(&nested_agent, input_text, opts).await?
+                    super::run_shared(nested_agent, input_text.into(), opts).await?
                 };
 
                 if result.is_interrupted() {

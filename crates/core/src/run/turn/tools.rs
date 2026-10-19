@@ -5,6 +5,7 @@
 //! long enough to hide the phases that are not.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use serde_json::Value;
 
@@ -39,7 +40,7 @@ pub(crate) struct TurnSetup {
 /// What a turn's tool phase needs to read, bundled so the phase takes three arguments.
 #[derive(Clone, Copy)]
 pub(crate) struct ToolTurn<'a> {
-    pub(crate) agent: &'a Agent,
+    pub(crate) agent: &'a Arc<Agent>,
     pub(crate) context: &'a RunContextWrapper,
     pub(crate) options: &'a RunOptions,
     pub(crate) nested_agent_runs: &'a HashMap<String, RunState>,
@@ -70,7 +71,7 @@ pub(crate) async fn final_output_without_tools(
     response: &ModelResponse,
     input: &InputLike,
     generated_items: &mut Vec<RunItem>,
-    agent: &Agent,
+    agent: &Arc<Agent>,
     options: &RunOptions,
     context: &RunContextWrapper,
 ) -> Result<TurnOutput, AgentsError> {
@@ -141,7 +142,7 @@ pub(crate) async fn final_output_without_tools(
 
 /// Resolves the model settings and the tool set for one turn.
 pub(crate) async fn prepare_turn(
-    agent: &Agent,
+    agent: &Arc<Agent>,
     agents_used_tools: &HashSet<String>,
     options: &RunOptions,
     context: &RunContextWrapper,

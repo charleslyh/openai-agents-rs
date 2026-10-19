@@ -12,28 +12,32 @@ use crate::runtime::Runtime;
 use super::config::RunConfig;
 
 /// Record `root` and every agent it owns through `handoff(..)`, by name. Late-bound handoffs
-/// are stand-ins and are skipped; the first agent seen under a name is kept.
-pub(crate) fn collect_agents(root: &Agent, into: &mut HashMap<String, Agent>) {
+/// are stand-ins and are skipped; the first agent seen under a name is kept. Only `Arc`s are
+/// cloned, never an agent.
+pub(crate) fn collect_agents(root: &Arc<Agent>, into: &mut HashMap<String, Arc<Agent>>) {
     if into.contains_key(&root.name) {
         return;
     }
-    into.insert(root.name.clone(), root.clone());
+    into.insert(root.name.clone(), Arc::clone(root));
     for h in root.handoffs.iter().filter(|h| !h.late_bound) {
         collect_agents(&h.agent, into);
     }
 }
 
-pub(crate) fn resolve_agent_by_name(root: &Agent, name: &str) -> Result<Agent, AgentsError> {
+pub(crate) fn resolve_agent_by_name(
+    root: &Arc<Agent>,
+    name: &str,
+) -> Result<Arc<Agent>, AgentsError> {
     if root.name == name {
-        return Ok(root.clone());
+        return Ok(Arc::clone(root));
     }
-    let mut stack = vec![root.clone()];
+    let mut stack = vec![Arc::clone(root)];
     while let Some(agent) = stack.pop() {
         for h in agent.handoffs.iter().filter(|h| !h.late_bound) {
             if h.agent.name == name {
-                return Ok((*h.agent).clone());
+                return Ok(Arc::clone(&h.agent));
             }
-            stack.push((*h.agent).clone());
+            stack.push(Arc::clone(&h.agent));
         }
     }
     Err(UserError::new(format!("Agent `{name}` not found in starting agent graph")).into())
