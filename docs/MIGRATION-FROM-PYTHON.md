@@ -17,7 +17,7 @@ The full support matrix is [COMPAT.md](./COMPAT.md); the reasoning behind each d
 | `Runner.run_streamed(...)` + `async for` | `Runner::run_streamed(agent, input, opts)` + `next_event().await` |
 | `@function_tool` | `#[function_tool]` (schema from Rust types, doc comment = description; D-002) |
 | `handoff(agent)` / `handoff(agent, tool_name_override=...)` | `handoff(agent)` / `handoff_with(agent, name, description)` |
-| `input_guardrails` / `output_guardrails` | `input_guardrail(name, fn)` / `output_guardrail(name, fn)` |
+| `input_guardrails` / `output_guardrails` | `input_guardrail(name, fn)` / `output_guardrail(name, fn)`, returning a `GuardrailFunctionOutput` (`Verdict`: pass, fail, transform) |
 | `RunHooks` / `AgentHooks` subclasses | `impl RunHooks` / `impl AgentHooks` (every method has a no-op default) |
 | `SQLiteSession` | `SqliteSession` (feature `sqlite`; **the same database file works in both SDKs**, D-038) |
 | `RunConfig(...)` / `RunOptions(...)` | `RunConfig::default()` plus grouped fields or chain methods, see [RunConfig groups](#runconfig-groups). `RunConfig` is `#[non_exhaustive]`, so a struct literal does not compile outside the crate |
@@ -73,12 +73,30 @@ Not a migration aid, but worth knowing before you decide it is a downgrade:
   cannot blow up the process.
 - The stdio MCP client clears the child's environment down to a safe allow-list instead of
   inheriting your API keys (D-041).
+- `RunOptions::resolve_with(|call| async { .. })`: Python returns every pause to you; here a
+  callback resolves the paused calls and the run resumes by itself, and the explicit `RunState`
+  flow is still there when the run has to outlive the process (X-009).
+- A resolution given through `RunState` is bound to the agent, tool and arguments of the call it
+  answered: an approval cannot be carried to a call whose arguments changed, even in a stored
+  state (X-010). Resuming also checks a fingerprint of the agent graph (X-011).
+- A guardrail returns a `Verdict`: pass, fail (with a reason and a severity) or
+  `Transform(content)`, so it can redact and let the run continue instead of only stopping it
+  (X-012).
+- `FunctionTool::typed`: one `#[derive(Deserialize, JsonSchema)]` struct gives you the tool's
+  schema and its parsed arguments, so a tool needs no hand-written JSON.
+- `Capability`: a named bundle of tools, instructions, guardrails and model settings you mount on
+  an agent, equal to handing over its parts by hand (X-007).
+- `ModelProvider::get_model` is `async`, so a provider can fetch credentials or look a deployment
+  up before it builds the model (X-008).
 
 ## RunConfig groups
 
 Python's `RunConfig` is one flat dataclass; here its fields are grouped by topic. Each group is a
 `#[non_exhaustive]` struct with chain methods, and `RunConfig` has `with_model` / `with_tracing` /
-`with_session` / `with_handoff` / `with_tools`.
+`with_session` / `with_handoff` / `with_tools`. In practice you rarely touch `RunConfig` at all:
+`RunOptions` chains the common ones (`model`, `temperature`, `max_turns`, `reasoning`, `session`,
+`hooks`, `workflow_name`, `context`, `resolve_with`, `with`) and hands you a closure for each group
+(`.tracing(..)`, `.tools(..)`, `.session_opts(..)`, `.config(..)`).
 
 | Python `RunConfig` field | Rust |
 | --- | --- |
@@ -99,8 +117,9 @@ Python's `RunConfig` is one flat dataclass; here its fields are grouped by topic
 | `input_guardrails`, `output_guardrails` | `config.input_guardrails`, `config.output_guardrails` |
 
 ```rust
-let mut options = RunOptions::new().with(tenant);
-options.run_config = RunConfig::default()
-    .with_model(ModelOptions::new().settings(settings))
-    .with_tracing(TracingOptions::new().workflow_name("support"));
+let options = RunOptions::new()
+    .with(tenant)
+    .temperature(0.2)
+    .workflow_name("support")
+    .tools(|t| *t = t.clone().not_found_behavior(ToolNotFoundBehavior::ReturnErrorToModel));
 ```

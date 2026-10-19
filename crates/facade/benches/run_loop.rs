@@ -24,7 +24,7 @@ fn bench_single_turn(c: &mut Criterion) {
                 assistant_message("done"),
             ])]));
             let agent = Agent::new("a").instructions("be brief").model(model);
-            rt.block_on(Runner::run(&agent, "ping", RunOptions::default()))
+            rt.block_on(Runner::run(&agent, "ping", RunOptions::new()))
                 .expect("run")
         })
     });
@@ -42,7 +42,7 @@ fn bench_one_tool_then_answer(c: &mut Criterion) {
             let agent = Agent::new("a")
                 .model(model)
                 .tools(vec![FunctionTool::constant("echo", "echo", "ok")]);
-            rt.block_on(Runner::run(&agent, "ping", RunOptions::default()))
+            rt.block_on(Runner::run(&agent, "ping", RunOptions::new()))
                 .expect("run")
         })
     });
@@ -63,7 +63,7 @@ fn bench_parallel_tools(c: &mut Criterion) {
             let agent = Agent::new("a")
                 .model(model)
                 .tools(vec![FunctionTool::constant("echo", "echo", "ok")]);
-            rt.block_on(Runner::run(&agent, "ping", RunOptions::default()))
+            rt.block_on(Runner::run(&agent, "ping", RunOptions::new()))
                 .expect("run")
         })
     });
@@ -110,7 +110,7 @@ fn bench_stop_on_first_tool(c: &mut Criterion) {
                 .model(model)
                 .tool_use_behavior(ToolUseBehavior::StopOnFirstTool)
                 .tools(vec![FunctionTool::constant("echo", "echo", "ok")]);
-            rt.block_on(Runner::run(&agent, "ping", RunOptions::default()))
+            rt.block_on(Runner::run(&agent, "ping", RunOptions::new()))
                 .expect("run")
         })
     });
