@@ -19,6 +19,10 @@ openai = ["dep:openai-agents-openai"]
 # MCP client: stdio (child process) and streamable HTTP transports. Off by default, so a build
 # that does not talk to MCP servers compiles neither the client nor its process/HTTP code.
 mcp = ["dep:openai-agents-mcp"]
+# Provider presets: DeepSeek, Gemini, Groq, OpenRouter, Anthropic, Ollama, custom endpoints, the
+# capability matrix and the offline model. Off by default; it brings the OpenAI adapters with it,
+# because every preset speaks Chat Completions or Responses.
+providers = ["dep:openai-agents-providers"]
 # `SqliteSession`: file or in-memory conversation storage, same schema as the Python SDK.
 sqlite = ["dep:openai-agents-sqlite"]
 
@@ -34,6 +38,7 @@ openai-agents-testing = { path = "../testing", version = "0.1.0" }
 openai-agents-openai = { path = "../openai", version = "0.1.0", optional = true }
 openai-agents-mcp = { path = "../mcp", version = "0.1.0", optional = true }
 openai-agents-sqlite = { path = "../sqlite", version = "0.1.0", optional = true }
+openai-agents-providers = { path = "../providers", version = "0.1.0", optional = true }
 
 [dev-dependencies]
 async-trait = "0.1"

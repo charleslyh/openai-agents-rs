@@ -116,6 +116,11 @@ impl Provider {
         }
     }
 
+    /// The model this provider answers with when a run names none.
+    pub fn default_model_name(&self) -> Option<&str> {
+        self.default_model.as_deref()
+    }
+
     /// The name this provider is registered under.
     pub fn name(&self) -> &str {
         &self.name

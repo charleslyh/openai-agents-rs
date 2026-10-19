@@ -147,6 +147,10 @@ path = "src/26_capability.rs"
 name = "verdict_transform"
 path = "src/27_verdict_transform.rs"
 
+[[example]]
+name = "zero_config"
+path = "src/28_zero_config.rs"
+
 # The sources are user-facing code, so they live at the repository root rather than inside
 # `crates/facade`. They depend on the facade the way a user's project would.
 #
@@ -161,7 +165,7 @@ async-trait = "0.1"
 # `mcp` is needed by the `mcp` example only (a real MCP server over stdio: the example's own
 # binary re-executed with `--mcp-server`). Every example in this package compiles the
 # `openai-agents-mcp` crate too because of it.
-openai-agents = { path = "../crates/facade", version = "0.1.0", features = ["openai", "mcp"] }
+openai-agents = { path = "../crates/facade", version = "0.1.0", features = ["openai", "mcp", "providers"] }
 serde = { version = "1", features = ["derive"] }
 schemars = "1"
 serde_json = { version = "1", features = ["preserve_order"] }

@@ -14,7 +14,7 @@ use openai_agents_core::model::Model;
 
 use super::catalog::advise;
 use super::spec::{infer_preset, Capabilities, ProviderApi, PRESETS};
-use super::{GuardedModel, Provider, LAST_CHECKED};
+use super::{GuardedModel, OfflineProvider, Provider, LAST_CHECKED};
 
 /// How many `AGENTS_PROVIDER_{N}_...` endpoints are scanned.
 const CUSTOM_SLOTS: usize = 9;
@@ -28,6 +28,8 @@ pub struct Entry {
     pub capabilities: Capabilities,
     /// The provider that resolves names under this prefix.
     pub provider: Arc<dyn ModelProvider>,
+    /// The model this provider answers with when a run names none.
+    pub default_model: Option<String>,
 }
 
 impl std::fmt::Debug for Entry {
@@ -70,17 +72,39 @@ impl ProviderRegistry {
     /// Register every preset whose key variable is set, then the endpoints declared with
     /// `AGENTS_PROVIDER_{N}_ENDPOINT` / `_API_KEY` / `_NAME` / `_DEFAULT_MODEL`.
     ///
-    /// A preset without a key variable (Ollama) is registered unconditionally: it is local, and
-    /// only used when a name asks for it. A custom endpoint that is not `https` and not loopback
-    /// fails unless `AGENTS_PROVIDER_INSECURE_HTTP=1`.
+    /// A preset that needs no key (Ollama) is registered only when its `enable_env` is set
+    /// (`OLLAMA_HOST`): a run with nothing configured must fail with advice, not guess at a
+    /// localhost port. A custom endpoint that is not `https` and not loopback fails unless
+    /// `AGENTS_PROVIDER_INSECURE_HTTP=1`.
     pub fn from_env() -> Result<Self, UserError> {
+        // Offline wins over everything: a run that must not reach the network must not reach it,
+        // even when a key happens to be set.
+        if env_flag("AGENTS_OFFLINE") {
+            let provider: Arc<dyn ModelProvider> = Arc::new(OfflineProvider);
+            let mut registry = Self::new();
+            // Everything: the offline model answers locally and sends nothing, so no request
+            // field can be beyond it.
+            registry.push("offline", Capabilities::full(), provider, None);
+            return registry.with_default("offline");
+        }
         let mut registry = Self::new();
         for spec in PRESETS {
+            // A local server needs no key, so it is registered only when you say where it is.
+            if let Some(var) = spec.enable_env {
+                if env_or_none(var).is_none() {
+                    continue;
+                }
+            }
             let Ok(built) = Provider::preset(spec.name).and_then(|p| p.build()) else {
                 continue; // no key: not available, and not an error
             };
             let capabilities = spec.capabilities;
-            registry.push(spec.name, capabilities, built);
+            registry.push(
+                spec.name,
+                capabilities,
+                built,
+                spec.default_model.map(str::to_string),
+            );
             // OpenAI also answers the protocol-picking prefixes the SDK has always had.
             if spec.name == "openai" {
                 for (prefix, api) in [
@@ -91,7 +115,12 @@ impl ProviderRegistry {
                         .map(|p| p.api(api))
                         .and_then(|p| p.build())
                     {
-                        registry.push(prefix, capabilities, built);
+                        registry.push(
+                            prefix,
+                            capabilities,
+                            built,
+                            spec.default_model.map(str::to_string),
+                        );
                     }
                 }
             }
@@ -110,8 +139,9 @@ impl ProviderRegistry {
                 provider = provider.default_model(model);
             }
             let capabilities = provider.capabilities();
+            let default_model = provider.default_model_name().map(str::to_string);
             let built = provider.build()?;
-            registry.push(&name, capabilities, built);
+            registry.push(&name, capabilities, built, default_model);
         }
         Ok(registry)
     }
@@ -123,17 +153,30 @@ impl ProviderRegistry {
         provider: Arc<dyn ModelProvider>,
         capabilities: Capabilities,
     ) -> Self {
-        self.push(&name.into(), capabilities, provider);
+        self.push(&name.into(), capabilities, provider, None);
         self
     }
 
-    fn push(&mut self, name: &str, capabilities: Capabilities, provider: Arc<dyn ModelProvider>) {
+    fn push(
+        &mut self,
+        name: &str,
+        capabilities: Capabilities,
+        provider: Arc<dyn ModelProvider>,
+        default_model: Option<String>,
+    ) {
         self.entries.retain(|e| e.name != name);
         self.entries.push(Entry {
             name: name.to_string(),
             capabilities,
             provider,
+            default_model,
         });
+    }
+
+    /// The model the default provider answers with, when it has an obvious one.
+    pub fn default_model(&self) -> Option<&str> {
+        let name = self.default.as_deref()?;
+        self.get(name)?.default_model.as_deref()
     }
 
     /// The prefix used when a name carries none.
@@ -295,6 +338,12 @@ fn note_model(model_name: &str) {
     if let Some(advice) = advise(model_name) {
         tracing::warn!(model = model_name, "{advice}");
     }
+}
+
+/// Whether `var` is set to something truthy.
+fn env_flag(var: &str) -> bool {
+    env_or_none(var)
+        .is_some_and(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
 }
 
 fn env_or_none(var: &str) -> Option<String> {

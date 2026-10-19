@@ -29,12 +29,14 @@
 
 mod catalog;
 mod guard;
+mod offline;
 mod provider;
 mod registry;
 mod spec;
 
 pub use catalog::{advise, model, ModelEntry, ModelStatus, MODELS};
 pub use guard::GuardedModel;
+pub use offline::{OfflineModel, OfflineProvider};
 pub use provider::{validate_endpoint, Provider};
 pub use registry::{Entry, ProviderRegistry, ProviderRouter};
 pub use spec::{

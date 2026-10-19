@@ -9,6 +9,7 @@ use crate::guardrail::{InputGuardrail, OutputGuardrail};
 use crate::items::ToolInterruptionItem;
 use crate::lifecycle::RunHooks;
 use crate::memory::Session;
+use crate::model::provider::ModelProvider;
 use crate::model::ModelRef;
 use crate::model_settings::ModelSettings;
 use crate::run_context::{ContextValue, RunContextWrapper};
@@ -450,6 +451,16 @@ impl RunOptions {
     #[must_use]
     pub fn workflow_name(mut self, name: impl Into<String>) -> Self {
         self.run_config.tracing.workflow_name = Some(name.into());
+        self
+    }
+
+    /// The provider that resolves model names for this run (Python: `run_config.model_provider`).
+    ///
+    /// `None` leaves the name to whatever the [`crate::Runtime`] is configured with, which is the
+    /// usual case; set it to send a run to a specific provider.
+    #[must_use]
+    pub fn provider(mut self, provider: Option<std::sync::Arc<dyn ModelProvider>>) -> Self {
+        self.run_config.model.provider = provider;
         self
     }
 

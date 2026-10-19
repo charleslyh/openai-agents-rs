@@ -60,6 +60,10 @@ entry will be `0.1.0`.
   naming the provider and the capability.
 - A small model catalogue warns when a run names a retired model (and what to use instead), a
   superseded one, or an id that looks like a typo of a known one (X-014).
+- `openai_agents::run(instructions, input)`: one line, provider and model taken from the
+  environment. `AGENTS_OFFLINE=1` answers locally, so a project can be tried before any key
+  exists. New `providers` feature on the facade (off by default) (X-015).
+- `RunOptions::provider(..)` sets the provider that resolves a run's model names.
 - **Breaking:** guardrails return a `Verdict`: `Pass`, `Fail { reason, severity }` or
   `Transform(content)` (continue with rewritten content, e.g. redacted data).
   `GuardrailFunctionOutput::tripwire_triggered` is now a method; `pass` / `trip` keep working and

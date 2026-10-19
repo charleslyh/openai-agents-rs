@@ -149,14 +149,20 @@ fn the_default_must_be_registered() {
 
 /// Everything that touches the environment runs in this one test: `cargo test` runs tests of a
 /// binary in parallel threads, and the environment is process-wide.
-#[test]
-fn discovery_from_the_environment() {
+#[tokio::test]
+async fn discovery_from_the_environment() {
     // A preset whose key is set is registered; one whose key is not, is not.
     std::env::set_var("DEEPSEEK_API_KEY", "sk-test");
     std::env::remove_var("GROQ_API_KEY");
     let registry = ProviderRegistry::from_env().expect("from_env");
     assert!(registry.names().any(|n| n == "deepseek"));
     assert!(!registry.names().any(|n| n == "groq"));
+    // A local runtime is only registered when you say where it is.
+    assert!(!registry.names().any(|n| n == "ollama"));
+    std::env::set_var("OLLAMA_HOST", "http://localhost:11434");
+    let registry = ProviderRegistry::from_env().expect("from_env");
+    assert!(registry.names().any(|n| n == "ollama"));
+    std::env::remove_var("OLLAMA_HOST");
     assert!(
         registry.names().any(|n| n == "ollama"),
         "Ollama needs no key"
@@ -183,6 +189,21 @@ fn discovery_from_the_environment() {
     std::env::set_var("AGENTS_PROVIDER_INSECURE_HTTP", "1");
     let registry = ProviderRegistry::from_env().expect("allowed explicitly");
     assert!(registry.names().any(|n| n == "acme"));
+
+    // Offline wins over a key that is set: nothing may reach the network.
+    std::env::set_var("AGENTS_OFFLINE", "1");
+    let registry = ProviderRegistry::from_env().expect("from_env");
+    assert_eq!(registry.names().collect::<Vec<_>>(), vec!["offline"]);
+    assert_eq!(registry.default(), Some("offline"));
+    let provider = registry.into_provider().expect("a provider");
+    let model = provider
+        .get_model(Some("gpt-4o"))
+        .await
+        .expect("an offline model");
+    let answer = openai_agents_providers::OfflineModel::answer();
+    assert!(answer.contains("offline"), "{answer}");
+    std::env::remove_var("AGENTS_OFFLINE");
+    drop(model);
 
     for var in [
         "DEEPSEEK_API_KEY",

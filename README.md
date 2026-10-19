@@ -115,6 +115,7 @@ Ordered like the web demo's capability checklist, one knowledge point per exampl
 | `settings` | Run control | `ModelSettings` temperature + retry, `max_turns` |
 | `reasoning` | Run control | Typed `Reasoning` effort/summary for either API |
 | `capability` | Rust-only | A named bundle of tools, instructions and guardrails |
+| `zero_config` | Rust-only | `openai_agents::run`: provider and model from the environment, offline without a key |
 
 They need `OPENAI_API_KEY` and `OPENAI_MODEL` in the environment; `OPENAI_BASE_URL` and
 `OPENAI_API` (`chat_completions` | `responses`) are optional.

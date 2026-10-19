@@ -171,6 +171,9 @@ pub struct ProviderSpec {
     pub base_url: &'static str,
     /// Environment variable holding the API key; `None` for servers that need none.
     pub key_env: Option<&'static str>,
+    /// Variable that must also be set before a server that needs no key is registered: a local
+    /// runtime is only "configured" if you say where it is.
+    pub enable_env: Option<&'static str>,
     /// The protocol to speak.
     pub api: ProviderApi,
     /// What the provider supports.
@@ -197,15 +200,19 @@ pub const PRESETS: &[ProviderSpec] = &[
         name: "openai",
         base_url: "https://api.openai.com/v1",
         key_env: Some("OPENAI_API_KEY"),
+        enable_env: None,
         api: ProviderApi::Responses,
         capabilities: Capabilities::full(),
         model_prefixes: &["gpt-", "o1", "o3", "o4", "computer-use"],
-        default_model: None,
+        // The cheapest current model: a run that names none should still answer, and the bill
+        // should stay small. Override with AGENTS_MODEL.
+        default_model: Some("gpt-4o-mini"),
     },
     ProviderSpec {
         name: "deepseek",
         base_url: "https://api.deepseek.com/v1",
         key_env: Some("DEEPSEEK_API_KEY"),
+        enable_env: None,
         api: ProviderApi::ChatCompletions,
         // `deepseek-reasoner` reports reasoning; no vision, no Responses endpoint.
         capabilities: Capabilities::chat().with(Capability::Reasoning),
@@ -216,6 +223,7 @@ pub const PRESETS: &[ProviderSpec] = &[
         name: "gemini",
         base_url: "https://generativelanguage.googleapis.com/v1beta/openai",
         key_env: Some("GEMINI_API_KEY"),
+        enable_env: None,
         api: ProviderApi::ChatCompletions,
         capabilities: Capabilities::chat()
             .with(Capability::Vision)
@@ -228,6 +236,7 @@ pub const PRESETS: &[ProviderSpec] = &[
         name: "groq",
         base_url: "https://api.groq.com/openai/v1",
         key_env: Some("GROQ_API_KEY"),
+        enable_env: None,
         api: ProviderApi::ChatCompletions,
         capabilities: Capabilities::chat().with(Capability::Reasoning),
         model_prefixes: &["groq/"],
@@ -237,6 +246,7 @@ pub const PRESETS: &[ProviderSpec] = &[
         name: "openrouter",
         base_url: "https://openrouter.ai/api/v1",
         key_env: Some("OPENROUTER_API_KEY"),
+        enable_env: None,
         api: ProviderApi::ChatCompletions,
         // Whatever the routed-to model supports; OpenRouter passes the fields through.
         capabilities: Capabilities::full(),
@@ -247,6 +257,7 @@ pub const PRESETS: &[ProviderSpec] = &[
         name: "anthropic",
         base_url: "https://api.anthropic.com/v1",
         key_env: Some("ANTHROPIC_API_KEY"),
+        enable_env: None,
         api: ProviderApi::ChatCompletions,
         capabilities: Capabilities::chat()
             .with(Capability::Vision)
@@ -259,6 +270,9 @@ pub const PRESETS: &[ProviderSpec] = &[
         name: "ollama",
         base_url: "http://localhost:11434/v1",
         key_env: None,
+        // Ollama's own variable: set it (OLLAMA_HOST=http://localhost:11434) and the preset is
+        // registered. Without it, a run with no key fails instead of guessing at localhost.
+        enable_env: Some("OLLAMA_HOST"),
         api: ProviderApi::ChatCompletions,
         // Depends on the model pulled locally, so only the protocol basics are claimed.
         capabilities: Capabilities::chat(),
