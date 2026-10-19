@@ -80,7 +80,7 @@ Legend: **X** = out of scope (OpenAI-hosted) · **S** = supported · **P** = par
 | `CompatibleProvider` | S | Provider-neutral entry: base URL, optional key, Chat Completions by default (D-013) |
 | Model retry (`ModelSettings.retry`, `retry_policies`) | S | Checked against Python scenario by scenario; typed `ModelError::Status` / `Connection` (D-034) |
 | Per-attempt `ModelSettings.timeout` | S | `ModelError::Timeout`; retryable (D-034) |
-| Litellm / other providers | N | Register a custom `ModelProvider` |
+| Litellm / other providers | N | Register a custom `ModelProvider`; the `openai-agents-providers` crate ships presets (DeepSeek, Gemini, Groq, OpenRouter, Anthropic, Ollama) and a capability matrix (X-013) |
 
 ## Streaming wire events
 

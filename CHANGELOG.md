@@ -52,6 +52,9 @@ entry will be `0.1.0`.
 - A paused `RunState` records a fingerprint of the agent graph; resuming it with agents whose
   names, tools or handoffs changed fails with a `UserError`. Call
   `RunState::allow_agent_graph_change()` to resume anyway.
+- New crate `openai-agents-providers`: presets for DeepSeek, Gemini, Groq, OpenRouter, Anthropic and
+  Ollama, `ProviderRegistry::from_env()` discovery, `prefix/model` routing with inference,
+  a capability matrix and `UnsupportedCapability` (X-013).
 - **Breaking:** guardrails return a `Verdict`: `Pass`, `Fail { reason, severity }` or
   `Transform(content)` (continue with rewritten content, e.g. redacted data).
   `GuardrailFunctionOutput::tripwire_triggered` is now a method; `pass` / `trip` keep working and

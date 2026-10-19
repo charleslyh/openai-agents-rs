@@ -49,6 +49,10 @@ EXTENSIONS = {
     "openai-agents-sqlite",
     "openai-agents-testing",
 }
+# The presets are built on top of the OpenAI-compatible adapters: every preset speaks Chat
+# Completions or Responses. It is the one extension allowed to depend on another, because it is
+# nothing but a table over it plus the routing on top.
+PROVIDERS = "openai-agents-providers"
 FACADE = "openai-agents"
 EXAMPLES = "openai-agents-examples"
 WEB_DEMO = "openai-agents-web-demo"
@@ -59,7 +63,8 @@ CRATE_DEPS: dict[str, set[str]] = {
     "openai-agents-openai": {CORE},
     "openai-agents-sqlite": {CORE},
     "openai-agents-testing": {CORE},
-    FACADE: {CORE} | EXTENSIONS,
+    PROVIDERS: {CORE, "openai-agents-openai"},
+    FACADE: {CORE} | EXTENSIONS | {PROVIDERS},
     # The root `examples/` package is user-facing code: it may reach the facade, but must not reach
     # past it into core or an extension. If an example needs something the facade does not
     # re-export, that is a gap in the public API, not a reason to depend on core directly.
