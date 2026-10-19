@@ -41,7 +41,7 @@ impl Transport for FakeTransport {
     ) -> Result<Value, McpError> {
         self.requests
             .lock()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push((method.to_string(), params.clone()));
         if self.die_once.swap(false, Ordering::SeqCst)
             || self
@@ -118,7 +118,7 @@ fn listed(transport: &FakeTransport) -> usize {
     transport
         .requests
         .lock()
-        .unwrap()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .iter()
         .filter(|(m, _)| m == "tools/list")
         .count()
@@ -341,7 +341,7 @@ async fn function_tools_validate_arguments_and_render_results() {
     let calls = transport
         .requests
         .lock()
-        .unwrap()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .iter()
         .filter(|(m, _)| m == "tools/call")
         .count();

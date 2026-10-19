@@ -119,7 +119,11 @@ impl McpServerManager {
         failed_only: bool,
     ) -> Result<Vec<Arc<dyn McpServer>>, AgentsError> {
         let targets: Vec<usize> = if failed_only {
-            self.state.lock().expect("manager state").failed.clone()
+            self.state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .failed
+                .clone()
         } else {
             (0..self.servers.len()).collect()
         };
@@ -142,7 +146,10 @@ impl McpServerManager {
 
     /// The servers to give the agent: all of them, minus the failed ones when they are dropped.
     pub fn active_servers(&self) -> Vec<Arc<dyn McpServer>> {
-        let state = self.state.lock().expect("manager state");
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         self.servers
             .iter()
             .enumerate()
@@ -158,7 +165,10 @@ impl McpServerManager {
 
     /// The servers that failed their last connection attempt.
     pub fn failed_servers(&self) -> Vec<Arc<dyn McpServer>> {
-        let state = self.state.lock().expect("manager state");
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         state
             .failed
             .iter()
@@ -168,7 +178,10 @@ impl McpServerManager {
 
     /// `(server name, error)` of each failed server.
     pub fn errors(&self) -> Vec<(String, String)> {
-        let state = self.state.lock().expect("manager state");
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         state
             .errors
             .iter()
@@ -221,7 +234,10 @@ impl McpServerManager {
         };
 
         {
-            let mut state = self.state.lock().expect("manager state");
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             for (index, result) in &results {
                 state.failed.retain(|i| i != index);
                 state.errors.retain(|(i, _)| i != index);

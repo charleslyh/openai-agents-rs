@@ -51,13 +51,23 @@ impl StreamableHttpParams {
 #[derive(Default)]
 struct SseEvents {
     buffer: String,
+    decoder: openai_agents_core::utf8_stream::Utf8Stream,
 }
 
 impl SseEvents {
     fn feed(&mut self, chunk: &[u8]) {
-        self.buffer.push_str(&String::from_utf8_lossy(chunk));
+        self.buffer.push_str(&self.decoder.push(chunk));
+        // A `\r` at the very end may be the first half of `\r\n` split across chunks, so it is
+        // normalised only once the next byte shows what follows it.
+        let held_cr = self.buffer.ends_with('\r');
+        if held_cr {
+            self.buffer.pop();
+        }
         if self.buffer.contains('\r') {
             self.buffer = self.buffer.replace("\r\n", "\n").replace('\r', "\n");
+        }
+        if held_cr {
+            self.buffer.push('\r');
         }
     }
 
@@ -79,6 +89,41 @@ impl SseEvents {
     }
 }
 
+/// How long establishing a connection may take.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+/// Upper bound for the fire-and-forget calls that carry no caller-supplied timeout.
+const AUX_TIMEOUT: Duration = Duration::from_secs(30);
+/// Redirects followed per request, same origin only.
+const MAX_REDIRECTS: usize = 5;
+
+/// The shared HTTP client.
+///
+/// Redirects are followed only within the original origin: the configured headers are
+/// credentials (API keys, bearer tokens) that must not travel to another host, and a 307/308
+/// would otherwise replay the POST body there. Connecting is bounded so a dead host cannot hang
+/// the caller; request bodies stay governed by the per-request timeout.
+fn build_client() -> reqwest::Client {
+    let redirect = reqwest::redirect::Policy::custom(|attempt| {
+        let same_origin = attempt.previous().last().is_some_and(|prev| {
+            prev.scheme() == attempt.url().scheme()
+                && prev.host_str() == attempt.url().host_str()
+                && prev.port_or_known_default() == attempt.url().port_or_known_default()
+        });
+        if attempt.previous().len() >= MAX_REDIRECTS {
+            attempt.error("too many redirects")
+        } else if same_origin {
+            attempt.follow()
+        } else {
+            attempt.stop()
+        }
+    });
+    reqwest::Client::builder()
+        .connect_timeout(CONNECT_TIMEOUT)
+        .redirect(redirect)
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new())
+}
+
 pub(crate) struct HttpTransport {
     client: reqwest::Client,
     url: String,
@@ -91,7 +136,7 @@ pub(crate) struct HttpTransport {
 impl HttpTransport {
     fn new(params: &StreamableHttpParams) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: build_client(),
             url: params.url.clone(),
             headers: params.headers.clone(),
             session_id: Mutex::new(None),
@@ -114,13 +159,23 @@ impl HttpTransport {
             HeaderValue::from_static("application/json, text/event-stream"),
         );
         map.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-        if let Some(id) = self.session_id.lock().expect("session").as_deref() {
+        if let Some(id) = self
+            .session_id
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_deref()
+        {
             map.insert(
                 HeaderName::from_static(SESSION_HEADER),
                 HeaderValue::from_str(id).map_err(|_| bad("session id", id))?,
             );
         }
-        if let Some(version) = self.protocol_version.lock().expect("version").as_deref() {
+        if let Some(version) = self
+            .protocol_version
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_deref()
+        {
             map.insert(
                 HeaderName::from_static(VERSION_HEADER),
                 HeaderValue::from_str(version).map_err(|_| bad("protocol version", version))?,
@@ -143,17 +198,25 @@ impl HttpTransport {
             .get(SESSION_HEADER)
             .and_then(|v| v.to_str().ok())
         {
-            *self.session_id.lock().expect("session") = Some(id.to_string());
+            *self
+                .session_id
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(id.to_string());
         }
         let status = response.status();
         if !status.is_success() {
             let text = response.text().await.unwrap_or_default();
-            let hint =
-                if status.as_u16() == 404 && self.session_id.lock().expect("session").is_some() {
-                    " (the session may have expired)"
-                } else {
-                    ""
-                };
+            let hint = if status.as_u16() == 404
+                && self
+                    .session_id
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .is_some()
+            {
+                " (the session may have expired)"
+            } else {
+                ""
+            };
             return Err(McpError::Transport(format!("HTTP {status}{hint}: {text}")));
         }
         Ok(response)
@@ -233,17 +296,28 @@ impl Transport for HttpTransport {
     }
 
     async fn notify(&self, method: &str, params: Option<Value>) -> Result<(), McpError> {
-        self.post(&notification_message(method, params))
-            .await
-            .map(|_| ())
+        tokio::time::timeout(
+            AUX_TIMEOUT,
+            self.post(&notification_message(method, params)),
+        )
+        .await
+        .map_err(|_| McpError::Timeout(AUX_TIMEOUT))?
+        .map(|_| ())
     }
 
     fn set_protocol_version(&self, version: &str) {
-        *self.protocol_version.lock().expect("version") = Some(version.to_string());
+        *self
+            .protocol_version
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(version.to_string());
     }
 
     async fn close(&self) {
-        let session = self.session_id.lock().expect("session").take();
+        let session = self
+            .session_id
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
         if session.is_none() {
             return;
         }
@@ -255,7 +329,8 @@ impl Transport for HttpTransport {
         {
             headers.insert(HeaderName::from_static(SESSION_HEADER), id);
         }
-        let _ = self.client.delete(&self.url).headers(headers).send().await;
+        let delete = self.client.delete(&self.url).headers(headers).send();
+        let _ = tokio::time::timeout(Duration::from_secs(5), delete).await;
     }
 }
 
@@ -293,6 +368,65 @@ mod tests {
         assert!(
             events.next_data().is_none(),
             "comment-only events carry no data"
+        );
+    }
+
+    #[test]
+    fn sse_events_keep_multibyte_text_and_crlf_split_across_chunks() {
+        let payload = "data: {\"t\":\"你好🙂\"}\r\n\r\n".as_bytes().to_vec();
+        for split in 1..payload.len() {
+            let mut events = SseEvents::default();
+            events.feed(&payload[..split]);
+            events.feed(&payload[split..]);
+            assert_eq!(
+                events.next_data().as_deref(),
+                Some("{\"t\":\"你好🙂\"}"),
+                "split at {split}"
+            );
+        }
+    }
+
+    /// Serve one canned HTTP response per connection; returns the base URL and a hit counter.
+    async fn serve(response: String) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let hits = std::sync::Arc::new(AtomicUsize::new(0));
+        let counter = hits.clone();
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                counter.fetch_add(1, Ordering::SeqCst);
+                let mut buf = [0u8; 4096];
+                let _ = socket.read(&mut buf).await;
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.shutdown().await;
+            }
+        });
+        (url, hits)
+    }
+
+    #[tokio::test]
+    async fn redirects_to_another_origin_are_not_followed() {
+        use std::sync::atomic::Ordering;
+        let (other_url, other_hits) =
+            serve("HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\n{}".into()).await;
+        let (url, _) = serve(format!(
+            "HTTP/1.1 307 Temporary Redirect\r\nlocation: {other_url}/steal\r\ncontent-length: 0\r\n\r\n"
+        ))
+        .await;
+        let response = super::build_client()
+            .post(&url)
+            .header("x-api-key", "secret")
+            .body("{}")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status().as_u16(), 307);
+        assert_eq!(
+            other_hits.load(Ordering::SeqCst),
+            0,
+            "credentials and body must not reach another origin"
         );
     }
 }

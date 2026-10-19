@@ -86,19 +86,37 @@ impl StdioParams {
 type Pending = Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value, McpError>>>>>;
 type SharedStdin = Arc<AsyncMutex<Option<ChildStdin>>>;
 
+/// Longest a single message may take to reach the server's stdin.
+///
+/// A server that stops reading lets the pipe buffer fill, and an unbounded `write_all` would then
+/// block forever while holding the stdin lock, which also stalls `close()`.
+const WRITE_TIMEOUT: Duration = Duration::from_secs(30);
+
 async fn write_message(stdin: &SharedStdin, message: &Value) -> Result<(), McpError> {
-    let mut guard = stdin.lock().await;
+    let mut guard = tokio::time::timeout(WRITE_TIMEOUT, stdin.lock())
+        .await
+        .map_err(|_| McpError::Timeout(WRITE_TIMEOUT))?;
     let pipe = guard
         .as_mut()
         .ok_or_else(|| McpError::Closed("the server's input is closed".into()))?;
     let mut line = message.to_string();
     line.push('\n');
-    pipe.write_all(line.as_bytes())
-        .await
-        .map_err(|e| McpError::Transport(format!("writing to the server failed: {e}")))?;
-    pipe.flush()
-        .await
-        .map_err(|e| McpError::Transport(format!("writing to the server failed: {e}")))
+    let written = tokio::time::timeout(WRITE_TIMEOUT, async {
+        pipe.write_all(line.as_bytes()).await?;
+        pipe.flush().await
+    })
+    .await;
+    match written {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(e)) => Err(McpError::Transport(format!(
+            "writing to the server failed: {e}"
+        ))),
+        Err(_) => {
+            // A half-written line would corrupt the framing, so the pipe cannot be reused.
+            guard.take();
+            Err(McpError::Timeout(WRITE_TIMEOUT))
+        }
+    }
 }
 
 pub(crate) struct StdioTransport {
@@ -132,8 +150,12 @@ impl StdioTransport {
         let mut child = command.spawn().map_err(|e| {
             McpError::Transport(format!("could not start `{}`: {e}", params.command))
         })?;
-        let stdin = child.stdin.take().expect("piped stdin");
-        let stdout = child.stdout.take().expect("piped stdout");
+        let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
+            return Err(McpError::Transport(format!(
+                "could not open the pipes of `{}`",
+                params.command
+            )));
+        };
 
         let stdin: SharedStdin = Arc::new(AsyncMutex::new(Some(stdin)));
         let pending: Pending = Arc::default();
@@ -157,14 +179,21 @@ impl StdioTransport {
                         let _ = write_message(&stdin, &reply_to_server_request(&message)).await;
                     }
                 } else if let Some(id) = message.get("id").and_then(Value::as_u64) {
-                    let sender = pending.lock().expect("pending").remove(&id);
+                    let sender = pending
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .remove(&id);
                     if let (Some(sender), Some(outcome)) = (sender, response_outcome(&message)) {
                         let _ = sender.send(outcome);
                     }
                 }
             }
             closed.store(true, Ordering::SeqCst);
-            for (_, sender) in pending.lock().expect("pending").drain() {
+            for (_, sender) in pending
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .drain()
+            {
                 let _ = sender.send(Err(McpError::Closed("the server closed its output".into())));
             }
         });
@@ -192,16 +221,25 @@ impl Transport for StdioTransport {
         }
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let (sender, receiver) = oneshot::channel();
-        self.pending.lock().expect("pending").insert(id, sender);
+        self.pending
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(id, sender);
         if let Err(error) = write_message(&self.stdin, &request_message(id, method, params)).await {
-            self.pending.lock().expect("pending").remove(&id);
+            self.pending
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .remove(&id);
             return Err(error);
         }
         match tokio::time::timeout(timeout, receiver).await {
             Ok(Ok(outcome)) => outcome,
             Ok(Err(_)) => Err(McpError::Closed("the server closed its output".into())),
             Err(_) => {
-                self.pending.lock().expect("pending").remove(&id);
+                self.pending
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .remove(&id);
                 // Tell the server to stop working on it (best effort).
                 let _ = self
                     .notify(
@@ -221,7 +259,11 @@ impl Transport for StdioTransport {
     async fn close(&self) {
         self.closed.store(true, Ordering::SeqCst);
         // Closing stdin is the polite way to stop a stdio server.
-        self.stdin.lock().await.take();
+        // If a stuck write holds the lock, skip the polite step and go straight to the kill below.
+        if let Ok(mut stdin) = tokio::time::timeout(Duration::from_secs(1), self.stdin.lock()).await
+        {
+            stdin.take();
+        }
         let mut child = self.child.lock().await;
         if tokio::time::timeout(Duration::from_secs(2), child.wait())
             .await

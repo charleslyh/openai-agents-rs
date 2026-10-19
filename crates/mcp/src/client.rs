@@ -208,7 +208,12 @@ impl McpClient {
 
     async fn fetch_tools(&self) -> Result<Vec<McpTool>, AgentsError> {
         if self.cache_tools_list {
-            if let Some(tools) = self.cached_tools.lock().expect("cache").clone() {
+            if let Some(tools) = self
+                .cached_tools
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone()
+            {
                 return Ok(tools);
             }
         }
@@ -237,7 +242,10 @@ impl McpClient {
             }
         }
         if self.cache_tools_list {
-            *self.cached_tools.lock().expect("cache") = Some(tools.clone());
+            *self
+                .cached_tools
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(tools.clone());
         }
         Ok(tools)
     }
@@ -254,7 +262,10 @@ impl McpServer for McpClient {
     }
 
     async fn cleanup(&self) -> Result<(), AgentsError> {
-        *self.cached_tools.lock().expect("cache") = None;
+        *self
+            .cached_tools
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
         if let Some(transport) = self.connection.lock().await.take() {
             transport.close().await;
         }
@@ -303,7 +314,10 @@ impl McpServer for McpClient {
     }
 
     fn invalidate_tools_cache(&self) {
-        *self.cached_tools.lock().expect("cache") = None;
+        *self
+            .cached_tools
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
     }
 
     fn needs_approval_for(&self, tool: &McpTool) -> NeedsResolution {
