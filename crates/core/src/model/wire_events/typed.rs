@@ -239,24 +239,60 @@ impl WireEvent {
     /// The event's `sequence_number`, when present.
     pub fn sequence_number(&self) -> Option<u64> {
         match self {
-            Self::Created { sequence_number, .. }
-            | Self::OutputItemAdded { sequence_number, .. }
-            | Self::OutputItemDone { sequence_number, .. }
-            | Self::ContentPartAdded { sequence_number, .. }
-            | Self::ContentPartDone { sequence_number, .. }
-            | Self::OutputTextDelta { sequence_number, .. }
-            | Self::OutputTextDone { sequence_number, .. }
-            | Self::RefusalDelta { sequence_number, .. }
-            | Self::RefusalDone { sequence_number, .. }
-            | Self::ReasoningSummaryPartAdded { sequence_number, .. }
-            | Self::ReasoningSummaryPartDone { sequence_number, .. }
-            | Self::ReasoningSummaryTextDelta { sequence_number, .. }
-            | Self::ReasoningSummaryTextDone { sequence_number, .. }
-            | Self::ReasoningTextDelta { sequence_number, .. }
-            | Self::ReasoningTextDone { sequence_number, .. }
-            | Self::FunctionCallArgumentsDelta { sequence_number, .. }
-            | Self::FunctionCallArgumentsDone { sequence_number, .. }
-            | Self::Completed { sequence_number, .. } => *sequence_number,
+            Self::Created {
+                sequence_number, ..
+            }
+            | Self::OutputItemAdded {
+                sequence_number, ..
+            }
+            | Self::OutputItemDone {
+                sequence_number, ..
+            }
+            | Self::ContentPartAdded {
+                sequence_number, ..
+            }
+            | Self::ContentPartDone {
+                sequence_number, ..
+            }
+            | Self::OutputTextDelta {
+                sequence_number, ..
+            }
+            | Self::OutputTextDone {
+                sequence_number, ..
+            }
+            | Self::RefusalDelta {
+                sequence_number, ..
+            }
+            | Self::RefusalDone {
+                sequence_number, ..
+            }
+            | Self::ReasoningSummaryPartAdded {
+                sequence_number, ..
+            }
+            | Self::ReasoningSummaryPartDone {
+                sequence_number, ..
+            }
+            | Self::ReasoningSummaryTextDelta {
+                sequence_number, ..
+            }
+            | Self::ReasoningSummaryTextDone {
+                sequence_number, ..
+            }
+            | Self::ReasoningTextDelta {
+                sequence_number, ..
+            }
+            | Self::ReasoningTextDone {
+                sequence_number, ..
+            }
+            | Self::FunctionCallArgumentsDelta {
+                sequence_number, ..
+            }
+            | Self::FunctionCallArgumentsDone {
+                sequence_number, ..
+            }
+            | Self::Completed {
+                sequence_number, ..
+            } => *sequence_number,
             Self::Unknown(value) => value.get("sequence_number").and_then(Value::as_u64),
         }
     }

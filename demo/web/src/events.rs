@@ -207,21 +207,19 @@ pub fn usage_event(usage: &Usage) -> DemoEvent {
 /// Map one SDK stream event. `delivered` counts visible characters streamed so far.
 pub fn map_stream_event(event: StreamEvent, delivered: &mut usize) -> Vec<DemoEvent> {
     match event {
-        StreamEvent::RawResponse { data } => {
-            match wire_events::parse(&data) {
-                WireEvent::ReasoningSummaryTextDelta { delta, .. }
-                | WireEvent::ReasoningTextDelta { delta, .. }
-                    if !delta.is_empty() =>
-                {
-                    vec![DemoEvent::Reasoning { text: delta }]
-                }
-                WireEvent::OutputTextDelta { delta, .. } if !delta.is_empty() => {
-                    *delivered += delta.chars().count();
-                    vec![DemoEvent::Token { text: delta }]
-                }
-                _ => Vec::new(),
+        StreamEvent::RawResponse { data } => match wire_events::parse(&data) {
+            WireEvent::ReasoningSummaryTextDelta { delta, .. }
+            | WireEvent::ReasoningTextDelta { delta, .. }
+                if !delta.is_empty() =>
+            {
+                vec![DemoEvent::Reasoning { text: delta }]
             }
-        }
+            WireEvent::OutputTextDelta { delta, .. } if !delta.is_empty() => {
+                *delivered += delta.chars().count();
+                vec![DemoEvent::Token { text: delta }]
+            }
+            _ => Vec::new(),
+        },
         StreamEvent::AgentUpdated { agent_name } => {
             vec![DemoEvent::AgentUpdated { agent: agent_name }]
         }
