@@ -1,78 +1,110 @@
 //! Run context (Python: `agents.run_context.RunContextWrapper`).
 //!
-//! The SDK is not generic over the user context: it is carried as
-//! `Arc<dyn Any + Send + Sync>` and downcast on demand. This keeps `Agent` / `Runner`
-//! free of type parameters at the cost of discovering context type errors at runtime, so
-//! [`RunContextWrapper::try_context`] reports a precise error instead of silently returning
-//! `None`.
+//! The SDK is not generic over the user context. Business data travels in an
+//! [`Extensions`] map keyed by Rust type; the wrapper itself holds the strongly typed,
+//! SDK-owned state (usage). Missing data is reported by [`RunContextWrapper::require`] with
+//! an actionable error instead of silently returning `None`.
 
 use std::any::Any;
 use std::sync::{Arc, Mutex};
 
 use crate::error::{AgentsError, UserError};
+use crate::extensions::Extensions;
 use crate::usage::Usage;
 
-/// A user-supplied context value.
-pub type ContextValue = Arc<dyn Any + Send + Sync>;
+pub use crate::extensions::ContextValue;
 
 /// Wrapper for the per-run context shared with tools, guardrails and hooks.
 ///
 /// Cloning is cheap: every field is behind an `Arc`.
 #[derive(Clone, Default)]
 pub struct RunContextWrapper {
-    context: Option<ContextValue>,
+    extensions: Extensions,
     usage: Arc<Mutex<Usage>>,
 }
 
 impl std::fmt::Debug for RunContextWrapper {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RunContextWrapper")
-            .field("has_context", &self.context.is_some())
+            .field("extensions", &self.extensions)
             .field("usage", &self.usage())
             .finish()
     }
 }
 
 impl RunContextWrapper {
-    /// Create a wrapper around an optional user context.
+    /// Create a wrapper around an optional single user context value.
     pub fn new(context: Option<ContextValue>) -> Self {
+        let mut extensions = Extensions::new();
+        if let Some(value) = context {
+            extensions.insert_shared(value);
+        }
+        Self::from_extensions(extensions)
+    }
+
+    /// Create a wrapper around a set of typed extensions.
+    pub fn from_extensions(extensions: Extensions) -> Self {
         Self {
-            context,
+            extensions,
             usage: Arc::new(Mutex::new(Usage::default())),
         }
     }
 
     /// Wrap a concrete context value.
     pub fn with<T: Any + Send + Sync>(context: T) -> Self {
-        Self::new(Some(Arc::new(context)))
+        Self::from_extensions(Extensions::new().with(context))
     }
 
-    /// Whether a user context was supplied.
+    /// Whether any user data was supplied.
     pub fn has_context(&self) -> bool {
-        self.context.is_some()
+        !self.extensions.is_empty()
     }
 
-    /// Borrow the user context, if it is of type `T`.
+    /// The typed extensions supplied for this run.
+    pub fn extensions(&self) -> &Extensions {
+        &self.extensions
+    }
+
+    /// Borrow the value of type `T`, if there is one.
+    pub fn get<T: Any + Send + Sync>(&self) -> Option<&T> {
+        self.extensions.get::<T>()
+    }
+
+    /// Borrow the value of type `T` or fail with an actionable error.
+    pub fn require<T: Any + Send + Sync>(&self) -> Result<&T, AgentsError> {
+        self.get::<T>().ok_or_else(|| self.missing::<T>(None))
+    }
+
+    /// Same as [`RunContextWrapper::get`] (Python-style name).
     pub fn context<T: Any + Send + Sync>(&self) -> Option<&T> {
-        self.context.as_ref()?.downcast_ref::<T>()
+        self.get::<T>()
     }
 
-    /// Borrow the user context or fail with an actionable error.
+    /// Same as [`RunContextWrapper::require`] (Python-style name).
     pub fn try_context<T: Any + Send + Sync>(&self) -> Result<&T, AgentsError> {
-        let Some(value) = &self.context else {
-            return Err(UserError::new(format!(
-                "no run context was provided; pass `RunOptions::context` with a value of type `{}`",
-                std::any::type_name::<T>()
+        self.require::<T>()
+    }
+
+    /// The error for a missing value, optionally naming the tool that asked for it.
+    pub(crate) fn missing<T: Any>(&self, asked_by: Option<&str>) -> AgentsError {
+        let wanted = std::any::type_name::<T>();
+        let who = asked_by
+            .map(|name| format!(" (requested by `{name}`)"))
+            .unwrap_or_default();
+        if self.extensions.is_empty() {
+            return UserError::new(format!(
+                "no run context was provided{who}; add a value of type `{wanted}` with \
+                 `RunOptions::with` or `RunOptions::context`"
             ))
-            .into());
+            .into();
+        }
+        let held = self.extensions.known_type_names();
+        let held = if held.is_empty() {
+            String::new()
+        } else {
+            format!("; the run holds: {}", held.join(", "))
         };
-        value.downcast_ref::<T>().ok_or_else(|| {
-            UserError::new(format!(
-                "run context is not of type `{}`",
-                std::any::type_name::<T>()
-            ))
-            .into()
-        })
+        UserError::new(format!("run context is not of type `{wanted}`{who}{held}")).into()
     }
 
     /// Snapshot of the aggregated usage recorded so far.
@@ -126,6 +158,13 @@ impl ToolContext {
 
     /// Convenience accessor for the user context.
     pub fn context<T: std::any::Any + Send + Sync>(&self) -> Option<&T> {
-        self.run_context.context::<T>()
+        self.run_context.get::<T>()
+    }
+
+    /// Borrow the value of type `T`, or fail with an error that names this tool.
+    pub fn require<T: std::any::Any + Send + Sync>(&self) -> Result<&T, AgentsError> {
+        self.run_context
+            .get::<T>()
+            .ok_or_else(|| self.run_context.missing::<T>(Some(&self.tool_name)))
     }
 }

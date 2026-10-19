@@ -259,7 +259,7 @@ impl<'a> TurnLoop<'a> {
         let mut known_agents = HashMap::new();
         collect_agents(&starting_agent, &mut known_agents);
         let resuming = matches!(start, LoopStart::Resume { .. });
-        let context = RunContextWrapper::new(options.context.clone());
+        let context = options.run_context();
         let Progress {
             current_agent,
             input,

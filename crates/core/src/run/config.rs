@@ -7,6 +7,7 @@ use serde_json::Value;
 
 use crate::agent::Agent;
 use crate::error::AgentsError;
+use crate::extensions::Extensions;
 use crate::guardrail::{InputGuardrail, OutputGuardrail};
 use crate::handoffs::{HandoffHistoryMapper, HandoffInputFilter};
 use crate::items::ReasoningItemIdPolicy;
@@ -329,6 +330,10 @@ pub struct RunOptions {
     pub conversation_id: Option<String>,
     /// User context shared with tools, guardrails and hooks (Python: `RunOptions.context`).
     pub context: Option<ContextValue>,
+    /// Typed business data, one value per type (Rust-only; see [`Extensions`]).
+    ///
+    /// [`RunOptions::context`] is merged in as one more slot when the run starts.
+    pub extensions: Extensions,
     /// Run-level lifecycle hooks (Python: `RunOptions.hooks`).
     pub hooks: Option<Arc<dyn RunHooks>>,
     /// Conversation memory (Python: `Runner.run(session=...)`).
@@ -352,10 +357,43 @@ impl Default for RunOptions {
             previous_response_id: None,
             conversation_id: None,
             context: None,
+            extensions: Extensions::new(),
             hooks: None,
             session: None,
             error_handlers: RunErrorHandlers::default(),
         }
+    }
+}
+
+impl RunOptions {
+    /// Options with the defaults of [`RunOptions::default`].
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Add a typed value that tools, guardrails and hooks read with `ctx.get::<T>()`.
+    ///
+    /// A second value of the same type replaces the first.
+    #[must_use]
+    pub fn with<T: std::any::Any + Send + Sync>(mut self, value: T) -> Self {
+        self.extensions.insert(value);
+        self
+    }
+
+    /// Set the single user context value (Python: `context=`); it is stored under its own type.
+    #[must_use]
+    pub fn context<T: std::any::Any + Send + Sync>(mut self, value: T) -> Self {
+        self.context = Some(Arc::new(value));
+        self
+    }
+
+    /// The run context handed to tools and hooks: the extensions plus [`RunOptions::context`].
+    pub(crate) fn run_context(&self) -> RunContextWrapper {
+        let mut extensions = self.extensions.clone();
+        if let Some(value) = &self.context {
+            extensions.insert_shared(Arc::clone(value));
+        }
+        RunContextWrapper::from_extensions(extensions)
     }
 }
 
@@ -367,6 +405,7 @@ impl std::fmt::Debug for RunOptions {
             .field("previous_response_id", &self.previous_response_id)
             .field("conversation_id", &self.conversation_id)
             .field("has_context", &self.context.is_some())
+            .field("extensions", &self.extensions)
             .field("has_hooks", &self.hooks.is_some())
             .field("has_session", &self.session.is_some())
             .finish()

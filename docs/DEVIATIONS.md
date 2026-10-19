@@ -189,6 +189,15 @@ Deliberately not ported (see D-011): `response.output_text.annotation.added` is 
 `[]`. The per-event status per emitter is tabulated
 in [COMPAT.md](./COMPAT.md#streaming-wire-events).
 
+## Rust-only extensions
+
+Capabilities Python does not have. They are not part of the parity comparison; the behavior they
+extend still matches Python.
+
+| ID | Addition | Behavior | Notes |
+|----|----------|----------|-------|
+| X-001 | `Extensions` (D-014 follow-up, `docs/refactor/09-d1-context-generics.md`) | A run carries a type-keyed map of shared values next to Python's single `context`. `RunOptions::with(value)` adds one, `ctx.get::<T>()` / `ctx.require::<T>()` read it (`ToolContext::require` names the tool in its error). `RunOptions::context(value)` and `context::<T>()` / `try_context::<T>()` keep working and use the same map: the value is stored under its own concrete type. A second value of the same type replaces the first (a `warn!` in debug builds). Still not generic: type mistakes surface at run time | Declared requirements checked before the first turn follow with the `Tool` trait (M1) |
+
 ## How to add an entry
 
 1. Assign the next `D-NNN` ID. Older `B*` / `D-A..D-N` IDs are kept as they are because code,

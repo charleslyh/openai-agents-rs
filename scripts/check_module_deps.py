@@ -81,6 +81,7 @@ TIERS: dict[str, int] = {
     "usage": 0,
     "items": 0,
     "stream_events": 0,
+    "extensions": 0,
     # 1 — settings and derived data, plus the cross-cutting infra that only needs tier 0
     "strict_schema": 1,
     "retry": 1,

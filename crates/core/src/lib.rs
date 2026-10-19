@@ -9,6 +9,7 @@ pub mod agent;
 pub mod agent_output;
 pub mod context;
 pub mod error;
+pub mod extensions;
 pub mod guardrail;
 pub mod handoffs;
 pub mod items;
@@ -47,6 +48,7 @@ pub use error::{
     OutputGuardrailTripwireTriggered, ToolInputGuardrailTripwireTriggered,
     ToolOutputGuardrailTripwireTriggered, ToolTimeoutError, UserError,
 };
+pub use extensions::Extensions;
 pub use guardrail::{
     input_guardrail, output_guardrail, GuardrailFunctionOutput, InputGuardrail,
     InputGuardrailResult, OutputGuardrail, OutputGuardrailResult,

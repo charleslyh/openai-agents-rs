@@ -7,7 +7,7 @@ use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
 use openai_agents::{
     input_guardrail, output_guardrail, Agent, AgentHooks, AgentsError, FunctionTool,
     GuardrailFunctionOutput, InputGuardrailTripwireTriggered, OutputGuardrailTripwireTriggered,
-    RunContextWrapper, RunHooks, RunOptions, Runner,
+    RunContextWrapper, RunHooks, RunOptions, Runner, ToolContext,
 };
 
 #[derive(Debug, PartialEq)]
@@ -56,6 +56,92 @@ async fn missing_context_reports_a_typed_error() {
     let ctx = RunContextWrapper::with(7u32);
     let err = ctx.try_context::<Tenant>().expect_err("must fail");
     assert!(err.to_string().contains("not of type"), "{err}");
+}
+
+/// Several independent values travel in one run, each looked up by its own type.
+#[tokio::test]
+async fn tools_read_several_typed_extensions() {
+    struct UserId(u64);
+    let seen = Arc::new(Mutex::new(None));
+    let seen_cb = Arc::clone(&seen);
+    let tool = FunctionTool::new(
+        "who",
+        "report the caller",
+        serde_json::json!({"type": "object", "properties": {}, "additionalProperties": false}),
+        move |ctx, _args| {
+            let seen_cb = Arc::clone(&seen_cb);
+            async move {
+                let tenant = ctx.require::<Tenant>()?.id.clone();
+                let user = ctx.require::<UserId>()?.0;
+                *seen_cb.lock().unwrap() = Some((tenant, user));
+                Ok(serde_json::json!("ok"))
+            }
+        },
+    );
+    let model = Arc::new(ScriptedModel::new([
+        ModelStep::from(ItemHelpers::function_tool_call("who", "{}", "c1")),
+        ModelStep::from(ItemHelpers::text_message("done")),
+    ]));
+    let agent = Agent::new("ext").model(model).tools(vec![tool]);
+
+    let opts = RunOptions::new()
+        .with(Tenant { id: "acme".into() })
+        .with(UserId(7));
+    let _ = Runner::run(&agent, "go", opts).await.expect("run");
+    assert_eq!(*seen.lock().unwrap(), Some(("acme".to_string(), 7)));
+}
+
+/// `RunOptions::context` and `with` feed the same typed map.
+#[tokio::test]
+async fn single_context_value_and_extensions_coexist() {
+    let seen = Arc::new(Mutex::new(None));
+    let seen_cb = Arc::clone(&seen);
+    let tool = FunctionTool::new(
+        "who",
+        "report both",
+        serde_json::json!({"type": "object", "properties": {}, "additionalProperties": false}),
+        move |ctx, _args| {
+            let seen_cb = Arc::clone(&seen_cb);
+            async move {
+                let tenant = ctx.context::<Tenant>().map(|t| t.id.clone());
+                *seen_cb.lock().unwrap() = Some((tenant, ctx.context::<u32>().copied()));
+                Ok(serde_json::json!("ok"))
+            }
+        },
+    );
+    let model = Arc::new(ScriptedModel::new([
+        ModelStep::from(ItemHelpers::function_tool_call("who", "{}", "c1")),
+        ModelStep::from(ItemHelpers::text_message("done")),
+    ]));
+    let agent = Agent::new("ext").model(model).tools(vec![tool]);
+
+    let opts = RunOptions::new()
+        .context(Tenant { id: "acme".into() })
+        .with(5u32);
+    let _ = Runner::run(&agent, "go", opts).await.expect("run");
+    assert_eq!(
+        *seen.lock().unwrap(),
+        Some((Some("acme".to_string()), Some(5)))
+    );
+}
+
+/// A tool that needs a type the run does not hold gets an error naming the tool, the wanted
+/// type and what the run does hold.
+#[test]
+fn require_names_the_tool_and_the_held_types() {
+    let ctx = ToolContext::new("who", "c1", "{}", RunContextWrapper::with(7u32));
+    let message = ctx.require::<Tenant>().expect_err("must fail").to_string();
+    assert!(message.contains("`who`"), "{message}");
+    assert!(message.contains("Tenant"), "{message}");
+    assert!(message.contains("u32"), "{message}");
+
+    let empty = ToolContext::new("who", "c1", "{}", RunContextWrapper::default());
+    let message = empty
+        .require::<Tenant>()
+        .expect_err("must fail")
+        .to_string();
+    assert!(message.contains("no run context"), "{message}");
+    assert!(message.contains("`who`"), "{message}");
 }
 
 /// Dynamic instructions receive the context and the agent (Python: callable `instructions`).
