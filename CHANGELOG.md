@@ -67,6 +67,8 @@ entry will be `0.1.0`.
 - A `:<effort>` model-name suffix (`"o4-mini:high"`) for names resolved through a provider.
 - `Capability` / `CapabilityParts`: named bundles of tools, instructions, guardrails, default model
   settings and required extensions, mounted with `Agent::capability(..)`.
+- `prelude` modules (`openai_agents::prelude`, `openai_agents_core::prelude`) with the types most
+  programs need; the facade one also brings `#[function_tool]`.
 
 ### Removed
 

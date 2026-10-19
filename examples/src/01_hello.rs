@@ -10,7 +10,7 @@
 
 mod common;
 
-use openai_agents::{Agent, RunOptions, Runner};
+use openai_agents::prelude::*;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -21,7 +21,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result = Runner::run(
         &agent,
         "Tell me about recursion in programming.",
-        RunOptions::default(),
+        RunOptions::new(),
     )
     .await?;
     println!("{}", result.final_output_as_str().unwrap_or_default());

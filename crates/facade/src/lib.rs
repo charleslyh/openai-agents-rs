@@ -47,5 +47,31 @@ pub use openai_agents_sqlite::SqliteSession;
 /// Attribute macro: turn a function into a [`FunctionTool`] constructor (Python: `@function_tool`).
 pub use openai_agents_macros::function_tool;
 
+/// The types most programs need, for a single glob import: `use openai_agents::prelude::*;`.
+///
+/// Same set as [`openai_agents_core::prelude`], plus the `#[function_tool]` macro, with this
+/// crate's [`Runner`] (which installs the default OpenAI provider) in place of the
+/// core one.
+///
+/// ```no_run
+/// use openai_agents::prelude::*;
+///
+/// #[tokio::main]
+/// async fn main() -> Result<(), AgentsError> {
+///     let agent = Agent::new("Assistant")
+///         .instructions("You only respond in haikus.")
+///         .model_name(std::env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-4.1-mini".into()));
+///     let result = Runner::run(&agent, "Tell me about recursion.", RunOptions::new()).await?;
+///     println!("{}", result.final_output);
+///     Ok(())
+/// }
+/// ```
+pub mod prelude {
+    pub use openai_agents_core::prelude::*;
+
+    pub use crate::function_tool;
+    pub use crate::Runner;
+}
+
 /// Crate version.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

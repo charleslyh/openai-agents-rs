@@ -133,6 +133,9 @@ bench(`cargo bench -p openai-agents --bench run_loop`,本机):
 | `Tool::requires` + 启动期校验 | 完成。`extensions.rs` 新增 `TypeRequirement`;`FunctionTool::require::<T>()` 声明依赖,`run/agent_loop.rs` 的 `validate_tool_requirements` 在第一个 turn 前遍历可达 agent 图(含 handoff 目标)逐一检查,缺失类型报错带 agent 名、工具名、类型名、修复提示;不声明的工具不受影响(仍是运行时失败) |
 | 类型化 `Reasoning` + 模型名后缀 | 完成。`ModelSettings::reasoning` 由 `Option<Value>` 改为 `Option<Reasoning>`(`effort`/`summary` 为开放枚举,未知值原样往返;`extra` 承载 `mode` 等未建模字段;`TryFrom<Value>` 兼容旧写法);`RunOptions::reasoning(..)` 链式设置。适配层:Responses 发 `reasoning` 对象;Chat Completions 补上 Python 已有的 `reasoning_effort` 映射(此前缺失,示例 25 只能走 `extra_args`)。`"o4-mini:high"` 这类后缀在按名解析时剥离并填入 effort(显式设置优先,X-006) |
 | `Capability` 具名组合 | 完成。`agent/capability.rs`(放在 `agent` 模块内,不扩大已登记的 8 模块环):`Capability` trait + `CapabilityParts`(tools / instructions / 输入输出护栏 / 默认 model settings / requires)+ `CapabilityParts::named(..)`;`Agent::capability(..)` 挂载时计算一次 parts,与 agent 自身字段分开存放,在读取点合并(`enabled_tools`、`resolve_instructions`、输入/输出护栏、`prepare_turn` 的 settings、启动期 requires 校验),因此 builder 调用顺序无关、"整体挂载 = 手工给零件"有等价测试(`behavior_capability.rs`)。**未含**:hooks(agent 只有一个 hooks 槽,需组合器);5 个内置 bundle 随 M3/M4 的 crate 落地 |
+| 去克隆(路径 A) | 完成(`e48c5ac`)。见 A6 |
+| 术语收敛为 resolution | 完成(`d1a0ca8`)。删除重复的 `RunState::approval_status`;`McpServer::needs_approval_for` 改名 `needs_resolution_for`;人工审批专属名(`approve`/`reject`、MCP `RequireApproval`、`ToolErrorKind::ApprovalRejected`、`StickyDecision`)按 D-048 保留 |
+| `prelude` | 完成。`core::prelude` 35 个名字(按 examples/demo 的导入频次选取:Agent/Runner/RunOptions/RunResult/RunState、工具与 resolution、护栏、handoff、session、model/provider、Reasoning、Runtime、Extensions);facade `prelude` 另加 `#[function_tool]` 并换成 facade 的 `Runner`。README 快速开始与示例 01 已改用。**未含**:把 `ResolutionStore`、`StickyDecision`、序列化辅助等移出顶层(随 examples 迁移一起做) |
 
 ### 新增发现(扫描时顺带)
 

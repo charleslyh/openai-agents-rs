@@ -19,6 +19,7 @@ pub mod memory;
 pub mod model;
 pub mod model_middleware;
 pub mod model_settings;
+pub mod prelude;
 pub mod result;
 pub mod retry;
 pub mod run;

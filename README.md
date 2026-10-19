@@ -48,25 +48,20 @@ With `openai`, `Runner` installs the OpenAI provider on its first call, so `OPEN
 ## Quick start
 
 ```rust
-use std::sync::Arc;
-use openai_agents::{Agent, OpenAIResponsesModel, RunOptions, Runner};
+use openai_agents::prelude::*;
 
 #[tokio::main]
-async fn main() {
-    let model = Arc::new(OpenAIResponsesModel::new(
-        std::env::var("OPENAI_MODEL").unwrap(),
-        std::env::var("OPENAI_API_KEY").unwrap(),
-        std::env::var("OPENAI_BASE_URL").ok().as_deref(),
-    ));
+async fn main() -> Result<(), AgentsError> {
     let agent = Agent::new("Assistant")
         .instructions("You only respond in haikus.")
-        .model(model);
-    let result = Runner::run(&agent, "Tell me about recursion.", RunOptions::default())
-        .await
-        .unwrap();
+        .model_name(std::env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-4.1-mini".into()));
+    let result = Runner::run(&agent, "Tell me about recursion.", RunOptions::new()).await?;
     println!("{}", result.final_output);
+    Ok(())
 }
 ```
+
+`openai_agents::prelude` holds the types most programs need; everything else is at the crate root.
 
 ## Examples
 

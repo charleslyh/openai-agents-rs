@@ -108,6 +108,8 @@ TIERS: dict[str, int] = {
     # 3 — orchestration
     "run": 3,
     "testing": 3,
+    # 4 — re-export only surface
+    "prelude": 4,
 }
 
 # Known upward edges. Every entry needs a refactor id and a removal plan. Currently none.
