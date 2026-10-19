@@ -116,6 +116,20 @@ pub struct ToolExecutionConfig {
     pub max_function_tool_concurrency: Option<usize>,
 }
 
+impl ToolExecutionConfig {
+    /// Defaults: every tool of a turn runs at once.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Run at most `max` function tools of one turn at once.
+    #[must_use]
+    pub fn concurrency(mut self, max: usize) -> Self {
+        self.max_function_tool_concurrency = Some(max);
+        self
+    }
+}
+
 /// What to do when a function tool and a handoff (or two tools) share a name
 /// (Python: `RunConfig.tool_name_collision_policy`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -436,6 +450,27 @@ impl RunOptions {
     #[must_use]
     pub fn workflow_name(mut self, name: impl Into<String>) -> Self {
         self.run_config.tracing.workflow_name = Some(name.into());
+        self
+    }
+
+    /// Edit the tracing group: workflow name, ids, metadata, processors, sensitive data.
+    #[must_use]
+    pub fn tracing(mut self, edit: impl FnOnce(&mut TracingOptions)) -> Self {
+        edit(&mut self.run_config.tracing);
+        self
+    }
+
+    /// Edit the tool group: unknown tools, concurrency, collisions, error texts.
+    #[must_use]
+    pub fn tools(mut self, edit: impl FnOnce(&mut ToolOptions)) -> Self {
+        edit(&mut self.run_config.tools);
+        self
+    }
+
+    /// Edit the session group: stored-history limit and the input callback.
+    #[must_use]
+    pub fn session_opts(mut self, edit: impl FnOnce(&mut SessionOptions)) -> Self {
+        edit(&mut self.run_config.session);
         self
     }
 

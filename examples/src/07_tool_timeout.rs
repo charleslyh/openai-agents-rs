@@ -22,11 +22,11 @@ use openai_agents::{Agent, AgentsError, FunctionTool, RunOptions, Runner, ToolTi
 use serde_json::json;
 
 fn slow_report(behavior: ToolTimeoutBehavior) -> FunctionTool {
-    FunctionTool::new(
+    // `()` as the argument type: no parameters, and the generated schema says so.
+    FunctionTool::typed(
         "slow_report",
         "Build the quarterly report (takes a long time)",
-        json!({"type": "object", "properties": {}, "additionalProperties": false}),
-        |_ctx, _args| async move {
+        |_ctx, ()| async move {
             println!("[tool] slow_report started");
             tokio::time::sleep(Duration::from_secs(30)).await;
             Ok(json!("report ready"))

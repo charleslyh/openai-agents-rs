@@ -24,26 +24,26 @@ async fn get_weather(city: String) -> String {
     format!("The weather in {city} is sunny")
 }
 
+/// `FunctionTool::typed` generates the schema and parses the arguments from `#[derive]`s.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+struct City {
+    /// The city to look up.
+    city: String,
+}
+
 fn get_temperature_tool() -> FunctionTool {
-    FunctionTool::new(
+    FunctionTool::typed(
         "get_temperature",
         "Get the temperature for a given city",
-        serde_json::json!({
-            "type": "object",
-            "properties": { "city": { "type": "string" } },
-            "required": ["city"],
-            "additionalProperties": false
-        }),
-        |_ctx, args| async move {
-            let v: serde_json::Value = serde_json::from_str(&args).unwrap_or_default();
-            let city = v.get("city").and_then(|c| c.as_str()).unwrap_or("?");
+        |_ctx, City { city }| async move {
             Ok(serde_json::Value::String(format!(
                 "The temperature in {city} is 20° Celsius"
             )))
         },
     )
     .with_needs_resolution_fn(|params, _call_id| async move {
-        // Dynamic approval: only Oakland (matches Python example).
+        // Dynamic approval: only Oakland (matches Python example). The predicate sees the raw
+        // arguments, as it does before the call is made.
         params
             .get("city")
             .and_then(|c| c.as_str())

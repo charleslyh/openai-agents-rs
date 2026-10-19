@@ -28,8 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "My favourite colour is teal. Remember that.",
         "What is my favourite colour?",
     ] {
-        let mut options = RunOptions::default();
-        options.session = Some(Arc::clone(&session));
+        let options = RunOptions::new().session(Arc::clone(&session));
         let result = Runner::run(&agent, input, options).await?;
         println!("user> {input}");
         println!(

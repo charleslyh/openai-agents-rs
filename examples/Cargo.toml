@@ -139,6 +139,14 @@ path = "src/24_settings.rs"
 name = "reasoning"
 path = "src/25_reasoning.rs"
 
+[[example]]
+name = "capability"
+path = "src/26_capability.rs"
+
+[[example]]
+name = "verdict_transform"
+path = "src/27_verdict_transform.rs"
+
 # The sources are user-facing code, so they live at the repository root rather than inside
 # `crates/facade`. They depend on the facade the way a user's project would.
 #

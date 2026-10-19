@@ -51,17 +51,19 @@ fn pii_redactor() -> ToolOutputGuardrail {
     })
 }
 
+/// The tool's arguments; `FunctionTool::typed` turns the derive into the schema and parses them.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+struct LookupArgs {
+    /// The customer to look up.
+    name: String,
+}
+
 fn lookup_customer() -> FunctionTool {
-    FunctionTool::new(
+    FunctionTool::typed(
         "lookup_customer",
         "Look up a customer's billing record by name",
-        json!({
-            "type": "object",
-            "properties": {"name": {"type": "string"}},
-            "required": ["name"],
-            "additionalProperties": false
-        }),
-        |_ctx, _args| async move {
+        |_ctx, LookupArgs { name }| async move {
+            let _ = name;
             Ok(json!(
                 "Customer Alice: plan Pro, balance 0 USD, email alice@example.com, phone +14155550123"
             ))

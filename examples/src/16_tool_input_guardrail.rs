@@ -45,19 +45,19 @@ fn known_city() -> ToolInputGuardrail {
     })
 }
 
+/// The tool's arguments: `FunctionTool::typed` derives the schema hand-written JSON would have
+/// described, and parses the model's arguments into it.
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+struct WeatherArgs {
+    /// A city the service has data for.
+    city: String,
+}
+
 fn get_weather() -> FunctionTool {
-    FunctionTool::new(
+    FunctionTool::typed(
         "get_weather",
         "Get the weather for a known city",
-        json!({
-            "type": "object",
-            "properties": {"city": {"type": "string"}},
-            "required": ["city"],
-            "additionalProperties": false
-        }),
-        |_ctx, raw| async move {
-            let args: Value = serde_json::from_str(&raw).unwrap_or(Value::Null);
-            let city = args.get("city").and_then(Value::as_str).unwrap_or("?");
+        |_ctx, WeatherArgs { city }| async move {
             Ok(json!(format!("The weather in {city} is sunny, 18C.")))
         },
     )

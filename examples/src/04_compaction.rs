@@ -40,8 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Name one famous tower.",
         "What did we talk about?",
     ] {
-        let mut options = RunOptions::default();
-        options.session = Some(Arc::clone(&session));
+        let options = RunOptions::new().session(Arc::clone(&session));
         let result = Runner::run(&agent, input, options).await?;
         println!("user> {input}");
         println!(

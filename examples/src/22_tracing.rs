@@ -18,7 +18,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use openai_agents::tracing::{set_trace_processors, Span, SpanData, Trace, TracingProcessor};
-use openai_agents::{function_tool, Agent, RunConfig, RunOptions, Runner};
+use openai_agents::{function_tool, Agent, RunOptions, Runner};
 
 #[function_tool(description = "Get operations metrics for a city")]
 async fn get_city_metrics(city: String) -> String {
@@ -74,10 +74,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .model(common::model()?)
         .tools(vec![get_city_metrics()]);
 
-    let mut run_config = RunConfig::default();
-    run_config.tracing.workflow_name = Some("tracing-example".into());
-    let mut options = RunOptions::default();
-    options.run_config = run_config;
+    let options = RunOptions::new().workflow_name("tracing-example");
 
     let input = "Give me the city metrics for Berlin.";
     let result = Runner::run(&agent, input, options).await?;

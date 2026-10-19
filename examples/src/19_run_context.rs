@@ -13,8 +13,6 @@
 
 mod common;
 
-use std::sync::Arc;
-
 use openai_agents::{Agent, FunctionTool, RunOptions, Runner};
 
 /// The user context carried through the run.
@@ -24,11 +22,11 @@ struct Tenant {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let tool = FunctionTool::new(
+    // `()` as the argument type: the tool takes no parameters, and the schema says so.
+    let tool = FunctionTool::typed(
         "tenant_id",
         "Return the current tenant id from the run context.",
-        serde_json::json!({"type": "object", "properties": {}, "additionalProperties": false}),
-        |ctx, _args| async move {
+        |ctx, ()| async move {
             let id = ctx
                 .run_context
                 .context::<Tenant>()
@@ -43,8 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .model(common::model()?)
         .tools(vec![tool]);
 
-    let mut options = RunOptions::default();
-    options.context = Some(Arc::new(Tenant { id: "acme".into() }));
+    let options = RunOptions::new().context(Tenant { id: "acme".into() });
 
     let input = "Which tenant am I?";
     let result = Runner::run(&agent, input, options).await?;

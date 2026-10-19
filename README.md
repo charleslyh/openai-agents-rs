@@ -99,12 +99,13 @@ Ordered like the web demo's capability checklist, one knowledge point per exampl
 | `mcp` | Tools | Local stdio MCP server with a `ToolFilter` |
 | `handoff` | Multi-agent | Multi-agent handoff |
 | `agents_as_tools` | Multi-agent | `Agent.as_tool` orchestration |
-| `hitl` | Safety and governance | Approvals + `RunState` JSON resume |
+| `hitl` | Safety and governance | `RunOptions::resolve_with` approvals, or the explicit `RunState` JSON resume |
 | `always_approve` | Safety and governance | Sticky `always_approve` |
 | `input_guardrail` | Safety and governance | Input guardrail tripwire |
 | `output_guardrail` | Safety and governance | Output guardrail tripwire |
 | `tool_input_guardrail` | Safety and governance | Tool input guardrail (reject a call) |
 | `tool_output_guardrail` | Safety and governance | Tool output guardrail (redact a result) |
+| `verdict_transform` | Safety and governance | `Verdict::Transform`: redact the user's input and keep going |
 | `structured_output` | Output and observability | `output_type` + typed `final_output_as::<T>()` |
 | `run_context` | Output and observability | `RunOptions::context` read inside a tool |
 | `hooks` | Output and observability | `RunHooks` / `AgentHooks` |
@@ -112,6 +113,8 @@ Ordered like the web demo's capability checklist, one knowledge point per exampl
 | `tracing` | Output and observability | Custom `TracingProcessor` |
 | `cancel` | Run control | `RunResultStreaming::cancel` |
 | `settings` | Run control | `ModelSettings` temperature + retry, `max_turns` |
+| `reasoning` | Run control | Typed `Reasoning` effort/summary for either API |
+| `capability` | Rust-only | A named bundle of tools, instructions and guardrails |
 
 They need `OPENAI_API_KEY` and `OPENAI_MODEL` in the environment; `OPENAI_BASE_URL` and
 `OPENAI_API` (`chat_completions` | `responses`) are optional.

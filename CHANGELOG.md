@@ -85,6 +85,11 @@ entry will be `0.1.0`.
 - `prelude` modules (`openai_agents::prelude`, `openai_agents_core::prelude`) with the types most
   programs need; the facade one also brings `#[function_tool]`.
 - `async_trait` is re-exported at the crate root and in the prelude.
+- `RunOptions` gains `.tracing(..)`, `.tools(..)` and `.session_opts(..)` so a run can be
+  configured without touching nested structs, and `ToolExecutionConfig::new().concurrency(..)`.
+- Examples typed their tool arguments with `FunctionTool::typed` instead of hand-written schemas,
+  and two new ones join them: `capability` (a named bundle) and `verdict_transform` (redact and
+  continue).
 - `RunOptions::resolve_with(|call| async { .. })` resolves paused tool calls in-process and
   resumes until the run finishes; `ToolResolution::reject(..)` / `::output(..)` constructors.
 

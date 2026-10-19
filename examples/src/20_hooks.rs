@@ -66,8 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .model(common::model()?)
         .hooks(Arc::new(PrintAgentHooks));
 
-    let mut options = RunOptions::default();
-    options.hooks = Some(Arc::new(PrintRunHooks));
+    let options = RunOptions::new().hooks(Arc::new(PrintRunHooks));
 
     let input = "Say hello.";
     let result = Runner::run(&agent, input, options).await?;

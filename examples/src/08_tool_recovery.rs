@@ -19,22 +19,24 @@ use std::sync::Arc;
 use openai_agents::{Agent, AgentsError, FunctionTool, RunOptions, Runner};
 use serde_json::json;
 
+/// The tool's arguments (see [`FunctionTool::typed`]).
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+struct Item {
+    /// The item to count.
+    item: String,
+}
+
 fn flaky_inventory() -> FunctionTool {
     let calls = Arc::new(AtomicU32::new(0));
-    FunctionTool::new(
+    // `FunctionTool::typed` derives the schema from the argument type and parses the arguments.
+    FunctionTool::typed(
         "flaky_inventory",
         "Check warehouse inventory for an item (may fail transiently)",
-        json!({
-            "type": "object",
-            "properties": {"item": {"type": "string"}},
-            "required": ["item"],
-            "additionalProperties": false
-        }),
-        move |_ctx, _args| {
+        move |_ctx, Item { item }| {
             let calls = Arc::clone(&calls);
             async move {
                 let n = calls.fetch_add(1, Ordering::SeqCst) + 1;
-                println!("[tool] flaky_inventory call #{n}");
+                println!("[tool] flaky_inventory call #{n} for `{item}`");
                 if n == 1 {
                     return Err(AgentsError::tool(
                         "inventory backend unavailable, try again",
