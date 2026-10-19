@@ -13,12 +13,16 @@ pub(super) fn processor_slot() -> &'static Mutex<Option<Arc<dyn TracingProcessor
 /// Replace trace processors (Python: `set_trace_processors`).
 pub fn set_trace_processors(processors: Vec<Arc<dyn TracingProcessor>>) {
     let merged = Arc::new(MultiProcessor { processors });
-    *processor_slot().lock().expect("processor lock") = Some(merged);
+    *processor_slot()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(merged);
 }
 
 /// Add a processor alongside the current one.
 pub fn add_trace_processor(processor: Arc<dyn TracingProcessor>) {
-    let mut slot = processor_slot().lock().expect("processor lock");
+    let mut slot = processor_slot()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let current = slot.take();
     let processors = match current {
         Some(p) => vec![p, processor],
@@ -32,7 +36,11 @@ pub fn add_trace_processor(processor: Arc<dyn TracingProcessor>) {
 /// Processors that buffer events are expected to implement [`TracingProcessor::force_flush`];
 /// the default is a no-op, so this is safe to call at any time.
 pub fn flush_traces() {
-    if let Some(p) = processor_slot().lock().expect("processor lock").as_ref() {
+    if let Some(p) = processor_slot()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .as_ref()
+    {
         p.force_flush();
     }
 }
@@ -84,8 +92,18 @@ impl TracingProcessor for MultiProcessor {
     }
 }
 
+/// Default per-collection bound for [`InMemoryProcessor`].
+///
+/// The processor is installed by default, so in a long-running process an unbounded sink would
+/// grow for the lifetime of the process. Once a collection reaches the bound, the oldest entries
+/// are dropped first.
+pub const DEFAULT_IN_MEMORY_CAPACITY: usize = 10_000;
+
 /// In-memory processor for assertions in tests.
-#[derive(Debug, Default)]
+///
+/// Each collection is bounded (see `DEFAULT_IN_MEMORY_CAPACITY` and
+/// [`InMemoryProcessor::with_capacity`]); the oldest entries are dropped once it is full.
+#[derive(Debug)]
 pub struct InMemoryProcessor {
     /// Traces when they started.
     pub started_traces: Mutex<Vec<Trace>>,
@@ -95,31 +113,89 @@ pub struct InMemoryProcessor {
     pub started_spans: Mutex<Vec<Span>>,
     /// Finished spans.
     pub spans: Mutex<Vec<Span>>,
+    capacity: usize,
+}
+
+impl Default for InMemoryProcessor {
+    fn default() -> Self {
+        Self::with_capacity(DEFAULT_IN_MEMORY_CAPACITY)
+    }
+}
+
+/// Push `item`, evicting the oldest entries in a batch when the bound is reached.
+///
+/// Evicting a tenth at a time keeps the amortised cost of a push constant instead of shifting the
+/// whole vector on every call once the bound is hit.
+fn push_bounded<T>(slot: &Mutex<Vec<T>>, item: T, capacity: usize) {
+    let mut guard = slot
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if guard.len() >= capacity {
+        let evict = (capacity / 10).max(1).min(guard.len());
+        guard.drain(..evict);
+    }
+    guard.push(item);
 }
 
 impl TracingProcessor for InMemoryProcessor {
     fn on_trace_start(&self, trace: &Trace) {
-        self.started_traces
-            .lock()
-            .expect("lock")
-            .push(trace.clone());
+        push_bounded(&self.started_traces, trace.clone(), self.capacity);
     }
     fn on_trace_end(&self, trace: &Trace) {
-        self.traces.lock().expect("lock").push(trace.clone());
+        push_bounded(&self.traces, trace.clone(), self.capacity);
     }
     fn on_span_start(&self, span: &Span) {
-        self.started_spans.lock().expect("lock").push(span.clone());
+        push_bounded(&self.started_spans, span.clone(), self.capacity);
     }
     fn on_span_end(&self, span: &Span) {
-        self.spans.lock().expect("lock").push(span.clone());
+        push_bounded(&self.spans, span.clone(), self.capacity);
     }
 }
 
 impl InMemoryProcessor {
+    /// A processor that keeps at most `capacity` entries per collection (minimum 1).
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            started_traces: Mutex::default(),
+            traces: Mutex::default(),
+            started_spans: Mutex::default(),
+            spans: Mutex::default(),
+            capacity: capacity.max(1),
+        }
+    }
+
     /// Install as the sole processor and return a handle.
     pub fn install() -> Arc<Self> {
         let proc = Arc::new(Self::default());
         set_trace_processors(vec![proc.clone()]);
         proc
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn push_bounded_never_exceeds_capacity_and_keeps_newest() {
+        let slot = Mutex::new(Vec::new());
+        for i in 0..1_000 {
+            push_bounded(&slot, i, 50);
+            assert!(slot.lock().unwrap().len() <= 50);
+        }
+        let kept = slot.lock().unwrap();
+        assert_eq!(kept.last(), Some(&999));
+        assert!(
+            kept.len() >= 45,
+            "batch eviction should keep most of the window"
+        );
+    }
+
+    #[test]
+    fn capacity_of_zero_is_clamped_to_one() {
+        let slot = Mutex::new(Vec::new());
+        push_bounded(&slot, 1, 1);
+        push_bounded(&slot, 2, 1);
+        assert_eq!(*slot.lock().unwrap(), vec![2]);
     }
 }

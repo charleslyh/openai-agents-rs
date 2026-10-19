@@ -38,7 +38,9 @@ pub type HandoffHistoryMapper = std::sync::Arc<dyn Fn(Vec<Value>) -> Vec<Value> 
 /// (Python: `set_conversation_history_wrappers`). Process-global, like Python's.
 pub fn set_conversation_history_wrappers(start: Option<&str>, end: Option<&str>) {
     let (cur_start, cur_end) = get_conversation_history_wrappers();
-    *WRAPPERS.lock().expect("wrappers") = Some((
+    *WRAPPERS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((
         start.map(str::to_string).unwrap_or(cur_start),
         end.map(str::to_string).unwrap_or(cur_end),
     ));
@@ -46,14 +48,16 @@ pub fn set_conversation_history_wrappers(start: Option<&str>, end: Option<&str>)
 
 /// Restore the default `<CONVERSATION HISTORY>` markers.
 pub fn reset_conversation_history_wrappers() {
-    *WRAPPERS.lock().expect("wrappers") = None;
+    *WRAPPERS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
 }
 
 /// The current `(start, end)` markers.
 pub fn get_conversation_history_wrappers() -> (String, String) {
     WRAPPERS
         .lock()
-        .expect("wrappers")
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .clone()
         .unwrap_or_else(|| (DEFAULT_START.to_string(), DEFAULT_END.to_string()))
 }

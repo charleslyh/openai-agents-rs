@@ -248,7 +248,10 @@ impl RunResultStreaming {
     /// ends. Either way the run reports no `final_output` and [`is_cancelled`](Self::is_cancelled)
     /// becomes true. Cancelling a finished run has no effect.
     pub fn cancel(&mut self, mode: CancelMode) {
-        let mut snap = self.snapshot.lock().expect("snapshot");
+        let mut snap = self
+            .snapshot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if snap.is_complete {
             return;
         }
@@ -270,26 +273,36 @@ impl RunResultStreaming {
 
     /// Whether the run was cancelled before producing a final output.
     pub fn is_cancelled(&self) -> bool {
-        self.snapshot.lock().expect("snapshot").is_cancelled
+        self.snapshot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .is_cancelled
     }
 
     /// Whether the agent has finished running.
     pub fn is_complete(&self) -> bool {
-        self.snapshot.lock().expect("snapshot").is_complete
+        self.snapshot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .is_complete
     }
 
     /// Current agent name.
     pub fn current_agent_name(&self) -> String {
         self.snapshot
             .lock()
-            .expect("snapshot")
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .current_agent_name
             .clone()
     }
 
     /// Final output once available.
     pub fn final_output(&self) -> Option<serde_json::Value> {
-        self.snapshot.lock().expect("snapshot").final_output.clone()
+        self.snapshot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .final_output
+            .clone()
     }
 
     /// Whether the run paused with tool calls waiting for a resolution.
@@ -300,7 +313,7 @@ impl RunResultStreaming {
         !self
             .snapshot
             .lock()
-            .expect("snapshot")
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .interruptions
             .is_empty()
     }
@@ -309,7 +322,10 @@ impl RunResultStreaming {
     ///
     /// Drain the stream first so the background task has stored the paused state.
     pub fn to_state(&self) -> Result<RunState, AgentsError> {
-        let snap = self.snapshot.lock().expect("snapshot");
+        let snap = self
+            .snapshot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         snap.paused_state.clone().ok_or_else(|| {
             AgentsError::User(crate::error::UserError::new(
                 "RunResultStreaming.to_state() requires a paused run with interruptions",
@@ -331,7 +347,10 @@ impl RunResultStreaming {
         while let Some(ev) = self.next_event().await {
             out.push(ev?);
         }
-        let snap = self.snapshot.lock().expect("snapshot");
+        let snap = self
+            .snapshot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(err) = &snap.error {
             if !snap.is_complete {
                 return Err(AgentsError::internal(err.clone()));

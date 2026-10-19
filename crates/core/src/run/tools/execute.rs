@@ -96,7 +96,7 @@ pub(crate) async fn execute_planned_tools(
                 .await;
                 guardrail_log
                     .lock()
-                    .expect("tool guardrail log")
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .input
                     .extend(input_results);
                 if let Some(message) = rejection? {
@@ -177,7 +177,7 @@ pub(crate) async fn execute_planned_tools(
                     .await;
                     guardrail_log
                         .lock()
-                        .expect("tool guardrail log")
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
                         .output
                         .extend(output_results);
                     result.output = Some(guarded?);

@@ -239,12 +239,18 @@ impl ScriptedModel {
     /// Enqueue one more step.
     pub fn enqueue(&self, step: ModelStep) {
         step.validate(0).expect("invalid scripted model step");
-        self.steps.lock().expect("scripted lock").push_back(step);
+        self.steps
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push_back(step);
     }
 
     /// Extend with more steps.
     pub fn extend(&self, steps: impl IntoIterator<Item = ModelStep>) {
-        let mut q = self.steps.lock().expect("scripted lock");
+        let mut q = self
+            .steps
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         for (i, step) in steps.into_iter().enumerate() {
             step.validate(i).expect("invalid scripted model step");
             q.push_back(step);
@@ -253,27 +259,44 @@ impl ScriptedModel {
 
     /// Recorded calls in order (Python: `ScriptedModel.calls`).
     pub fn calls(&self) -> Vec<ModelCall> {
-        self.calls.lock().expect("scripted lock").clone()
+        self.calls
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 
     /// Number of configured steps that have not run yet (Python: `remaining_steps`).
     pub fn remaining_steps(&self) -> usize {
-        self.steps.lock().expect("scripted lock").len()
+        self.steps
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .len()
     }
 
     /// First recorded call, if any (Python: `first_call`).
     pub fn first_call(&self) -> Option<ModelCall> {
-        self.calls.lock().expect("scripted lock").first().cloned()
+        self.calls
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .first()
+            .cloned()
     }
 
     /// Most recent recorded call, if any (Python: `last_call`).
     pub fn last_call(&self) -> Option<ModelCall> {
-        self.calls.lock().expect("scripted lock").last().cloned()
+        self.calls
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .last()
+            .cloned()
     }
 
     /// Usage applied to steps that do not provide their own (Python: `set_default_usage`).
     pub fn set_default_usage(&self, usage: Option<Usage>) {
-        *self.default_usage.lock().expect("scripted lock") = usage;
+        *self
+            .default_usage
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = usage;
     }
 
     /// Raise when configured steps remain unconsumed (Python: `assert_complete`).
@@ -300,7 +323,7 @@ impl Model for ScriptedModel {
         let text = request.error.to_string();
         self.advice_by_error
             .lock()
-            .expect("scripted lock")
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .iter()
             .find(|(error, _)| *error == text)
             .map(|(_, advice)| advice.clone())
@@ -309,8 +332,13 @@ impl Model for ScriptedModel {
     async fn get_response(&self, request: ModelRequest<'_>) -> Result<ModelResponse, ModelError> {
         self.record(request, false);
 
-        let call_index = self.calls.lock().expect("scripted lock").len() - 1;
-        let step = self.steps.lock().expect("scripted lock").pop_front().ok_or_else(|| {
+        let call_index = self
+            .calls
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .len()
+            - 1;
+        let step = self.steps.lock().unwrap_or_else(std::sync::PoisonError::into_inner).pop_front().ok_or_else(|| {
             ModelError::Script(
                 ModelScriptError::UnexpectedModelCall {
                     message: format!(
@@ -344,8 +372,13 @@ impl Model for ScriptedModel {
     ) -> Result<ModelResponse, ModelError> {
         self.record(request, true);
 
-        let call_index = self.calls.lock().expect("scripted lock").len() - 1;
-        let step = self.steps.lock().expect("scripted lock").pop_front().ok_or_else(|| {
+        let call_index = self
+            .calls
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .len()
+            - 1;
+        let step = self.steps.lock().unwrap_or_else(std::sync::PoisonError::into_inner).pop_front().ok_or_else(|| {
             ModelError::Script(
                 ModelScriptError::UnexpectedModelCall {
                     message: format!(
@@ -397,7 +430,7 @@ impl ScriptedModel {
         if let Some(advice) = &step.retry_advice {
             self.advice_by_error
                 .lock()
-                .expect("scripted lock")
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .push((error.to_string(), advice.clone()));
         }
         Some(error)
@@ -408,7 +441,7 @@ impl ScriptedModel {
         if step.usage == Usage::default() {
             self.default_usage
                 .lock()
-                .expect("scripted lock")
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .clone()
                 .unwrap_or_else(|| Usage::from_tokens(0, 0))
         } else {
@@ -431,6 +464,9 @@ impl ScriptedModel {
             streamed,
             output_schema_name: request.output_schema.map(|s| s.name().to_string()),
         };
-        self.calls.lock().expect("scripted lock").push(call);
+        self.calls
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(call);
     }
 }

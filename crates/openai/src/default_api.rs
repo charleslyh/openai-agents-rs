@@ -23,7 +23,9 @@ static DEFAULT_OPENAI_API: Mutex<Option<DefaultOpenAiApi>> = Mutex::new(None);
 ///
 /// An explicit choice applies to every provider that has not been given its own (see D-I).
 pub fn set_default_openai_api(api: DefaultOpenAiApi) {
-    *DEFAULT_OPENAI_API.lock().expect("api lock") = Some(api);
+    *DEFAULT_OPENAI_API
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(api);
 }
 
 /// Get the default API: the explicit choice, else Chat Completions.
@@ -33,5 +35,7 @@ pub fn get_default_openai_api() -> DefaultOpenAiApi {
 
 /// The API chosen with [`set_default_openai_api`], if any.
 pub(crate) fn explicit_default_openai_api() -> Option<DefaultOpenAiApi> {
-    *DEFAULT_OPENAI_API.lock().expect("api lock")
+    *DEFAULT_OPENAI_API
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }

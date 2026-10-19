@@ -113,7 +113,10 @@ impl Session for InMemorySession {
     }
 
     async fn get_items(&self, limit: Option<usize>) -> Result<Vec<Value>, AgentsError> {
-        let items = self.items.lock().expect("session items");
+        let items = self
+            .items
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         Ok(match limit {
             Some(n) if n < items.len() => items[items.len() - n..].to_vec(),
             _ => items.clone(),
@@ -121,21 +124,34 @@ impl Session for InMemorySession {
     }
 
     async fn add_items(&self, items: Vec<Value>) -> Result<(), AgentsError> {
-        self.items.lock().expect("session items").extend(items);
+        self.items
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .extend(items);
         Ok(())
     }
 
     async fn pop_item(&self) -> Result<Option<Value>, AgentsError> {
-        Ok(self.items.lock().expect("session items").pop())
+        Ok(self
+            .items
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .pop())
     }
 
     async fn clear_session(&self) -> Result<(), AgentsError> {
-        self.items.lock().expect("session items").clear();
+        self.items
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
         Ok(())
     }
 
     async fn replace_items(&self, items: Vec<Value>) -> Result<(), AgentsError> {
-        *self.items.lock().expect("session items") = items;
+        *self
+            .items
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = items;
         Ok(())
     }
 }

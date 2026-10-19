@@ -144,7 +144,11 @@ impl Drop for TraceGuard {
         if !self.active {
             return;
         }
-        if let Some(p) = processor_slot().lock().expect("lock").as_ref() {
+        if let Some(p) = processor_slot()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+        {
             p.on_trace_end(&self.trace);
         }
     }
@@ -216,7 +220,11 @@ impl Drop for SpanGuard {
                 }
             }
             self.span.ended_at = Some(SystemTime::now());
-            if let Some(p) = processor_slot().lock().expect("lock").as_ref() {
+            if let Some(p) = processor_slot()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .as_ref()
+            {
                 p.on_span_end(&self.span);
             }
         }
@@ -276,7 +284,11 @@ pub fn trace_with_config(workflow_name: &str, config: TraceConfig) -> TraceGuard
             active: false,
         };
     }
-    if let Some(p) = processor_slot().lock().expect("lock").as_ref() {
+    if let Some(p) = processor_slot()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .as_ref()
+    {
         p.on_trace_start(&t);
     }
     TraceGuard {
@@ -306,7 +318,11 @@ fn start_span(data: SpanData, becomes_current: bool) -> SpanGuard {
             usage: Usage::default(),
         };
     }
-    if let Some(p) = processor_slot().lock().expect("lock").as_ref() {
+    if let Some(p) = processor_slot()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .as_ref()
+    {
         p.on_span_start(&span);
     }
     let restore = becomes_current.then(|| {
