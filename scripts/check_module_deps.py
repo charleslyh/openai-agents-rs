@@ -47,6 +47,7 @@ EXTENSIONS = {
     "openai-agents-mcp",
     "openai-agents-openai",
     "openai-agents-sqlite",
+    "openai-agents-sessions",
     "openai-agents-testing",
 }
 # The presets are built on top of the OpenAI-compatible adapters: every preset speaks Chat
@@ -62,6 +63,7 @@ CRATE_DEPS: dict[str, set[str]] = {
     "openai-agents-mcp": {CORE},
     "openai-agents-openai": {CORE},
     "openai-agents-sqlite": {CORE},
+    "openai-agents-sessions": {CORE},
     "openai-agents-testing": {CORE},
     PROVIDERS: {CORE, "openai-agents-openai"},
     FACADE: {CORE} | EXTENSIONS | {PROVIDERS},
@@ -113,6 +115,9 @@ TIERS: dict[str, int] = {
     # 3 — orchestration
     "run": 3,
     "testing": 3,
+    # The shared Session contract backends run in their own tests. It lives in core (an extension
+    # may not depend on another extension), and nothing inside core depends on it.
+    "session_contract": 3,
     # 4 — re-export only surface
     "prelude": 4,
 }

@@ -17,3 +17,6 @@ async-trait = "0.1"
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 tokio = { version = "1", features = ["rt"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

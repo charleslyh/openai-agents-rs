@@ -78,6 +78,7 @@ pub use mcp::{
     mcp_function_tools, render_tool_result, McpCallToolResult, McpConfig, McpServer, McpTool,
 };
 pub use memory::{
+    state_store::{finish_load, is_supported_schema, RunStateMigration, RunStateStore},
     CompactingSession, InMemorySession, ModelSummarizer, Session, SessionInputCallback,
     SessionSettings, Summarizer, DEFAULT_TRIGGER_TOKENS,
 };
@@ -90,6 +91,7 @@ pub use model_settings::{
     ModelSettings, Reasoning, ReasoningEffort, ReasoningSummary, ToolChoice, Truncation, Verbosity,
 };
 pub use result::{CancelMode, RunResult, RunResultStreaming, StreamingSnapshot};
+pub mod session_contract;
 pub use retry::{
     retry_policies, ModelRetryAdvice, ModelRetryAdviceRequest, ModelRetryBackoffSettings,
     ModelRetryNormalizedError, ModelRetrySettings, ReplaySafety, RetryDecision, RetryPolicy,
