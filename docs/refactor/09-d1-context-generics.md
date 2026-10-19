@@ -1,92 +1,93 @@
 # 09 决策检查点 D1:run context 是否泛型化
 
-状态:**待用户确认**。M1 在此之前不开工。
-范围说明:计划写的是"只改 tool + guardrail + handoffs 的 spike"。我没有在仓库里改这些(会动 90+ 个文件,
-且不可逆地污染 M0 基线),而是做了两件更便宜的事:在 `/tmp` 里写两个最小原型,用真实编译器输出比较;
-再用 grep 量化泛型会扩散到的范围。下面的结论建立在这两项上,没有在真实代码库里编译验证过。
+状态:**已决议(2026-10-19)**:不泛型化。采用"固定字段 + `Extensions` 类型映射 + 需求声明 + 宏"。
 
-## 现状
+## 结论
 
-`RunContextWrapper` 内部是 `Option<Arc<dyn Any + Send + Sync>>`,取值用 `context::<T>()` / `try_context::<T>()`
-(`crates/core/src/run_context.rs`)。类型不匹配在运行时才报错,错误信息已经可读
-(`run context is not of type X`)。DEVIATIONS D-014 已记录此取舍。
+`Agent`、`Tool`、`Handoff`、Guardrail、Hooks、`RunConfig`、`RunResult`、`RunState` 都**不带** `C` 参数。
+通用数据(agent 名、turn 序号、usage 等)是 `RunContextWrapper` / `ToolContext` 的固定、强类型字段。
+业务数据放进按类型取值的 `Extensions` 容器。工具与能力可以声明自己需要哪些类型,运行开始时一次性校验。
 
-## 方案
+## 为什么不选泛型 `Agent<C>`
 
-- **G 泛型**:`Agent<C>`、`FunctionTool<C>`、`Handoff<C>`、各类 Guardrail、`RunHooks<C>`、`RunConfig<C>`、
-  `RunOptions<C>`、`RunResult<C>`、`RunState<C>` 都带 `C`。
-- **E 擦除 + 启动期校验**:保持现状,新增在 `Agent` 上声明期望的 context 类型,运行开始时校验一次,
-  类型不符立刻返回带 agent 名、工具名的错误,而不是等某个工具首次调用时才失败。
+评估对象是两类用户:写 agent 的使用者,以及写 Tool、Capability、护栏的扩展者。
 
-## 原型证据
+- 不碰 context 的扩展点(`Model`、`ModelProvider`、`Session`、`RunStateStore`、`TracingProcessor`)不受泛型影响。
+- 碰 context 的扩展点(`Tool`、Guardrail、Hooks、中间件、`Capability`)在泛型下都要写成 `impl<C> ... for X`。
+  我们计划内置的扩展(Calculator、WebFetch、FileSystem、PII 等)基本不读 context,`C` 对它们是纯噪音。
+- 应用内的自定义工具,泛型确实更顺(`ctx.context` 直接是 `&AppCtx`)。
+- 可复用的扩展 crate 在泛型下需要 `C: HasDb` 一类的 trait,或要求所有应用共用一个 `AppCtx`,生态越大越别扭。
+- 零上下文场景需要 `impl Agent<()> { fn new }` 的技巧,否则 `Agent::new()` 报 `E0282`。
+- 影响面 93 个文件,并推翻 `07-acyclic-evaluation.md` 的"泛型污染全部签名"结论。
 
-编译器对 G 的错误输出(原型 `generic.rs`):
+泛型唯一不可替代的收益是编译期拦截。下面的"启动期校验"把它前移到"第一次运行的第一个 turn 之前",
+对需求已声明的类型,这是稳定可复现的失败,不依赖数据路径。
 
+## 设计
+
+### 1. 固定字段(强类型,无 `C`)
+
+`RunContextWrapper` 与 `ToolContext` 持有通用信息,不放进业务容器:
+
+- 已有:`usage`、`tool_name`、`tool_call_id`、`tool_arguments`。
+- 新增(增量,可分步):当前 agent 名、turn 序号、trace id。
+
+### 2. `Extensions`:按类型取值的业务数据容器
+
+```rust
+let opts = RunOptions::new()
+    .with(Db::connect()?)        // 每个类型一个槽
+    .with(UserId(7));
+
+let db = ctx.get::<Db>();        // Option<&Db>
+let db = ctx.require::<Db>()?;   // 错误带 agent 名、工具名、类型名
 ```
-error[E0308]: mismatched types
-  expected `Agent<Db>`, found `Agent<Session>`           // handoff 到不同 context 的 agent
-error[E0277]: the trait bound `FnTool<Session, ..>: Tool<Db>` is not satisfied   // 工具按错了 context 写
-```
 
-- 两类错误都在编译期被拦住,位置准确。这是 G 相对 Python/JS SDK 的真实优势。
-- 第二条错误提到了 `FnTool<Session, {closure@...}>` 和 `Tool<Db>`,对不熟悉 trait 的人偏难读。
-- 闭包不写类型标注时(`tool(|c| ...)`),类型能从 `Agent::<Db>::tool` 推断出来,没有额外负担。
-- E 的错误是运行时字符串 `run context is not of type Session`,可读,但要等到被执行到。
+- 同一类型放两次:后者覆盖前者,debug 构建下 `tracing::warn!`。
+- 值以 `Arc<dyn Any + Send + Sync>` 存放,`Extensions` 克隆是廉价的。
+- 与 `http::Extensions`、axum `Extension` 同一模式,Rust 使用者熟悉。
 
-关于零上下文场景(hello 示例):
+### 3. 兼容 Python 风格的单值
 
-- 只写 `struct Agent<C = ()>` **不够**。`Agent::new()` 会报 `E0282 type annotations needed for Agent<_>`,
-  默认类型参数不参与表达式推断。
-- 可行的办法已验证:把 `new()` 放在 `impl Agent<()>`,把 `with_context::<C>()` 放在 `impl<C> Agent<C>`。
-  这样 `Agent::new()` 仍是一行,带 context 的才需要写类型。
+`RunOptions::context(value)` 保留,等价于 `with(value)`,也就是放进 `Extensions` 的一个槽。
+`ctx.context::<T>()` / `try_context::<T>()` 保留,等价于 `get` / `require`。
+现有示例与测试不必改。
 
-## 影响面(grep 实测,含 examples/demo)
+### 4. 需求声明与启动期校验(M1 的 `Tool` / `Capability` 一并落地)
 
-| 项 | 数量 |
-| --- | --- |
-| 命名 `Agent` 的文件 | 93 |
-| `FunctionTool` 出现次数 | 198 |
-| `Handoff` 出现次数 | 72 |
-| `RunContextWrapper` 出现次数 / 文件数 | 97 / 30 |
-| `RunHooks` / `AgentHooks` | 25 |
-| `as_tool` 相关 | 37 |
+- `Tool::requires() -> &[TypeRequirement]`、`Capability::requires()` 声明所需类型。
+- 运行开始时遍历可达的 agent 图(tools、handoffs、guardrails、capabilities),
+  缺任何类型就返回 `UserError`,信息里带 agent 名、工具名、期望类型,在第一个 turn 之前发生。
+- `#[function_tool]` 中写 `db: Ctx<Db>` 参数,宏生成取值与需求声明,使用者不写样板。
 
-泛型会扩散到上面所有类型,以及 `#[function_tool]` 宏(它按名字识别 `ToolContext`,需要改成识别 `ToolContext<C>`
-并让生成的构造函数对 `C` 泛型)。
+### 5. 已知管不住的情况
 
-## 需要先回答的两个设计问题
+- 直接调用 `ctx.get::<T>()` 而没有声明需求:仍是运行时。
+- 运行时动态生成的 agent(动态 `instructions`、`is_enabled` 回调里构造):不在启动期遍历范围内。
+- 这两点接受,并在文档里写明。
 
-1. **跨 context 类型的 handoff 与 `as_tool`**:G 下它们编译不过。当前 `Agent.as_tool` 的嵌套运行共享父 context,
-   所以不是退化,但"子 agent 用另一种 context"这种用法会被禁止。Python 也是单 `TContext`,行为一致。
-2. **`RunState` 序列化**:context 本身不序列化。G 下恢复一个暂停的运行要求调用方提供同一个 `C`,
-   这在类型上是更诚实的,但会让 `RunState::from_json` 多一个类型参数,HITL 示例的代码变长。
+## 偏差登记
 
-## 成本对比
+`Extensions` 是 Rust 独有扩展(Python 只有单个 `TContext`),登记到 `DEVIATIONS.md` 的"扩展"分类,
+不进入 parity 对照。
 
-| | G 泛型 | E 擦除 + 启动校验 |
-| --- | --- | --- |
-| 类型错误发现时机 | 编译期 | 运行开始时(第一个 turn 之前) |
-| 公共类型签名 | 全部多一个 `C` | 不变 |
-| 零上下文示例 | 需要 `impl Agent<()>` 技巧才不退化 | 不变 |
-| 迁移面 | 约 90+ 个文件 | 小 |
-| 与 M1 其他改动的叠加风险 | 高(Tool trait、Capability、Runtime 都要带 `C`) | 低 |
-| 与 `docs/refactor/07` 结论的关系 | 与"泛型污染全部签名"的判断一致,需要推翻 | 沿用 |
+## 对 M1 的影响
 
-## 我的建议
+- `RunContextWrapper` 先做固定字段与 `Extensions`,是 M1 的第一步,不依赖其他改动。
+- `Tool` trait 与 `Capability` 的设计带 `requires()`,不带 `C`。
+- 不再需要 `Agent<C = ()>`、`map_context` 之类的适配器。
 
-选 **E**,理由:
+## 否决方案记录
 
-1. M1 已经同时重做 `Tool` trait、`Capability`、`Runtime`、options。再叠加一个贯穿所有类型的 `C`,
-   首发前的返工风险最大,而 E 能拿到"出错尽早且信息明确"这一大半收益。
-2. G 的独有收益(编译期)是真的,但目标用户首先要解决的是学习成本;`Tool<C>`、`Handoff<C>`、
-   `Verdict` 加 `C` 之后,错误信息里会出现更多泛型。
-3. E 不关门:启动期校验用到的"agent 声明期望类型"字段,以后若转 G,恰好就是 `C` 的位置。
+- **G 泛型 `Agent<C>`**:见上,扩展者负担与影响面过大。
+- **渐进类型 `Agent<C = AnyContext>`**:同一 SDK 两种用法,文档与测试面翻倍,未做原型,不采用。
+- **单槽擦除(现状)**:够用,但可复用扩展无法各自携带依赖,所以升级为 `Extensions`。
 
-反过来,若你更看重"相对官方 SDK 的编译期类型优势"作为卖点,选 G 是合理的,
-代价是 M1 工期上调约 1.5-2 人周,并推翻 `07` 号文档的结论。
+## 原型证据(`/tmp`,未入库)
 
-## 需要你确认
-
-- 选 G 还是 E。
-- 若选 E:`Agent` 上声明 context 类型的 API 形式(`.context_type::<T>()` 还是在 `RunOptions::context(value)` 时自动记录)
-  我倾向后者,让运行时校验只在"agent 声明了类型且与传入值不符"时触发。
+- 泛型:`Agent<Db>` 与 `Agent<Session>` 互相 handoff、工具按错 context 编写,都在编译期报错;
+  错误里出现 `FnTool<Session, {closure}>: Tool<Db>`,对不熟悉 trait 的人偏难读。
+- `struct Agent<C = ()>` 单独不够,`Agent::new()` 报 `E0282`;`impl Agent<()> { fn new }` 加
+  `impl<C> Agent<C> { fn with_context }` 可行。
+- 影响面(grep 实测):命名 `Agent` 的文件 93;`FunctionTool` 198 次;`Handoff` 72 次;
+  `RunContextWrapper` 97 次/30 个文件;`RunHooks`/`AgentHooks` 25;`as_tool` 37。
