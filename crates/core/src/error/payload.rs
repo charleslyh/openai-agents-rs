@@ -59,13 +59,81 @@ impl ToolGuardrailFunctionOutput {
     }
 }
 
+/// How serious a guardrail failure is (Rust-only, X-012).
+///
+/// Every failure stops the run. `High` and `Critical` also stop the guardrails still running in
+/// the same group, as Python does for any tripwire; `Low` and `Medium` let them finish so their
+/// results are reported too.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum Severity {
+    /// Worth reporting; the other guardrails finish.
+    Low,
+    /// Clearly unwanted; the other guardrails finish.
+    Medium,
+    /// Stop now (default, and what [`GuardrailFunctionOutput::trip`] uses).
+    #[default]
+    High,
+    /// Stop now.
+    Critical,
+}
+
+impl Severity {
+    /// Whether a failure of this severity cancels the rest of its group.
+    pub fn stops_early(self) -> bool {
+        self >= Self::High
+    }
+
+    /// Lower-case name, as stored in a `RunState`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+            Self::Critical => "critical",
+        }
+    }
+
+    /// Parse [`Self::as_str`]; anything else is `None`.
+    pub fn parse(name: &str) -> Option<Self> {
+        Some(match name {
+            "low" => Self::Low,
+            "medium" => Self::Medium,
+            "high" => Self::High,
+            "critical" => Self::Critical,
+            _ => return None,
+        })
+    }
+}
+
+/// What a guardrail decided (Rust-only, X-012; Python has only the tripwire flag).
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub enum Verdict {
+    /// Let the run continue unchanged.
+    Pass,
+    /// Stop the run (Python: `tripwire_triggered = True`).
+    Fail {
+        /// Why; may be empty (Python's tripwire carries no reason).
+        reason: String,
+        /// How serious; decides whether the other guardrails are cancelled.
+        severity: Severity,
+    },
+    /// Let the run continue with this content instead (e.g. personal data redacted).
+    ///
+    /// For an input guardrail, a JSON string or an array of input items that replaces the run's
+    /// new input before the model sees it; only guardrails built with `run_in_parallel(false)`
+    /// may transform. For an output guardrail, the new final output.
+    Transform(Value),
+}
+
 /// Result of a guardrail function (Python: `GuardrailFunctionOutput`).
 #[derive(Debug, Clone)]
 pub struct GuardrailFunctionOutput {
     /// Optional details about the checks that were performed.
     pub output_info: Value,
-    /// Whether the guardrail halted the run.
-    pub tripwire_triggered: bool,
+    /// The decision.
+    pub verdict: Verdict,
 }
 
 impl GuardrailFunctionOutput {
@@ -73,15 +141,63 @@ impl GuardrailFunctionOutput {
     pub fn pass(output_info: Value) -> Self {
         Self {
             output_info,
-            tripwire_triggered: false,
+            verdict: Verdict::Pass,
         }
     }
 
-    /// A guardrail that triggered the tripwire.
+    /// A guardrail that triggered the tripwire (Python): a [`Verdict::Fail`] with no reason and
+    /// [`Severity::High`].
     pub fn trip(output_info: Value) -> Self {
         Self {
             output_info,
-            tripwire_triggered: true,
+            verdict: Verdict::Fail {
+                reason: String::new(),
+                severity: Severity::High,
+            },
+        }
+    }
+
+    /// Stop the run, saying why and how serious it is.
+    pub fn fail(reason: impl Into<String>, severity: Severity) -> Self {
+        Self {
+            output_info: Value::Null,
+            verdict: Verdict::Fail {
+                reason: reason.into(),
+                severity,
+            },
+        }
+    }
+
+    /// Continue with `content` instead of the checked input or output.
+    pub fn transform(content: impl Into<Value>) -> Self {
+        Self {
+            output_info: Value::Null,
+            verdict: Verdict::Transform(content.into()),
+        }
+    }
+
+    /// Attach details about the checks that ran.
+    #[must_use]
+    pub fn with_info(mut self, output_info: Value) -> Self {
+        self.output_info = output_info;
+        self
+    }
+
+    /// Whether the guardrail stops the run (Python: `tripwire_triggered`).
+    pub fn tripwire_triggered(&self) -> bool {
+        matches!(self.verdict, Verdict::Fail { .. })
+    }
+
+    /// Whether a failure here cancels the other guardrails of its group.
+    pub(crate) fn stops_group(&self) -> bool {
+        matches!(&self.verdict, Verdict::Fail { severity, .. } if severity.stops_early())
+    }
+
+    /// The replacement content of a [`Verdict::Transform`].
+    pub fn transformed(&self) -> Option<&Value> {
+        match &self.verdict {
+            Verdict::Transform(content) => Some(content),
+            _ => None,
         }
     }
 }

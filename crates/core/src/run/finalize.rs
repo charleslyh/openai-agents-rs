@@ -7,7 +7,9 @@ use serde_json::Value;
 use crate::agent::Agent;
 use crate::error::AgentsError;
 use crate::error::OutputGuardrailTripwireTriggered;
-use crate::guardrail::{InputGuardrailResult, OutputGuardrail};
+use crate::guardrail::{
+    run_group, single_transform, InputGuardrailResult, OutputGuardrail, OutputGuardrailResult,
+};
 use crate::items::{InputLike, ModelResponse, RunItem, ToolInterruptionItem};
 use crate::lifecycle::RunHooks;
 use crate::result::{InterruptSnapshot, RunResult};
@@ -43,7 +45,7 @@ pub(crate) struct FinalizeEnv<'a> {
 /// `OutputGuardrailTripwireTriggered` if any of them tripped.
 pub(crate) async fn finalize_run(
     record: RunRecord,
-    final_output: Value,
+    mut final_output: Value,
     agent: &Arc<Agent>,
     env: FinalizeEnv<'_>,
 ) -> Result<RunResult, AgentsError> {
@@ -85,12 +87,27 @@ pub(crate) async fn finalize_run(
             let ctx = context.clone();
             async move { g.run(agent, output, ctx).await }
         });
-        let results = futures::future::join_all(futs).await;
+        let results = run_group(futs, |r: &OutputGuardrailResult| &r.output).await;
         let tripped = results
             .iter()
-            .find(|r| r.output.tripwire_triggered)
+            .find(|r| r.output.tripwire_triggered())
             .cloned();
+        // Rust-only (X-012): a transform replaces the final output the caller receives; the
+        // model's message in `new_items` (and the session) is left as the model wrote it.
+        let transform = if tripped.is_none() {
+            single_transform(
+                &results,
+                |r: &OutputGuardrailResult| &r.output,
+                |r: &OutputGuardrailResult| r.guardrail_name.as_str(),
+            )?
+            .map(|(_, content)| content.clone())
+        } else {
+            None
+        };
         output_guardrail_results = results;
+        if let Some(content) = transform {
+            final_output = content;
+        }
         if let Some(mut result) = tripped {
             // Python (`blocked_output.py`): a final output that came from a tool is withheld, so
             // the error carries a data-free placeholder instead of the tool's output, and so

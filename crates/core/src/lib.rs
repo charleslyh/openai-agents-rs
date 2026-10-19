@@ -59,7 +59,7 @@ pub use error::{
 pub use extensions::{Extensions, TypeRequirement};
 pub use guardrail::{
     input_guardrail, output_guardrail, GuardrailFunctionOutput, InputGuardrail,
-    InputGuardrailResult, OutputGuardrail, OutputGuardrailResult,
+    InputGuardrailResult, OutputGuardrail, OutputGuardrailResult, Severity, Verdict,
 };
 pub use handoffs::{
     default_handoff_history_mapper, get_conversation_history_wrappers, handoff,

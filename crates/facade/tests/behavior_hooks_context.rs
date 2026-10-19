@@ -333,7 +333,7 @@ async fn input_guardrail_tripwire_aborts() {
     match err {
         AgentsError::InputGuardrailTripwire(InputGuardrailTripwireTriggered { result }) => {
             assert_eq!(result.guardrail_name, "block");
-            assert!(result.output.tripwire_triggered);
+            assert!(result.output.tripwire_triggered());
         }
         other => panic!("unexpected error: {other}"),
     }

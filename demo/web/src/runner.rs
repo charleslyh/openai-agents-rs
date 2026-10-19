@@ -78,7 +78,9 @@ enum Tick {
     Closed,
     Cancel(CancelMode),
     Deadline,
-    Event(Option<Result<StreamEvent, AgentsError>>),
+    // Boxed: `AgentsError` carries a guardrail result, which makes it far larger than the other
+    // variants.
+    Event(Box<Option<Result<StreamEvent, AgentsError>>>),
 }
 
 async fn drive(app: Arc<AppState>, request: RunRequest, emit: Emitter) {
@@ -196,7 +198,7 @@ async fn drive(app: Arc<AppState>, request: RunRequest, emit: Emitter) {
             _ = emit.closed() => Tick::Closed,
             Some(mode) = cancel_rx.recv() => Tick::Cancel(mode),
             _ = &mut deadline, if !timed_out => Tick::Deadline,
-            event = streamed.next_event() => Tick::Event(event),
+            event = streamed.next_event() => Tick::Event(Box::new(event)),
         };
         match tick {
             Tick::Closed => {
@@ -224,17 +226,19 @@ async fn drive(app: Arc<AppState>, request: RunRequest, emit: Emitter) {
                 .await;
                 errored = true;
             }
-            Tick::Event(None) => break,
-            Tick::Event(Some(Ok(event))) => {
-                for out in map_stream_event(event, &mut delivered) {
-                    emit.emit(out).await;
+            Tick::Event(inner) => match *inner {
+                None => break,
+                Some(Ok(event)) => {
+                    for out in map_stream_event(event, &mut delivered) {
+                        emit.emit(out).await;
+                    }
                 }
-            }
-            Tick::Event(Some(Err(err))) => {
-                report_error(&emit, &err, delivered).await;
-                errored = true;
-                break;
-            }
+                Some(Err(err)) => {
+                    report_error(&emit, &err, delivered).await;
+                    errored = true;
+                    break;
+                }
+            },
         }
     }
 

@@ -207,7 +207,7 @@ dictionaries are merged (`model_settings.py:273`).
 |------------|--------|-------|
 | `RunContextWrapper` (type-erased) | S | `context::<T>()` / `try_context::<T>()`; D-014 |
 | `RunOptions.context` | S | |
-| Input / output guardrails | S | `run_in_parallel` honoured; parallel tripwire cancels the model call (B9) |
+| Input / output guardrails | S | `run_in_parallel` honoured; parallel tripwire cancels the model call (B9); verdicts add a reason, a severity and `Transform` (X-012) |
 | Guardrail results on `RunResult` | S | |
 | `RunHooks` / `AgentHooks` | S | All methods default to no-op |
 | Tool input/output guardrails | S | Parity-checked; not persisted in `RunState` (D-029) |

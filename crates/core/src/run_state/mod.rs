@@ -246,7 +246,7 @@ impl RunState {
             "nested_agent_runs": self.nested_agent_runs.iter().map(|(k, v)| (k.clone(), v.to_json())).collect::<serde_json::Map<_,_>>(),
             "session_saved_items": self.session_saved_items,
             "session_input_saved": self.session_input_saved,
-            "input_guardrail_results": self.input_guardrail_results.iter().map(|r| json!({"guardrail_name": r.guardrail_name, "output": {"output_info": r.output.output_info, "tripwire_triggered": r.output.tripwire_triggered}})).collect::<Vec<_>>(),
+            "input_guardrail_results": self.input_guardrail_results.iter().map(|r| json!({"guardrail_name": r.guardrail_name, "output": codec::serialize_guardrail_output(&r.output)})).collect::<Vec<_>>(),
             "tool_input_guardrail_results": self.tool_input_guardrail_results.iter().map(|r| json!({"guardrail_name": r.guardrail_name, "output": serialize_tool_guardrail_output(&r.output)})).collect::<Vec<_>>(),
             "tool_output_guardrail_results": self.tool_output_guardrail_results.iter().map(|r| json!({"guardrail_name": r.guardrail_name, "output": serialize_tool_guardrail_output(&r.output)})).collect::<Vec<_>>(),
         })
@@ -394,10 +394,7 @@ impl RunState {
                     guardrail_name: name,
                     output: GuardrailFunctionOutput {
                         output_info: output.get("output_info").cloned().unwrap_or(Value::Null),
-                        tripwire_triggered: output
-                            .get("tripwire_triggered")
-                            .and_then(Value::as_bool)
-                            .unwrap_or(false),
+                        verdict: codec::deserialize_verdict(&output),
                     },
                 })
                 .collect(),

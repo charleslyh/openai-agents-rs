@@ -2,6 +2,7 @@
 
 use serde_json::{json, Value};
 
+use crate::error::payload::{GuardrailFunctionOutput, Severity, Verdict};
 use crate::error::{AgentsError, ToolGuardrailBehavior, ToolGuardrailFunctionOutput, UserError};
 use crate::items::{
     HandoffCallItem, HandoffOutputItem, InputLike, MessageOutputItem, ModelResponse, ReasoningItem,
@@ -82,6 +83,52 @@ pub(super) fn guardrail_results<'a>(
                 entry.get("output").cloned().unwrap_or(Value::Null),
             ))
         })
+}
+
+/// `tripwire_triggered` stays for states read by older versions; `verdict` carries the detail.
+pub(super) fn serialize_guardrail_output(output: &GuardrailFunctionOutput) -> Value {
+    let verdict = match &output.verdict {
+        Verdict::Fail { reason, severity } => {
+            json!({"type": "fail", "reason": reason, "severity": severity.as_str()})
+        }
+        Verdict::Transform(content) => json!({"type": "transform", "content": content}),
+        // `Pass` and any later variant.
+        _ => json!({"type": "pass"}),
+    };
+    json!({
+        "output_info": output.output_info,
+        "tripwire_triggered": output.tripwire_triggered(),
+        "verdict": verdict,
+    })
+}
+
+/// Read [`serialize_guardrail_output`]; a state without `verdict` falls back to the tripwire flag.
+pub(super) fn deserialize_verdict(output: &Value) -> Verdict {
+    let tripped = output
+        .get("tripwire_triggered")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let verdict = output.get("verdict").unwrap_or(&Value::Null);
+    match verdict.get("type").and_then(Value::as_str) {
+        Some("transform") => {
+            Verdict::Transform(verdict.get("content").cloned().unwrap_or(Value::Null))
+        }
+        Some("fail") => Verdict::Fail {
+            reason: verdict
+                .get("reason")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+            severity: verdict
+                .get("severity")
+                .and_then(Value::as_str)
+                .and_then(Severity::parse)
+                .unwrap_or_default(),
+        },
+        Some("pass") => Verdict::Pass,
+        _ if tripped => GuardrailFunctionOutput::trip(Value::Null).verdict,
+        _ => Verdict::Pass,
+    }
 }
 
 pub(super) fn serialize_tool_guardrail_output(output: &ToolGuardrailFunctionOutput) -> Value {

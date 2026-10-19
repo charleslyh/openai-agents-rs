@@ -52,6 +52,12 @@ entry will be `0.1.0`.
 - A paused `RunState` records a fingerprint of the agent graph; resuming it with agents whose
   names, tools or handoffs changed fails with a `UserError`. Call
   `RunState::allow_agent_graph_change()` to resume anyway.
+- **Breaking:** guardrails return a `Verdict`: `Pass`, `Fail { reason, severity }` or
+  `Transform(content)` (continue with rewritten content, e.g. redacted data).
+  `GuardrailFunctionOutput::tripwire_triggered` is now a method; `pass` / `trip` keep working and
+  `fail(reason, severity)` / `transform(content)` are new. A `High` or `Critical` failure cancels
+  the guardrails still running in its group. Only a guardrail built with `run_in_parallel(false)`
+  may transform the input.
 - The run loop shares one `Arc<Agent>` per agent instead of deep-copying the agent on every turn,
   handoff and tool call (about 20% faster on `twenty_tools_ten_turns`).
 - **Breaking:** `Agent::resolve_instructions`, `enabled_tools`, `all_function_tools` and

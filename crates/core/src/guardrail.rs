@@ -1,6 +1,7 @@
 //! Input / output guardrails (Python: `agents.guardrail`).
 //!
-//! Guardrails run alongside the agent and can halt it by setting `tripwire_triggered`.
+//! Guardrails run alongside the agent. Each returns a [`Verdict`]: pass, fail (halt the run;
+//! Python's `tripwire_triggered`) or transform (continue with rewritten content, Rust-only).
 
 use std::future::Future;
 use std::pin::Pin;
@@ -13,7 +14,9 @@ use crate::error::payload as guardrail_payload;
 use crate::items::InputLike;
 use crate::run_context::RunContextWrapper;
 
-pub use guardrail_payload::{GuardrailFunctionOutput, InputGuardrailResult, OutputGuardrailResult};
+pub use guardrail_payload::{
+    GuardrailFunctionOutput, InputGuardrailResult, OutputGuardrailResult, Severity, Verdict,
+};
 
 /// Guardrail body: `(context, agent, input) -> GuardrailFunctionOutput`.
 pub type InputGuardrailFn = Arc<
@@ -178,4 +181,57 @@ where
     Fut: Future<Output = GuardrailFunctionOutput> + Send + 'static,
 {
     OutputGuardrail::new(name, f)
+}
+
+/// Run a group of guardrails side by side and return their results in declaration order.
+///
+/// A [`Verdict::Fail`] whose [`Severity`] stops early ends the group at once: the guardrails
+/// still running are dropped, which cancels them (Python cancels the rest on any tripwire, and
+/// [`GuardrailFunctionOutput::trip`] is `High`). Their results are then missing, as in Python.
+pub(crate) async fn run_group<R, F>(
+    guardrails: impl IntoIterator<Item = F>,
+    output_of: fn(&R) -> &GuardrailFunctionOutput,
+) -> Vec<R>
+where
+    F: Future<Output = R>,
+{
+    use futures::stream::{FuturesUnordered, StreamExt};
+
+    let mut running: FuturesUnordered<_> = guardrails
+        .into_iter()
+        .enumerate()
+        .map(|(index, fut)| async move { (index, fut.await) })
+        .collect();
+    let mut done = Vec::with_capacity(running.len());
+    while let Some((index, result)) = running.next().await {
+        let stop = output_of(&result).stops_group();
+        done.push((index, result));
+        if stop {
+            break;
+        }
+    }
+    done.sort_by_key(|(index, _)| *index);
+    done.into_iter().map(|(_, result)| result).collect()
+}
+
+/// The single transform among `results`, if any; two or more are ambiguous and fail the run.
+pub(crate) fn single_transform<R>(
+    results: &[R],
+    output_of: fn(&R) -> &GuardrailFunctionOutput,
+    name_of: fn(&R) -> &str,
+) -> Result<Option<(&str, &Value)>, crate::error::UserError> {
+    let mut found = results.iter().filter_map(|r| {
+        output_of(r)
+            .transformed()
+            .map(|content| (name_of(r), content))
+    });
+    let first = found.next();
+    if let Some((second, _)) = found.next() {
+        let first_name = first.map_or("", |(name, _)| name);
+        return Err(crate::error::UserError::new(format!(
+            "guardrails `{first_name}` and `{second}` both returned Verdict::Transform for the \
+             same content; combine them into one guardrail so the order is explicit"
+        )));
+    }
+    Ok(first)
 }

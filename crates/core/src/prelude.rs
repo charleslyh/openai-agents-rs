@@ -21,6 +21,7 @@ pub use crate::error::AgentsError;
 pub use crate::extensions::Extensions;
 pub use crate::guardrail::{
     input_guardrail, output_guardrail, GuardrailFunctionOutput, InputGuardrail, OutputGuardrail,
+    Severity, Verdict,
 };
 pub use crate::handoffs::{handoff, Handoff};
 pub use crate::items::{InputLike, RunItem, ToolInterruptionItem};
