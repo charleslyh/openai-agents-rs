@@ -350,14 +350,16 @@ impl<'a> TurnLoop<'a> {
         let mut turn_guard = self.open_spans();
         self.start_input_guardrails().await?;
 
-        let setup = prepare_turn(
+        let mut setup = prepare_turn(
             &self.current_agent,
             &self.agents_used_tools,
             &self.options,
             &self.context,
         )
         .await?;
-        let model = resolve_model(&self.current_agent, &self.options.run_config)?;
+        let resolved = resolve_model(&self.current_agent, &self.options.run_config)?;
+        resolved.apply_to(&mut setup.model_settings);
+        let model = resolved.model;
         let (response, resolutions, from_resume) = match self.resume_pending.take() {
             Some((pending, resolutions)) => (pending, resolutions, true),
             None => {

@@ -98,6 +98,179 @@ pub enum Verbosity {
     High,
 }
 
+/// Generates a string-backed enum whose unknown values round-trip through `Other`, so a level a
+/// provider adds later still reaches the wire without an SDK release.
+macro_rules! open_string_enum {
+    (
+        $(#[$meta:meta])*
+        $name:ident { $($(#[$vmeta:meta])* $variant:ident => $wire:literal,)* }
+    ) => {
+        $(#[$meta])*
+        #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+        #[non_exhaustive]
+        pub enum $name {
+            $($(#[$vmeta])* $variant,)*
+            /// A value this SDK version does not know, sent as is.
+            Other(String),
+        }
+
+        impl $name {
+            /// The wire string.
+            pub fn as_str(&self) -> &str {
+                match self {
+                    $(Self::$variant => $wire,)*
+                    Self::Other(s) => s,
+                }
+            }
+
+            /// Parse a known wire string; `None` for anything else.
+            pub fn known(value: &str) -> Option<Self> {
+                match value {
+                    $($wire => Some(Self::$variant),)*
+                    _ => None,
+                }
+            }
+        }
+
+        impl From<&str> for $name {
+            fn from(value: &str) -> Self {
+                Self::known(value).unwrap_or_else(|| Self::Other(value.to_string()))
+            }
+        }
+
+        impl std::fmt::Display for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(self.as_str())
+            }
+        }
+
+        impl Serialize for $name {
+            fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                serializer.serialize_str(self.as_str())
+            }
+        }
+
+        impl<'de> Deserialize<'de> for $name {
+            fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                let value = String::deserialize(deserializer)?;
+                Ok(Self::from(value.as_str()))
+            }
+        }
+    };
+}
+
+open_string_enum! {
+    /// How hard a reasoning model thinks (OpenAI `reasoning.effort`; Chat Completions
+    /// `reasoning_effort`).
+    ReasoningEffort {
+        /// No reasoning (`"none"`).
+        None => "none",
+        /// `"minimal"`.
+        Minimal => "minimal",
+        /// `"low"`.
+        Low => "low",
+        /// `"medium"`.
+        Medium => "medium",
+        /// `"high"`.
+        High => "high",
+        /// `"xhigh"`.
+        XHigh => "xhigh",
+    }
+}
+
+open_string_enum! {
+    /// Whether and how the provider returns a summary of the reasoning (`reasoning.summary`).
+    ReasoningSummary {
+        /// Let the provider choose (`"auto"`).
+        Auto => "auto",
+        /// `"concise"`.
+        Concise => "concise",
+        /// `"detailed"`.
+        Detailed => "detailed",
+    }
+}
+
+impl ReasoningEffort {
+    /// Split a trailing `:<effort>` off a model name: `"o4-mini:high"` gives
+    /// `("o4-mini", Some(High))` (Rust-only, `docs/DEVIATIONS.md` X-006).
+    ///
+    /// Only the known levels are recognized, so provider tags such as Ollama's `llama3:8b` or
+    /// OpenRouter's `:free` are left alone. A name with no recognized suffix is returned as is.
+    pub fn split_model_name(name: &str) -> (&str, Option<Self>) {
+        match name.rsplit_once(':') {
+            Some((base, suffix)) if !base.is_empty() => match Self::known(suffix) {
+                Some(effort) => (base, Some(effort)),
+                None => (name, None),
+            },
+            _ => (name, None),
+        }
+    }
+}
+
+/// Reasoning configuration (Python: `openai.types.shared.Reasoning`).
+///
+/// Responses sends it as the request's `reasoning` object; Chat Completions only has
+/// `reasoning_effort`, so the adapter sends [`Reasoning::effort`] there and ignores the rest
+/// (with a warning), like Python. Fields this SDK does not model (`mode`, `context`, ...) go in
+/// [`Reasoning::extra`] and are sent to the Responses API unchanged.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct Reasoning {
+    /// How hard the model thinks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<ReasoningEffort>,
+    /// Whether to return a summary of the reasoning.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<ReasoningSummary>,
+    /// Other `reasoning` fields, sent as is (Responses only).
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+impl Reasoning {
+    /// Reasoning with the given effort.
+    pub fn effort(effort: impl Into<ReasoningEffort>) -> Self {
+        Self {
+            effort: Some(effort.into()),
+            ..Self::default()
+        }
+    }
+
+    /// Also ask for a reasoning summary.
+    #[must_use]
+    pub fn with_summary(mut self, summary: impl Into<ReasoningSummary>) -> Self {
+        self.summary = Some(summary.into());
+        self
+    }
+
+    /// Set an untyped `reasoning` field (Responses only).
+    #[must_use]
+    pub fn with_extra(mut self, key: impl Into<String>, value: Value) -> Self {
+        self.extra.insert(key.into(), value);
+        self
+    }
+
+    /// The Responses API `reasoning` object.
+    pub fn to_request_value(&self) -> Value {
+        serde_json::to_value(self).unwrap_or_else(|_| Value::Object(Map::new()))
+    }
+}
+
+impl From<ReasoningEffort> for Reasoning {
+    fn from(effort: ReasoningEffort) -> Self {
+        Self::effort(effort)
+    }
+}
+
+impl TryFrom<Value> for Reasoning {
+    type Error = serde_json::Error;
+
+    /// Accept the old untyped form, e.g. `json!({"effort": "high", "summary": "auto"})`.
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        serde_json::from_value(value)
+    }
+}
+
 /// Tunable parameters forwarded to the model provider.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ModelSettings {
@@ -117,8 +290,9 @@ pub struct ModelSettings {
     pub truncation: Option<Truncation>,
     /// Maximum output tokens.
     pub max_tokens: Option<u32>,
-    /// Reasoning configuration (provider-specific object).
-    pub reasoning: Option<Value>,
+    /// Reasoning configuration. A `:<effort>` suffix on a model name (`"o4-mini:high"`) fills
+    /// in [`Reasoning::effort`] when this does not set one.
+    pub reasoning: Option<Reasoning>,
     /// Verbosity constraint.
     pub verbosity: Option<Verbosity>,
     /// Metadata attached to the request. Replaced (not merged) by `resolve()`.
@@ -304,6 +478,51 @@ mod tests {
         assert_eq!(merged.extra_body, Some(serde_json::json!({"seed": 2})));
         assert_eq!(merged.extra_headers.as_ref().unwrap().len(), 1);
         assert_eq!(merged.extra_args.as_ref().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn reasoning_round_trips_and_keeps_unknown_fields() {
+        let reasoning = Reasoning::effort(ReasoningEffort::High)
+            .with_summary(ReasoningSummary::Auto)
+            .with_extra("mode", Value::from("deep"));
+        let value = reasoning.to_request_value();
+        assert_eq!(
+            value,
+            serde_json::json!({"effort": "high", "summary": "auto", "mode": "deep"})
+        );
+        let back = Reasoning::try_from(value).expect("parse");
+        assert_eq!(back, reasoning);
+        let future = Reasoning::try_from(serde_json::json!({"effort": "ultra"})).expect("parse");
+        assert_eq!(future.effort, Some(ReasoningEffort::Other("ultra".into())));
+        assert_eq!(
+            Reasoning::default().to_request_value(),
+            serde_json::json!({})
+        );
+    }
+
+    #[test]
+    fn model_name_suffix_names_a_known_effort_only() {
+        assert_eq!(
+            ReasoningEffort::split_model_name("o4-mini:high"),
+            ("o4-mini", Some(ReasoningEffort::High))
+        );
+        assert_eq!(
+            ReasoningEffort::split_model_name("openai/gpt-5:minimal"),
+            ("openai/gpt-5", Some(ReasoningEffort::Minimal))
+        );
+        for untouched in [
+            "llama3:8b",
+            "deepseek/r1:free",
+            "gpt-4o",
+            ":high",
+            "a:b:latest",
+        ] {
+            assert_eq!(
+                ReasoningEffort::split_model_name(untouched),
+                (untouched, None),
+                "{untouched}"
+            );
+        }
     }
 
     #[test]

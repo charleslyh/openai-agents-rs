@@ -131,6 +131,7 @@ bench(`cargo bench -p openai-agents --bench run_loop`,本机):
 | `Tool` trait + `Tool::typed` + `ToolOutput` 隐藏内部字段 | 完成。`tool.rs`:`Tool::{spec,policy,requires,call}`;`FunctionTool` 是默认实现(`impl Tool for FunctionTool`);`FunctionTool::from_tool` 把任意 `impl Tool` 适配成 `FunctionTool`,跑同一条执行路径;`FunctionTool::typed`/`typed_with_result` 用 `schemars` 生成严格 schema,免宏构造;`ToolResult` 改名 `ToolOutput`,`interruptions`/`nested_state` 两个字段降为 `pub(crate)`(`#[non_exhaustive]`),外部只能用 `::output`/`::interrupted` 构造、`is_interrupted()`/`value()` 读取 |
 | 工具/模型中间件 | 完成。新增 `tool_middleware.rs`(`ToolMiddleware` trait + `FunctionTool::with_middleware`,onion 组合,可短路)与 `model_middleware.rs`(`ModelMiddleware` trait,挂在 `ModelOptions::middleware`,在 `call_model_input_filter` 之后按添加顺序执行)。仅覆盖请求改写;包装响应/流是后续工作,登记在 `DEVIATIONS.md` |
 | `Tool::requires` + 启动期校验 | 完成。`extensions.rs` 新增 `TypeRequirement`;`FunctionTool::require::<T>()` 声明依赖,`run/agent_loop.rs` 的 `validate_tool_requirements` 在第一个 turn 前遍历可达 agent 图(含 handoff 目标)逐一检查,缺失类型报错带 agent 名、工具名、类型名、修复提示;不声明的工具不受影响(仍是运行时失败) |
+| 类型化 `Reasoning` + 模型名后缀 | 完成。`ModelSettings::reasoning` 由 `Option<Value>` 改为 `Option<Reasoning>`(`effort`/`summary` 为开放枚举,未知值原样往返;`extra` 承载 `mode` 等未建模字段;`TryFrom<Value>` 兼容旧写法);`RunOptions::reasoning(..)` 链式设置。适配层:Responses 发 `reasoning` 对象;Chat Completions 补上 Python 已有的 `reasoning_effort` 映射(此前缺失,示例 25 只能走 `extra_args`)。`"o4-mini:high"` 这类后缀在按名解析时剥离并填入 effort(显式设置优先,X-006) |
 
 ### 新增发现(扫描时顺带)
 

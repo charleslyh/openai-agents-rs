@@ -121,6 +121,12 @@ them like any other provider event, and it reads the response id out of them whe
 `extra_args`, `timeout`, `retry`. `resolve()` overlays non-`None` values and merges dictionaries,
 matching Python; `retry` is merged field by field (D-034).
 
+`reasoning` is a typed `Reasoning { effort, summary, extra }` (Python: `openai.types.shared.Reasoning`;
+unknown effort/summary strings and untyped fields such as `mode` round-trip). Responses sends it as
+the `reasoning` object; Chat Completions sends `effort` as `reasoning_effort` and warns about the
+untyped fields, like Python. A `:<effort>` suffix on a model name resolved through a provider
+(`"o4-mini:high"`) is Rust-only (X-006).
+
 Not ported: `prompt_cache_retention`, `context_management`, `prompt_cache_options` — three
 OpenAI-hosted server features (D-017); reach them with `extra_body` / `extra_args` when a server
 does support them.

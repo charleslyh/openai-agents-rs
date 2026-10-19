@@ -81,7 +81,9 @@ pub use model::{
     ModelRef, ModelRequest, ModelTracing, MultiProvider,
 };
 pub use model_middleware::ModelMiddleware;
-pub use model_settings::{ModelSettings, ToolChoice, Truncation, Verbosity};
+pub use model_settings::{
+    ModelSettings, Reasoning, ReasoningEffort, ReasoningSummary, ToolChoice, Truncation, Verbosity,
+};
 pub use result::{CancelMode, RunResult, RunResultStreaming, StreamingSnapshot};
 pub use retry::{
     retry_policies, ModelRetryAdvice, ModelRetryAdviceRequest, ModelRetryBackoffSettings,

@@ -128,3 +128,79 @@ fn separate_runtimes_do_not_share_a_default_provider() {
         .expect("b has no provider of its own");
     assert!(err.to_string().contains("No ModelProvider"), "{err}");
 }
+
+/// Remembers the names it was asked for and hands out one shared scripted model.
+struct RecordingProvider {
+    names: std::sync::Mutex<Vec<String>>,
+    model: Arc<ScriptedModel>,
+}
+
+impl ModelProvider for RecordingProvider {
+    fn get_model(
+        &self,
+        model_name: Option<&str>,
+    ) -> Result<Arc<dyn openai_agents::Model>, UserError> {
+        self.names
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(model_name.unwrap_or_default().to_string());
+        Ok(self.model.clone())
+    }
+}
+
+fn recording_provider() -> Arc<RecordingProvider> {
+    Arc::new(RecordingProvider {
+        names: std::sync::Mutex::new(Vec::new()),
+        model: Arc::new(ScriptedModel::new([ModelStep::from(
+            ItemHelpers::text_message("ok"),
+        )])),
+    })
+}
+
+/// Rust-only (X-006): `name:<effort>` resolves `name` and sets the reasoning effort.
+#[tokio::test]
+async fn model_name_effort_suffix_is_stripped_and_applied() {
+    use openai_agents::ReasoningEffort;
+
+    let provider = recording_provider();
+    let agent = Agent::new("thinker").model_name("o4-mini:high");
+    let mut opts = RunOptions::default();
+    opts.run_config.model.provider = Some(provider.clone());
+
+    Runner::run(&agent, "go", opts).await.expect("run");
+    assert_eq!(*provider.names.lock().unwrap(), vec!["o4-mini".to_string()]);
+    let settings = provider.model.last_call().expect("called").model_settings;
+    assert_eq!(
+        settings.reasoning.and_then(|r| r.effort),
+        Some(ReasoningEffort::High)
+    );
+}
+
+/// An explicit effort wins over the suffix; a tag that is not an effort is left alone.
+#[tokio::test]
+async fn explicit_effort_wins_and_other_tags_are_untouched() {
+    use openai_agents::ReasoningEffort;
+
+    let provider = recording_provider();
+    let agent = Agent::new("thinker").model_name("o4-mini:high");
+    let mut opts = RunOptions::default().reasoning(ReasoningEffort::Low);
+    opts.run_config.model.provider = Some(provider.clone());
+    Runner::run(&agent, "go", opts).await.expect("run");
+    let settings = provider.model.last_call().expect("called").model_settings;
+    assert_eq!(
+        settings.reasoning.and_then(|r| r.effort),
+        Some(ReasoningEffort::Low)
+    );
+
+    let provider = recording_provider();
+    let agent = Agent::new("local").model_name("llama3:8b");
+    let mut opts = RunOptions::default();
+    opts.run_config.model.provider = Some(provider.clone());
+    Runner::run(&agent, "go", opts).await.expect("run");
+    assert_eq!(
+        *provider.names.lock().unwrap(),
+        vec!["llama3:8b".to_string()]
+    );
+    let settings = provider.model.last_call().expect("called").model_settings;
+    assert!(settings.reasoning.is_none());
+}

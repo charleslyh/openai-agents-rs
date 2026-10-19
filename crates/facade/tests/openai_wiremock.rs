@@ -6,7 +6,8 @@ use std::sync::{Arc, Mutex};
 
 use openai_agents::{
     Agent, FunctionTool, ModelSettings, OpenAIChatCompletionsModel, OpenAIProvider,
-    OpenAIResponsesModel, RunOptions, Runner, StreamEvent, ToolChoice, Truncation, Verbosity,
+    OpenAIResponsesModel, Reasoning, ReasoningEffort, RunOptions, Runner, StreamEvent, ToolChoice,
+    Truncation, Verbosity,
 };
 use serde_json::json;
 use wiremock::matchers::{method, path};
@@ -221,7 +222,7 @@ fn new_settings() -> ModelSettings {
         parallel_tool_calls: Some(false),
         truncation: Some(Truncation::Auto),
         max_tokens: Some(512),
-        reasoning: Some(json!({"effort": "medium"})),
+        reasoning: Some(Reasoning::effort(ReasoningEffort::Medium)),
         verbosity: Some(Verbosity::Low),
         metadata: Some(metadata),
         store: Some(false),
@@ -907,6 +908,9 @@ async fn chat_maps_expanded_model_settings() {
     assert_eq!(body["top_logprobs"], 3);
     assert_eq!(body["store"], false);
     assert_eq!(body["metadata"]["tenant"], "acme");
+    // Python: Chat Completions sends `reasoning.effort` as `reasoning_effort`.
+    assert_eq!(body["reasoning_effort"], "medium");
+    assert!(body.get("reasoning").is_none());
     // Responses-only settings must not leak into a Chat Completions request.
     assert!(body.get("truncation").is_none());
     assert!(body.get("max_output_tokens").is_none());

@@ -388,6 +388,14 @@ impl RunOptions {
         self.tune(|s| s.max_tokens = Some(max_tokens))
     }
 
+    /// Reasoning for every model call of the run: `.reasoning(ReasoningEffort::High)` or a full
+    /// [`Reasoning`](crate::model_settings::Reasoning) with a summary.
+    #[must_use]
+    pub fn reasoning(self, reasoning: impl Into<crate::model_settings::Reasoning>) -> Self {
+        let reasoning = reasoning.into();
+        self.tune(|s| s.reasoning = Some(reasoning))
+    }
+
     /// Name the root trace.
     #[must_use]
     pub fn workflow_name(mut self, name: impl Into<String>) -> Self {

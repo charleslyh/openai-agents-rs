@@ -95,6 +95,23 @@ pub(crate) fn apply_model_settings_chat(
     if let Some(m) = settings.max_tokens {
         body["max_tokens"] = serde_json::json!(m);
     }
+    // Python (`openai_chatcompletions.py`): Chat Completions only has `reasoning_effort`. It
+    // warns about the Responses-only fields (`mode`, `context`, here: any untyped field) and
+    // drops `summary` silently.
+    if let Some(reasoning) = &settings.reasoning {
+        if let Some(effort) = &reasoning.effort {
+            body["reasoning_effort"] = serde_json::json!(effort.as_str());
+        }
+        if !reasoning.extra.is_empty() {
+            let mut unsupported: Vec<&str> = reasoning.extra.keys().map(String::as_str).collect();
+            unsupported.sort_unstable();
+            tracing::warn!(
+                fields = %unsupported.join(", "),
+                "Chat Completions only uses reasoning.effort; ignoring the other reasoning \
+                 settings (they require the Responses API)"
+            );
+        }
+    }
     if let Some(t) = settings.top_logprobs {
         body["top_logprobs"] = serde_json::json!(t);
     }
@@ -126,7 +143,7 @@ pub(crate) fn apply_model_settings_responses(
         });
     }
     if let Some(r) = &settings.reasoning {
-        body["reasoning"] = r.clone();
+        body["reasoning"] = r.to_request_value();
     }
     if let Some(v) = settings.verbosity {
         body["verbosity"] = serde_json::json!(match v {

@@ -33,12 +33,33 @@ entry will be `0.1.0`.
 - Streams that end without `response.completed` (Responses) or a `finish_reason` (Chat Completions)
   now log a warning, since the reply may be truncated.
 - The agent loop is split into `run/turn_loop.rs`; behaviour is unchanged.
+- **Breaking:** `RunConfig`'s flat fields are grouped into `model` / `tracing` / `session` /
+  `handoff` / `tools` (`ModelOptions`, `TracingOptions`, ...): `config.model_settings` becomes
+  `config.model.settings`, `config.workflow_name` becomes `config.tracing.workflow_name`, etc.
+  `RunOptions` is `#[non_exhaustive]`; build it with `RunOptions::new()` and the chain methods
+  (`.max_turns(..)`, `.temperature(..)`, `.reasoning(..)`, `.session(..)`, `.tune(..)`).
+- **Breaking:** `ToolResult` is renamed `ToolOutput`; its `interruptions` / `nested_state` fields
+  are no longer public. Use `ToolOutput::output` / `::interrupted`, `is_interrupted()`, `value()`.
+- **Breaking:** `ModelSettings::reasoning` is a typed `Reasoning` instead of a JSON value:
+  `Reasoning::effort(ReasoningEffort::High).with_summary(ReasoningSummary::Auto)`. Convert an
+  existing value with `Reasoning::try_from(json!({...}))`.
+- Chat Completions now sends `reasoning.effort` as `reasoning_effort`, as Python does. A request
+  that also put `reasoning_effort` in `extra_args` now fails with the duplicate-key error.
+- `default_provider()` returns an owned `Arc<dyn ModelProvider>`.
 
 ### Added
 
 - `#[function_tool(timeout = <seconds>)]`.
 - `openai_agents_core::utf8_stream::Utf8Stream` for decoding chunked byte streams.
 - A `twenty_tools_ten_turns` benchmark.
+- `Extensions`: typed per-run values (`RunOptions::with(value)`, `ctx.get::<T>()`,
+  `ctx.require::<T>()`).
+- `Runtime`: owns the default model provider and the runtime behind blocking calls;
+  `Runtime::global()` keeps the process-wide default.
+- The `Tool` trait (`FunctionTool::from_tool`), `FunctionTool::typed` for schema-from-struct tools,
+  `Tool::requires` / `FunctionTool::require::<T>()` checked before the first turn, and
+  `ToolMiddleware` / `ModelMiddleware`.
+- A `:<effort>` model-name suffix (`"o4-mini:high"`) for names resolved through a provider.
 
 ### Removed
 
