@@ -8,12 +8,14 @@
 //! * [`ConsoleSink`] and [`JsonlSink`]: where the events go.
 //! * `OtelSink` (`otel` feature): spans as OpenTelemetry spans, in whatever pipeline the process
 //!   installed.
+//! * [`TracingSink`]: events into the application's own `tracing` subscriber.
 //! * [`metrics`]: turn counts, tool failure rate, token usage and cost, from the same stream.
 //!
 //! Spans never carry a request body, a tool argument or a model output, so neither does anything
 //! here.
 
 pub mod batched;
+pub mod bridge;
 pub mod export;
 pub mod metrics;
 #[cfg(feature = "otel")]
@@ -21,6 +23,7 @@ pub mod otel;
 pub mod sinks;
 
 pub use batched::{BatchedProcessor, EventSink, FLUSH_TIMEOUT};
+pub use bridge::TracingSink;
 pub use export::{span_to_json, trace_to_json, ExportEvent};
 pub use metrics::{Metrics, MetricsSink, Price, PriceTable};
 pub use sinks::{ConsoleSink, JsonlSink};

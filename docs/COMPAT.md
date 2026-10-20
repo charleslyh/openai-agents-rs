@@ -238,6 +238,7 @@ dictionaries are merged (`model_settings.py:273`).
 | `SpanData` payloads (`input` / `output` / `tools`) | N | Only names and usage are recorded |
 | `BatchedProcessor`, `ConsoleSink`, `JsonlSink`, `Metrics` (feature `observability`) | S | Rust-only: batched export that never blocks the run, and counters over the same stream (X-018) |
 | `OtelSink` (feature `otel`) | S | Rust-only: spans into whatever OpenTelemetry pipeline the application installed — OTLP included — through the API only, so no exporter is pulled in (X-018) |
+| `TracingSink` (feature `observability`) | S | Rust-only: SDK events as `tracing` events under the target `openai_agents`, so the application's own subscriber and `RUST_LOG` see a run (X-018) |
 
 ## Testing
 
