@@ -41,6 +41,9 @@ tools = ["dep:opai-agents-tools"]
 webfetch = ["dep:opai-agents-tools", "opai-agents-tools/webfetch"]
 # Ready-made guardrails: length, personal data, prompt injection, keywords, schema.
 guardrails = ["dep:opai-agents-guardrails"]
+# Agent teams: a lead and long-lived teammates that work in parallel, message each other and share
+# a task list (Rust-only, X-025). Off by default.
+teams = ["dep:opai-agents-teams"]
 # Spans as OpenTelemetry spans, in whatever pipeline the process installed.
 otel = ["dep:opai-agents-observability", "opai-agents-observability/otel"]
 
@@ -61,6 +64,7 @@ opai-agents-sessions = { path = "../sessions", version = "0.1.0", optional = tru
 opai-agents-observability = { path = "../observability", version = "0.1.0", optional = true }
 opai-agents-tools = { path = "../tools", version = "0.1.0", optional = true }
 opai-agents-guardrails = { path = "../guardrails", version = "0.1.0", optional = true }
+opai-agents-teams = { path = "../teams", version = "0.1.0", optional = true }
 
 [dev-dependencies]
 async-trait = "0.1"

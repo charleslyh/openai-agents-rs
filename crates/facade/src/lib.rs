@@ -3,7 +3,7 @@
 //! This crate is the single entry point: it re-exports everything from `opai-agents-core` under
 //! the paths the SDK has always had, and adds the `#[function_tool]` macro. The Cargo features
 //! (`openai`, `mcp`, `sqlite`, `providers`, `sessions`, `redis`, `postgres`, `observability`, `tools`,
-//! `webfetch`, `guardrails`) pull
+//! `webfetch`, `guardrails`, `teams`) pull
 //! in the crate that implements them. Core knows no concrete model provider; with the `openai`
 //! feature, [`Runner`] installs the OpenAI one as the process default.
 //!
@@ -76,6 +76,15 @@ pub use opai_agents_tools as tools;
 /// (Rust-only, X-020).
 #[cfg(feature = "guardrails")]
 pub use opai_agents_guardrails as guardrails;
+
+/// Agent teams: a lead and long-lived teammates with mailboxes and a shared task list
+/// (Rust-only, X-025).
+///
+/// Teammates run through the core runner, so give each role's agent a bound model
+/// (`Agent::model`) or pass a `Runtime` with a provider to the team builder; the process default
+/// provider is installed only when a run goes through this crate's [`Runner`].
+#[cfg(feature = "teams")]
+pub use opai_agents_teams as teams;
 
 /// Attribute macro: turn a function into a [`FunctionTool`] constructor (Python: `@function_tool`).
 pub use opai_agents_macros::function_tool;
