@@ -226,3 +226,83 @@ async fn unparsable_arguments_read_as_the_on_failure_text() {
     let sent = model.calls()[1].input.to_string();
     assert!(sent.contains("The refund was not made"), "{sent}");
 }
+
+// ---------------------------------------------------------------------------------------------
+// Constraints on a field, written as annotations: the model sees them in the schema, and the
+// `Deserialize` that follows is the same struct, so the two cannot disagree on the names.
+// ---------------------------------------------------------------------------------------------
+
+/// Why a refund is made.
+#[derive(openai_agents::serde::Deserialize, openai_agents::schemars::JsonSchema)]
+#[serde(crate = "openai_agents::serde", rename_all = "snake_case")]
+#[schemars(crate = "openai_agents::schemars")]
+enum Reason {
+    /// The goods arrived broken.
+    Damaged,
+    /// The wrong goods were sent.
+    WrongItem,
+    /// The customer changed their mind.
+    ChangedMind,
+}
+
+/// A tool whose fields carry constraints.
+#[derive(openai_agents::serde::Deserialize, openai_agents::schemars::JsonSchema, ToolMeta)]
+#[serde(crate = "openai_agents::serde")]
+#[schemars(crate = "openai_agents::schemars")]
+#[tool(name = "constrained")]
+#[allow(dead_code)]
+struct Constrained {
+    /// Why the customer is being refunded.
+    reason: Reason,
+    /// Amount in cents, between 1 and 100000.
+    #[schemars(range(min = 1, max = 100_000))]
+    amount_cents: u64,
+    /// Note for the audit trail, 1 to 200 characters.
+    #[schemars(length(min = 1, max = 200))]
+    note: String,
+}
+
+#[async_trait]
+impl TypedTool for Constrained {
+    type Output = u8;
+    async fn run(self, _ctx: &ToolContext) -> Result<u8, AgentsError> {
+        Ok(1)
+    }
+}
+
+#[test]
+fn field_constraints_reach_the_schema_the_model_reads() {
+    let schema = FunctionTool::from_typed::<Constrained>().params_json_schema;
+    let props = &schema["properties"];
+
+    // An enum is a closed set of values, each with its own description from the variant's doc.
+    let reasons = props["reason"]["anyOf"]
+        .as_array()
+        .expect("one entry per variant");
+    let values: Vec<_> = reasons
+        .iter()
+        .map(|r| r["const"].as_str().unwrap())
+        .collect();
+    assert_eq!(values, ["damaged", "wrong_item", "changed_mind"]);
+    assert_eq!(reasons[1]["description"], "The wrong goods were sent.");
+
+    assert_eq!(props["amount_cents"]["minimum"], 1);
+    assert_eq!(props["amount_cents"]["maximum"], 100_000);
+    assert_eq!(props["note"]["minLength"], 1);
+    assert_eq!(props["note"]["maxLength"], 200);
+}
+
+/// What the schema promises and what `Deserialize` enforces are not the same set: an enum is both,
+/// a range or a length is only advice to the model. A tool that must hold the line checks it in
+/// `run` (the example does, for the amount).
+#[test]
+fn an_enum_is_enforced_on_parse_but_a_range_is_only_advertised() {
+    let parse = |v: Value| openai_agents::serde_json::from_value::<Constrained>(v);
+
+    assert!(parse(json!({"reason": "refund_me", "amount_cents": 5, "note": "x"})).is_err());
+    assert!(parse(json!({"reason": "damaged", "amount_cents": 5, "note": "x"})).is_ok());
+    assert!(
+        parse(json!({"reason": "damaged", "amount_cents": 0, "note": ""})).is_ok(),
+        "serde does not check `range` or `length`"
+    );
+}

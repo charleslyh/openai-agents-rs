@@ -4,11 +4,16 @@
 //! is a real component: typed arguments *and* a typed result, a declared dependency, and a
 //! scheduling policy. All of it is written next to the fields, as annotations:
 //!
-//! - field doc comments become the parameter descriptions the model reads;
+//! - field doc comments become the parameter descriptions the model reads; an `enum` field becomes
+//!   a closed set of values (each variant's doc comment describes it), and
+//!   `#[schemars(range(..))]` / `#[schemars(length(..))]` add bounds;
 //! - the struct's doc comment becomes the tool description;
 //! - `#[tool(..)]` carries the name, the timeout, the dependency (`requires`), the per-call pause
 //!   for a human (`needs_approval_if`) and the text the model sees when the call fails;
 //! - `impl TypedTool` is the body: it receives the parsed arguments and returns a typed result.
+//!
+//! An enum is enforced when the arguments are parsed; a range or a length is only advice to the
+//! model, so the body checks the one that matters (the amount).
 //!
 //! A tool with state of its own (a client, a counter) implements `Tool` instead; see
 //! `docs/DEVIATIONS.md` X-023. `ToolMiddleware` wraps either kind: audit logging around the call,
@@ -55,10 +60,28 @@ struct RefundArgs {
     /// Order to refund, as shown to the customer ("A-1001").
     order_id: String,
     /// Why the customer is being refunded; kept with the refund.
-    reason: String,
-    /// Amount in cents. Omit to refund the whole order.
+    reason: RefundReason,
+    /// Amount in cents, at least 1. Omit to refund the whole order.
+    #[schemars(range(min = 1))]
     #[serde(default)]
     amount_cents: Option<u64>,
+}
+
+/// The reasons the refund policy knows. The model must pick one; anything else fails to parse.
+#[derive(
+    openai_agents::serde::Deserialize,
+    openai_agents::serde::Serialize,
+    openai_agents::schemars::JsonSchema,
+)]
+#[serde(crate = "openai_agents::serde", rename_all = "snake_case")]
+#[schemars(crate = "openai_agents::schemars")]
+enum RefundReason {
+    /// The goods arrived broken.
+    Damaged,
+    /// The wrong goods were sent.
+    WrongItem,
+    /// The customer changed their mind.
+    ChangedMind,
 }
 
 /// Decided per call from the parsed arguments: a small refund runs, a large one waits for a person.
@@ -77,7 +100,7 @@ struct Refund {
     executed: bool,
     reference: String,
     /// The reason the model gave, kept so the audit line shows why money moved.
-    reason: String,
+    reason: RefundReason,
 }
 
 #[async_trait]
@@ -88,6 +111,10 @@ impl TypedTool for RefundArgs {
         // `requires(Payments)` above means the run would not have started without it.
         let payments = ctx.require::<Payments>()?;
         let cents = self.amount_cents.unwrap_or(WHOLE_ORDER_CENTS);
+        // The schema says "at least 1", but only the model reads that; this is what holds the line.
+        if cents == 0 {
+            return Err(AgentsError::tool("the amount must be at least 1 cent"));
+        }
         Ok(payments.refund(&self.order_id, cents, self.reason))
     }
 }
@@ -105,7 +132,7 @@ struct Payments {
 
 impl Payments {
     /// Refund `cents` for `order`. An order is refunded once.
-    fn refund(&self, order: &str, cents: u64, reason: String) -> Refund {
+    fn refund(&self, order: &str, cents: u64, reason: RefundReason) -> Refund {
         let mut ledger = self.ledger.lock().expect("ledger");
         let executed = !ledger.contains_key(order);
         if executed {
