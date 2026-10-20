@@ -20,6 +20,8 @@ entry will be `0.1.0`.
 
 ### Fixed
 
+- `OtelSink` keeps a span open from its start to its end, so child spans are real children in the
+  OpenTelemetry trace instead of separate roots.
 - Chat Completions and MCP streams no longer corrupt multi-byte characters (CJK text, emoji) that
   a network chunk boundary splits in two.
 - Chat Completions streams that announce a message before a tool call no longer give both the same

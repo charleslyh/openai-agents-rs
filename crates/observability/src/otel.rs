@@ -10,9 +10,10 @@
 //! * **The SDK's ids are attributes.** The OpenTelemetry API hands out span and trace ids itself;
 //!   it does not take someone else's. `agents.span_id` and `agents.parent_id` carry ours, so a
 //!   span can still be matched to the trace it belongs to.
-//! * **Parenting is what the caller has.** Our spans are exported one by one from a background
-//!   thread, where there is no ambient span, so each becomes a root span carrying its parent id as
-//!   an attribute. Matching them afterwards is what the ids are for.
+//! * **Parenting follows our ids.** A span is opened when it starts and kept until it ends, so a
+//!   child opened under it joins its trace as a real child. A span whose parent is not known — its
+//!   start was dropped, or it came from another process — is a root span with `agents.parent_id`
+//!   as an attribute.
 //!
 //! Only the API is depended on: the exporter — OTLP, Jaeger, stdout — is the application's choice,
 //! which is also what keeps this crate from pulling a gRPC stack into every build.
@@ -26,10 +27,11 @@
 //! # let _ = processor;
 //! ```
 
+use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use opentelemetry::global::tracer;
-use opentelemetry::trace::{Span, SpanBuilder, Status};
+use opentelemetry::trace::{SpanBuilder, Status, TraceContextExt};
 use opentelemetry::{Context, KeyValue};
 use serde_json::Value;
 
@@ -42,7 +44,12 @@ pub const TRACER_NAME: &str = "opai-agents";
 /// Writes events as OpenTelemetry spans, through the tracer the process installed.
 pub struct OtelSink {
     tracer: opentelemetry::global::BoxedTracer,
+    /// Spans that started and have not ended, by our span id, as the context holding them.
+    open: HashMap<String, Context>,
 }
+
+/// How many started-but-unended spans are held; past this, a span is opened when it ends.
+const MAX_OPEN: usize = 10_000;
 
 impl OtelSink {
     /// Use the global tracer provider.
@@ -52,6 +59,7 @@ impl OtelSink {
     pub fn new() -> Self {
         Self {
             tracer: tracer(TRACER_NAME),
+            open: HashMap::new(),
         }
     }
 }
@@ -76,65 +84,106 @@ impl EventSink for OtelSink {
 }
 
 impl OtelSink {
-    /// One OpenTelemetry span per ended span; a started span has no end time yet, and a trace has
-    /// no span of its own in OpenTelemetry — its id is on every span already.
-    fn emit(&self, event: &ExportEvent) {
-        let body = match event {
-            ExportEvent::SpanEnd(body) => body,
-            _ => return,
-        };
-        let name = body
-            .get("name")
-            .and_then(Value::as_str)
-            .unwrap_or("span")
-            .to_string();
+    fn emit(&mut self, event: &ExportEvent) {
+        match event {
+            ExportEvent::SpanStart(body) => self.start(body),
+            ExportEvent::SpanEnd(body) => self.end(body),
+            // A trace has no span of its own in OpenTelemetry; its id is on every span already.
+            _ => {}
+        }
+    }
+
+    /// Open the span now, so that spans started under it have something to be children of.
+    fn start(&mut self, body: &Value) {
+        let id = id_of(body, "span_id");
+        if id.is_empty() || self.open.len() >= MAX_OPEN {
+            return;
+        }
+        let parent = self.parent_context(body);
+        let name = name_of(body);
+        let mut builder = SpanBuilder::from_name(name).with_attributes(base_attributes(body));
+        if let Some(started) = time_of(body.get("started_at")) {
+            builder = builder.with_start_time(started);
+        }
+        let span = builder.start_with_context(&self.tracer, &parent);
+        self.open.insert(id, parent.with_span(span));
+    }
+
+    /// Finish the span: the one opened at its start, or a new one if the start was never seen.
+    fn end(&mut self, body: &Value) {
         let started = time_of(body.get("started_at"));
         let ended = time_of(body.get("ended_at")).or(started);
-        let mut attributes = vec![
-            KeyValue::new("agents.span_kind", kind_of(body)),
-            KeyValue::new("agents.span_id", id_of(body, "span_id")),
-        ];
-        let parent = id_of(body, "parent_id");
-        if !parent.is_empty() {
-            attributes.push(KeyValue::new("agents.parent_id", parent));
+        let held = self.open.remove(&id_of(body, "span_id"));
+        let context = match held {
+            Some(context) => context,
+            None => {
+                let parent = self.parent_context(body);
+                let mut builder =
+                    SpanBuilder::from_name(name_of(body)).with_attributes(base_attributes(body));
+                if let Some(started) = started {
+                    builder = builder.with_start_time(started);
+                }
+                let span = builder.start_with_context(&self.tracer, &parent);
+                parent.with_span(span)
+            }
+        };
+        let span = context.span();
+        for (key, value) in usage_of(body.get("usage").unwrap_or(&Value::Null)) {
+            span.set_attribute(KeyValue::new(key, value));
         }
-        if let Some(turn) = body.get("turn").and_then(Value::as_u64) {
-            attributes.push(KeyValue::new("agents.turn", turn as i64));
-        }
-        let status = match body
+        match body
             .get("error")
             .and_then(|e| e.get("message"))
             .and_then(Value::as_str)
         {
             Some(message) => {
-                attributes.push(KeyValue::new("agents.error", message.to_string()));
-                Status::error(message.to_string())
+                span.set_attribute(KeyValue::new("agents.error", message.to_string()));
+                span.set_status(Status::error(message.to_string()));
             }
-            None => Status::Ok,
-        };
-        let mut builder = SpanBuilder::from_name(name).with_attributes(attributes);
-        if let Some(started) = started {
-            builder = builder.with_start_time(started);
+            None => span.set_status(Status::Ok),
         }
-        // Exported from the writer thread, where there is no ambient span: a root span, with our
-        // parent id as an attribute.
-        let mut span = builder.start_with_context(&self.tracer, &Context::new());
-        for (key, value) in usage_of(body.get("usage").unwrap_or(&Value::Null)) {
-            span.set_attribute(KeyValue::new(key, value));
-        }
-        span.set_status(status);
-        if let Some(ended) = ended {
-            span.end_with_timestamp(ended);
-        } else {
-            span.end();
+        match ended {
+            Some(ended) => span.end_with_timestamp(ended),
+            None => span.end(),
         }
     }
+
+    /// The context of the still-open parent, or an empty one (a root span).
+    fn parent_context(&self, body: &Value) -> Context {
+        self.open
+            .get(&id_of(body, "parent_id"))
+            .cloned()
+            .unwrap_or_else(Context::new)
+    }
+}
+
+fn name_of(body: &Value) -> String {
+    body.get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("span")
+        .to_string()
+}
+
+fn base_attributes(body: &Value) -> Vec<KeyValue> {
+    let mut attributes = vec![
+        KeyValue::new("agents.span_kind", kind_of(body)),
+        KeyValue::new("agents.span_id", id_of(body, "span_id")),
+    ];
+    let parent = id_of(body, "parent_id");
+    if !parent.is_empty() {
+        attributes.push(KeyValue::new("agents.parent_id", parent));
+    }
+    if let Some(turn) = body.get("turn").and_then(Value::as_u64) {
+        attributes.push(KeyValue::new("agents.turn", turn as i64));
+    }
+    attributes
 }
 
 impl std::fmt::Debug for OtelSink {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OtelSink")
             .field("tracer", &TRACER_NAME)
+            .field("open", &self.open.len())
             .finish()
     }
 }
@@ -198,6 +247,25 @@ mod tests {
             "usage": {"input_tokens": 10, "output_tokens": 5},
         }));
         sink.write(&[event]).expect("write");
+    }
+
+    #[test]
+    fn a_started_span_is_held_until_it_ends() {
+        let mut sink = OtelSink::new();
+        let start = |id: &str, parent: &str| {
+            ExportEvent::SpanStart(json!({"span_id": id, "parent_id": parent, "name": id}))
+        };
+        let end = |id: &str, parent: &str| {
+            ExportEvent::SpanEnd(json!({"span_id": id, "parent_id": parent, "name": id,
+                "started_at": 1.0, "ended_at": 2.0}))
+        };
+        sink.write(&[start("a", ""), start("b", "a")]).unwrap();
+        assert_eq!(sink.open.len(), 2);
+        sink.write(&[end("b", "a"), end("a", "")]).unwrap();
+        assert!(sink.open.is_empty());
+        // An end with no start is still written, and holds nothing.
+        sink.write(&[end("c", "gone")]).unwrap();
+        assert!(sink.open.is_empty());
     }
 
     #[test]
