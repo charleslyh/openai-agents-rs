@@ -123,8 +123,8 @@ pub use serde_json;
 pub use stream_events::{RunItemStreamName, StreamEvent};
 pub use tool::{
     FunctionTool, IsEnabledFn, NeedsResolution, Tool, ToolContext, ToolEnabled,
-    ToolFailureHandling, ToolOutput, ToolPolicy, ToolSpec, ToolTimeoutBehavior,
-    DEFAULT_APPROVAL_REJECTION_MESSAGE, DEFAULT_TOOL_ERROR_MESSAGE,
+    ToolFailureHandling, ToolMeta, ToolOutput, ToolPolicy, ToolSpec, ToolTimeoutBehavior,
+    TypedTool, DEFAULT_APPROVAL_REJECTION_MESSAGE, DEFAULT_TOOL_ERROR_MESSAGE,
 };
 pub use tool_guardrails::{
     ToolGuardrailBehavior, ToolGuardrailFunctionOutput, ToolInputGuardrail, ToolInputGuardrailData,

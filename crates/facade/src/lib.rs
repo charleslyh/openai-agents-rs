@@ -80,6 +80,10 @@ pub use openai_agents_guardrails as guardrails;
 /// Attribute macro: turn a function into a [`FunctionTool`] constructor (Python: `@function_tool`).
 pub use openai_agents_macros::function_tool;
 
+/// Derive macro: a tool's name, description and policy, declared on its argument struct. Pairs with
+/// the `ToolMeta` trait of the same name and `TypedTool`.
+pub use openai_agents_macros::ToolMeta;
+
 /// Run one agent end to end, taking the provider from the environment (Rust-only, X-015).
 ///
 /// The shortest thing that works: no `Agent`, no `ModelProvider`, no `RunOptions`. The provider is

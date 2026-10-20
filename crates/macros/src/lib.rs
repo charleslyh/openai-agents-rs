@@ -1,11 +1,44 @@
-//! `#[function_tool]` attribute macro for openai-agents.
+//! `#[function_tool]` attribute macro and `#[derive(ToolMeta)]` for openai-agents.
+
+mod tool_meta;
 
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
-    parse_macro_input, punctuated::Punctuated, Attribute, Expr, FnArg, ItemFn, Lit, Meta, Pat,
-    ReturnType, Token, Type,
+    parse_macro_input, punctuated::Punctuated, Attribute, DeriveInput, Expr, FnArg, ItemFn, Lit,
+    Meta, Pat, ReturnType, Token, Type,
 };
+
+/// Declare a tool's name, description and policy on its argument struct.
+///
+/// The counterpart of `#[function_tool]` for a tool that is a type rather than a function: the
+/// struct carries the parameters (field doc comments become the schema descriptions the model
+/// reads), and `#[tool(..)]` carries the rest. Implement `TypedTool` for the body, then build the
+/// tool with `FunctionTool::from_typed::<Args>()`.
+///
+/// ```ignore
+/// /// Refund an order, whole or in part.
+/// #[derive(Deserialize, JsonSchema, ToolMeta)]
+/// #[tool(name = "refund_order", timeout = 5, requires(Payments),
+///        needs_approval_if = is_large, on_failure = "The refund was not made: {error}")]
+/// struct RefundArgs {
+///     /// Order to refund.
+///     order_id: String,
+/// }
+/// ```
+///
+/// Options: `name` (required), `description` (default: the struct's doc comment), `needs_approval`,
+/// `needs_approval_if = path` (a `fn(&Self) -> bool` run on the parsed arguments of each call),
+/// `timeout` (seconds), `on_failure` (a format string with `{error}`, shown to the model instead of
+/// the default text) and `requires(TypeA, TypeB)` (types the run must supply). Unknown options are
+/// compile errors.
+#[proc_macro_derive(ToolMeta, attributes(tool))]
+pub fn derive_tool_meta(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    tool_meta::expand(&input)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
 
 /// Turn an async/sync function into an `openai_agents::FunctionTool` constructor.
 ///

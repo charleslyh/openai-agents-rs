@@ -407,6 +407,50 @@ pub trait Tool: Send + Sync {
     async fn call(&self, ctx: &ToolContext) -> Result<ToolOutput, AgentsError>;
 }
 
+/// What a [`TypedTool`] is, declared on the argument struct (Rust-only).
+///
+/// Usually derived: `#[derive(ToolMeta)]` with a `#[tool(name = "...", ...)]` attribute fills in the
+/// name, description and policy next to the fields that make up the schema. Implement it by hand
+/// when the metadata has to be computed.
+pub trait ToolMeta {
+    /// Tool name shown to the model.
+    const NAME: &'static str;
+    /// Tool description shown to the model.
+    const DESCRIPTION: &'static str;
+
+    /// Enablement, pause-for-resolution and failure/timeout policy. Defaults to
+    /// [`ToolPolicy::default`].
+    fn policy() -> ToolPolicy {
+        ToolPolicy::default()
+    }
+
+    /// Types the tool reads from [`Extensions`](crate::Extensions); see [`Tool::requires`].
+    fn requires() -> Vec<TypeRequirement> {
+        Vec::new()
+    }
+}
+
+/// A tool whose argument struct *is* the tool (Rust-only).
+///
+/// The struct supplies the parameter schema (`JsonSchema`, so field doc comments become the
+/// descriptions the model reads), the parse (`Deserialize`) and, through [`ToolMeta`], the name and
+/// policy. `run` receives the already-parsed value. [`FunctionTool::from_typed`] turns it into the
+/// SDK's tool type.
+///
+/// The tool has no state of its own; what it needs from the run comes from
+/// [`ToolContext::require`] and is declared with `requires(..)`. A tool with state of its own
+/// implements [`Tool`] instead.
+#[async_trait]
+pub trait TypedTool:
+    ToolMeta + serde::de::DeserializeOwned + schemars::JsonSchema + Send + 'static
+{
+    /// What the tool answers with; serialized to JSON for the model.
+    type Output: serde::Serialize + Send;
+
+    /// Run the call. An `Err` is shown to the model according to the tool's failure policy.
+    async fn run(self, ctx: &ToolContext) -> Result<Self::Output, AgentsError>;
+}
+
 /// A function tool exposed to the model (Python: `FunctionTool`).
 #[derive(Clone)]
 pub struct FunctionTool {
@@ -677,6 +721,38 @@ impl FunctionTool {
             timeout_error_function: policy.timeout_error_function,
             requires,
         }
+    }
+
+    /// Build the tool a [`TypedTool`] describes: schema from the struct, name, description,
+    /// policy and requirements from its [`ToolMeta`].
+    pub fn from_typed<T: TypedTool>() -> Self {
+        let schema = typed_params_schema::<T>(T::NAME);
+        let policy = T::policy();
+        let mut tool =
+            Self::new_with_result(T::NAME, T::DESCRIPTION, schema, |ctx, args| async move {
+                let parsed: T = serde_json::from_str(&args).map_err(|e| {
+                    AgentsError::tool_with_source(
+                        format!("invalid arguments for tool `{}`", T::NAME),
+                        e,
+                    )
+                })?;
+                let out = parsed.run(&ctx).await?;
+                let value = serde_json::to_value(out).map_err(|e| {
+                    AgentsError::tool_with_source(
+                        format!("could not serialize the result of tool `{}`", T::NAME),
+                        e,
+                    )
+                })?;
+                Ok(ToolOutput::output(value))
+            });
+        tool.is_enabled = policy.is_enabled;
+        tool.needs_resolution = policy.needs_resolution;
+        tool.failure_error_function = policy.failure_error_function;
+        tool.timeout_seconds = policy.timeout_seconds;
+        tool.timeout_behavior = policy.timeout_behavior;
+        tool.timeout_error_function = policy.timeout_error_function;
+        tool.requires = T::requires();
+        tool
     }
 
     /// Create a tool whose parameters are a typed `Deserialize` + `JsonSchema` struct, instead of
