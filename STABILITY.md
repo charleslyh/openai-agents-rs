@@ -22,6 +22,7 @@ planned and how change will be handled afterwards.
 | `opai-agents-mcp` | Unstable | Unstable |
 | `opai-agents-sqlite` | Unstable | Unstable |
 | `opai-agents-testing` | Unstable | Unstable |
+| `opai-agents-teams` | Unstable | Unstable |
 
 ## Behaviour versus API
 

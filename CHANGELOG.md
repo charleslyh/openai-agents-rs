@@ -18,6 +18,11 @@ entry will be `0.1.0`.
 
 ### Added
 
+- New crate `opai-agents-teams` (X-025), behind the facade feature `teams`: a lead creates
+  long-lived teammates from registered roles; they run in parallel, message each other, share a task
+  list with atomic claims and dependencies, and stay inside a budget. Includes cooperative shutdown,
+  panic isolation, approval and plan-approval bubbling to the lead, `TeamHooks` quality gates and
+  team-rooted tracing. In-process only. See `docs/AGENT-TEAMS.md` and example `35_teams`.
 - Live console: `ConsoleLink` sends spans and (opt-in) the conversation of each run to the new
   `opai-console` service in `tools/console`, which shows a waterfall next to prompts, replies and
   tool calls in the browser. Loopback only, token-protected. See example `31_console`.

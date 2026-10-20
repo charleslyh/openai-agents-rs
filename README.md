@@ -35,6 +35,7 @@ Depend on `opai-agents`; it re-exports everything below under the paths the SDK 
 | `opai-agents-observability` | console, JSONL and OpenTelemetry export, metrics | features `observability`, `otel` |
 | `opai-agents-tools` | calculator, clock, read-only files, `web_fetch` with private networks refused | features `tools`, `webfetch` |
 | `opai-agents-guardrails` | length, personal data, prompt injection, keywords, JSON Schema | feature `guardrails` |
+| `opai-agents-teams` | agent teams: a lead and long-lived teammates with mailboxes, a shared task list and a budget (experimental) | feature `teams` |
 
 ```toml
 opai-agents = "0.1"                                                        # core + OpenAI
@@ -143,6 +144,7 @@ Ordered like the web demo's capability checklist, one knowledge point per exampl
 | 32 | `cancel` | Run control | `RunResultStreaming::cancel` |
 | 33 | `settings` | Run control | `ModelSettings` temperature + retry, `max_turns` |
 | 34 | `reasoning` | Run control | Typed `Reasoning` effort/summary for either API |
+| 35 | `teams` | Multi-agent | A lead and two parallel teammates with a shared task list (Rust-only) |
 
 They need `OPENAI_API_KEY` and `OPENAI_MODEL` in the environment; `OPENAI_BASE_URL` and
 `OPENAI_API` (`chat_completions` | `responses`) are optional.
