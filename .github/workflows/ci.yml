@@ -76,6 +76,27 @@ jobs:
       - name: Web demo still compiles and its tests pass
         run: cargo test -p opai-agents-web-demo
 
+  msrv:
+    name: msrv (1.89 builds the libraries)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The oldest compiler the crates declare in `rust-version`. A declared minimum nobody builds
+      # with is a promise nobody checks; this is the check. `-p` names the published crates, so the
+      # examples, the web demo and the console (not published) are not held to it.
+      #
+      # Every facade feature except `postgres`: `sqlx` 0.9 declares `rust-version = 1.94`, and Cargo
+      # refuses it on 1.89 (no `--ignore-rust-version` here, on purpose). STABILITY.md lists it.
+      - uses: dtolnay/rust-toolchain@1.89.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Published crates compile on the minimum version
+        run: >
+          cargo check --all-targets
+          -p opai-agents --features mcp,providers,sqlite,sessions,redis,observability,tools,webfetch,guardrails,otel
+          -p opai-agents-core -p opai-agents-macros -p opai-agents-openai -p opai-agents-testing
+          -p opai-agents-providers -p opai-agents-observability -p opai-agents-tools
+          -p opai-agents-guardrails -p opai-agents-mcp -p opai-agents-sqlite -p opai-agents-scaffold
+
   parity:
     name: python oracle (parity, MCP interop)
     runs-on: ubuntu-latest

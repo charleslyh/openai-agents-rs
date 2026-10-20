@@ -2,7 +2,7 @@
 name = "opai-agents-core"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.99"
+rust-version = "1.89"
 description = "Core of the Rust port of the OpenAI Agents Python SDK: agents, tools, handoffs, HITL, guardrails, the run loop"
 license = "MIT"
 readme = "README.md"

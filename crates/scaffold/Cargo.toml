@@ -2,15 +2,17 @@
 name = "opai-agents-scaffold"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.99"
-publish = false
-description = "`cargo agents new`: create a project that uses the OpenAI Agents Rust SDK"
+rust-version = "1.89"
+description = "`cargo opai new`: create a project that uses the OpenAI Agents Rust SDK"
 license = "MIT"
 repository = "https://github.com/charleslyh/openai-agents-rs"
+readme = "README.md"
+keywords = ["openai", "agents", "scaffold", "cargo-subcommand"]
+categories = ["command-line-utilities", "development-tools::cargo-plugins"]
 
-# `cargo agents new` runs this binary: Cargo looks for `cargo-agents` on PATH.
+# `cargo opai new` runs this binary: Cargo looks for `cargo-opai` on PATH.
 [[bin]]
-name = "cargo-agents"
+name = "cargo-opai"
 path = "src/main.rs"
 
 [lints]

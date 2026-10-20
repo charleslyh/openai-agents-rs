@@ -56,7 +56,7 @@ println!("{}", result.final_output_as_str().unwrap_or_default());
 
 ## Optional
 
-- `cargo agents new <name> --template <chat|tools|hitl>` scaffolds a project.
+- `cargo opai new <name> --template <chat|tools|hitl>` scaffolds a project.
 - `conformance/scenarios/` holds the declarative parity scenarios.
 
 ---
@@ -140,8 +140,8 @@ async fn main() -> Result<(), AgentsError> {
 ### Start a project
 
 ```bash
-cargo install opai-agents-scaffold   # installs `cargo-agents`
-cargo agents new my-agent              # templates: chat (default), tools, hitl
+cargo install opai-agents-scaffold   # installs `cargo-opai`
+cargo opai new my-agent              # templates: chat (default), tools, hitl
 cd my-agent && AGENTS_OFFLINE=1 cargo run   # no key needed; set one to talk to a model
 ```
 
@@ -204,9 +204,10 @@ Ordered like the web demo's capability checklist, one knowledge point per exampl
 | 28 | `usage` | Output and observability | `RunResult::usage` |
 | 29 | `tracing` | Output and observability | Custom `TracingProcessor` |
 | 30 | `trace_export` | Output and observability | Batched console/JSONL export and metrics (Rust-only) |
-| 31 | `cancel` | Run control | `RunResultStreaming::cancel` |
-| 32 | `settings` | Run control | `ModelSettings` temperature + retry, `max_turns` |
-| 33 | `reasoning` | Run control | Typed `Reasoning` effort/summary for either API |
+| 31 | `console` | Output and observability | Live console: spans and the conversation, in a browser (Rust-only) |
+| 32 | `cancel` | Run control | `RunResultStreaming::cancel` |
+| 33 | `settings` | Run control | `ModelSettings` temperature + retry, `max_turns` |
+| 34 | `reasoning` | Run control | Typed `Reasoning` effort/summary for either API |
 
 They need `OPENAI_API_KEY` and `OPENAI_MODEL` in the environment; `OPENAI_BASE_URL` and
 `OPENAI_API` (`chat_completions` | `responses`) are optional.
@@ -1047,7 +1048,7 @@ so check their docs before relying on a cell.
 | Guardrail verdicts | `Pass`, `Fail`, **`Transform`** (a rewrite is a result, not a refusal) | tripwire only | — | callbacks and guardrails |
 | Provider presets | a table with a capability matrix that refuses rather than degrades silently | OpenAI plus compatible endpoints | 20+ providers, feature-gated | 14+ providers, feature-gated |
 | On-demand tool loading | `CapabilityParts::deferred` | — | — | — |
-| Scaffolding | `cargo agents new`, 3 templates | — | examples, no scaffolding CLI | `cargo adk new`, 13 templates, 9 addons, 5 enterprise patterns |
+| Scaffolding | `cargo opai new`, 3 templates | — | examples, no scaffolding CLI | `cargo adk new`, 13 templates, 9 addons, 5 enterprise patterns |
 | Offline development | `AGENTS_OFFLINE=1` | `ScriptedModel` in tests | cassette record/replay | provider-dependent |
 
 ## Where this SDK is weaker, on purpose
@@ -1137,8 +1138,13 @@ least one release before removal, and the changelog lists it under **Deprecated*
 
 ## Minimum Rust version
 
-`rust-version` is `1.99`, the version the project is built and tested with (`rust-toolchain.toml`).
-It has not been tested against older compilers; lowering it needs a verified build first.
+`rust-version` is `1.89`, checked by the `msrv` job in CI on every push: the published crates must
+compile with that compiler, tests included. The floor is set by the dependencies (`uuid` needs 1.89;
+1.88 fails to build it), not by the SDK's own code. One exception: the `postgres` feature needs
+**1.94**, because `sqlx` 0.9 declares it and Cargo refuses it on anything older; every other
+feature builds on 1.89. The project itself is developed and linted with
+`1.99` (`rust-toolchain.toml`), so a newer standard-library API can slip in; the `msrv` job is what
+catches it. Raising `rust-version` is a breaking change and goes in the changelog.
 
 ---
 

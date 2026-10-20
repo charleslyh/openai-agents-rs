@@ -304,11 +304,7 @@ mod tests {
             if self.hang {
                 tokio::time::sleep(Duration::from_secs(60)).await;
             }
-            if self
-                .fail_times
-                .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
-                .is_ok()
-            {
+            if crate::tests::take_one(&self.fail_times) {
                 return Err(AgentsError::tool("refused"));
             }
             Ok(())

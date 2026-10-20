@@ -2,7 +2,7 @@
 name = "opai-agents-sessions"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.99"
+rust-version = "1.89"
 description = "Session and paused-run storage for the Rust OpenAI Agents SDK: JSONL files, Redis and Postgres"
 license = "MIT"
 readme = "README.md"
@@ -20,7 +20,8 @@ default = []
 # MULTI. Added with the backend, so a build that does not use Redis compiles no client.
 redis = ["dep:redis"]
 # Postgres-backed session and state store: every value bound, table names validated before they
-# reach SQL. Added with the backend.
+# reach SQL. Added with the backend. Needs Rust 1.94: `sqlx` 0.9 declares it as its minimum, while
+# the rest of the crate builds on 1.89.
 postgres = ["dep:sqlx"]
 
 [dependencies]

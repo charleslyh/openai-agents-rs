@@ -2,7 +2,7 @@
 name = "opai-agents"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.99"
+rust-version = "1.89"
 description = "Rust port of the OpenAI Agents Python SDK (core loop, tools, handoffs, HITL, guardrails, structured output)"
 license = "MIT"
 readme = "../../README.md"
@@ -31,6 +31,7 @@ sessions = ["dep:opai-agents-sessions"]
 # `RedisSession` / `RedisRunStateStore`: a history more than one process shares.
 redis = ["dep:opai-agents-sessions", "opai-agents-sessions/redis"]
 # `PostgresSession` / `PostgresRunStateStore`: a history in a database the deployment already has.
+# Needs Rust 1.94 (`sqlx` 0.9); every other feature builds on the declared 1.89.
 postgres = ["dep:opai-agents-sessions", "opai-agents-sessions/postgres"]
 # Trace processors that export: batched console, JSONL files and counters. Off by default.
 observability = ["dep:opai-agents-observability"]

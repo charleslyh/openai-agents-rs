@@ -84,7 +84,7 @@ CRATE_DEPS: dict[str, set[str]] = {
     # only workspace dependency is a dev one: the end-to-end test runs an agent through the facade
     # and sends to it with `ConsoleLink`.
     CONSOLE: {FACADE},
-    # `cargo agents new`: the templates are text compiled into the binary, so it needs no crate of
+    # `cargo opai new`: the templates are text compiled into the binary, so it needs no crate of
     # the workspace and cannot drift into the SDK's internals.
     "opai-agents-scaffold": set(),
 }

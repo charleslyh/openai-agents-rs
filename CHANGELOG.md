@@ -6,6 +6,16 @@ entry will be `0.1.0`.
 
 ## [Unreleased]
 
+### Changed
+
+- Minimum Rust version lowered from 1.99 to **1.89**. The floor is the dependencies' (`uuid` needs
+  1.89), not the SDK's; a new `msrv` CI job builds the published crates, tests included, with 1.89.
+  The exception is the `postgres` feature, which needs 1.94 because `sqlx` 0.9 declares it.
+  The MCP tests no longer use `AtomicUsize::try_update` (unstable before 1.95).
+- The scaffold binary is now `cargo-opai`, so the command is `cargo opai new` (it was
+  `cargo agents new`). `cargo-agents` is a different tool on crates.io; sharing its binary name would
+  make `cargo install` refuse or overwrite it. `opai-agents-scaffold` is now publishable.
+
 ### Added
 
 - Live console: `ConsoleLink` sends spans and (opt-in) the conversation of each run to the new

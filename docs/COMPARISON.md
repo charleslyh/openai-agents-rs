@@ -19,7 +19,7 @@ so check their docs before relying on a cell.
 | Guardrail verdicts | `Pass`, `Fail`, **`Transform`** (a rewrite is a result, not a refusal) | tripwire only | — | callbacks and guardrails |
 | Provider presets | a table with a capability matrix that refuses rather than degrades silently | OpenAI plus compatible endpoints | 20+ providers, feature-gated | 14+ providers, feature-gated |
 | On-demand tool loading | `CapabilityParts::deferred` | — | — | — |
-| Scaffolding | `cargo agents new`, 3 templates | — | examples, no scaffolding CLI | `cargo adk new`, 13 templates, 9 addons, 5 enterprise patterns |
+| Scaffolding | `cargo opai new`, 3 templates | — | examples, no scaffolding CLI | `cargo adk new`, 13 templates, 9 addons, 5 enterprise patterns |
 | Offline development | `AGENTS_OFFLINE=1` | `ScriptedModel` in tests | cassette record/replay | provider-dependent |
 
 ## Where this SDK is weaker, on purpose

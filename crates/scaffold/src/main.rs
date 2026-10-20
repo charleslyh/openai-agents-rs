@@ -1,12 +1,12 @@
-//! `cargo agents new` — create a project that uses the OpenAI Agents Rust SDK.
+//! `cargo opai new` — create a project that uses the OpenAI Agents Rust SDK.
 //!
 //! The templates are the same shape as the repository's examples, trimmed to one file each:
 //! `chat` (one run), `tools` (a `#[function_tool]` and a `FunctionTool::typed`) and `hitl` (a call
 //! that waits for a human). They are compiled into this binary, so it works from anywhere.
 //!
 //! ```bash
-//! cargo install opai-agents-scaffold   # installs `cargo-agents`
-//! cargo agents new my-agent --template tools
+//! cargo install opai-agents-scaffold   # installs `cargo-opai`
+//! cargo opai new my-agent --template tools
 //! cd my-agent && cargo run
 //! ```
 
@@ -58,7 +58,7 @@ fn usage() -> &'static str {
     "\
 Create a project that uses the OpenAI Agents Rust SDK.
 
-Usage: cargo agents new <name> [--template <chat|tools|hitl>] [--path <dir>] [--force]
+Usage: cargo opai new <name> [--template <chat|tools|hitl>] [--path <dir>] [--force]
 
 Arguments:
   <name>                 Directory to create; also the package name. Letters, digits, `-` and `_`,
@@ -114,7 +114,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Option<Request>,
             }
         }
     }
-    let name = name.ok_or("a project name is required: cargo agents new <name>")?;
+    let name = name.ok_or("a project name is required: cargo opai new <name>")?;
     if !is_package_name(&name) {
         return Err(format!(
             "`{name}` is not a usable package name: letters, digits, `-` and `_`, starting with a \
@@ -187,10 +187,10 @@ fn create(request: &Request) -> Result<PathBuf, String> {
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
-    // `cargo agents ...` passes `agents` as the first argument; drop it so the same binary works
+    // `cargo opai ...` passes `opai` as the first argument; drop it so the same binary works
     // when run directly.
     let args: Vec<String> = match args.get(1).map(String::as_str) {
-        Some("agents") => std::iter::once(args[0].clone())
+        Some("opai") => std::iter::once(args[0].clone())
             .chain(args.into_iter().skip(2))
             .collect(),
         _ => args,
@@ -246,7 +246,7 @@ mod tests {
     use super::*;
 
     fn args(list: &[&str]) -> Vec<String> {
-        std::iter::once("cargo-agents".to_string())
+        std::iter::once("cargo-opai".to_string())
             .chain(list.iter().map(|s| s.to_string()))
             .collect()
     }

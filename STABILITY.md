@@ -43,5 +43,10 @@ least one release before removal, and the changelog lists it under **Deprecated*
 
 ## Minimum Rust version
 
-`rust-version` is `1.99`, the version the project is built and tested with (`rust-toolchain.toml`).
-It has not been tested against older compilers; lowering it needs a verified build first.
+`rust-version` is `1.89`, checked by the `msrv` job in CI on every push: the published crates must
+compile with that compiler, tests included. The floor is set by the dependencies (`uuid` needs 1.89;
+1.88 fails to build it), not by the SDK's own code. One exception: the `postgres` feature needs
+**1.94**, because `sqlx` 0.9 declares it and Cargo refuses it on anything older; every other
+feature builds on 1.89. The project itself is developed and linted with
+`1.99` (`rust-toolchain.toml`), so a newer standard-library API can slip in; the `msrv` job is what
+catches it. Raising `rust-version` is a breaking change and goes in the changelog.

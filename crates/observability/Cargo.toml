@@ -2,7 +2,7 @@
 name = "opai-agents-observability"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.99"
+rust-version = "1.89"
 description = "Trace processors for the Rust OpenAI Agents SDK: batched export, console, JSONL files, OpenTelemetry"
 license = "MIT"
 readme = "README.md"

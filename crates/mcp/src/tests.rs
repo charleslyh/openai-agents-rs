@@ -20,6 +20,22 @@ use opai_agents_core::{
 use super::rpc::{Connector, Transport};
 use super::{McpClient, McpError, RequireApproval, ToolFilter};
 
+/// Decrement `counter` if it is above zero and say whether it was. Written as a compare-exchange
+/// loop because the std helper has two names across compilers: `fetch_update` is deprecated in
+/// 1.99 and its replacement `try_update` is unstable in 1.89, the oldest version we build with.
+pub(crate) fn take_one(counter: &AtomicUsize) -> bool {
+    let mut current = counter.load(Ordering::SeqCst);
+    loop {
+        if current == 0 {
+            return false;
+        }
+        match counter.compare_exchange(current, current - 1, Ordering::SeqCst, Ordering::SeqCst) {
+            Ok(_) => return true,
+            Err(actual) => current = actual,
+        }
+    }
+}
+
 /// A scripted server: `tools/list` pages in order, `tools/call` answers with its arguments.
 #[derive(Default)]
 struct FakeTransport {
@@ -43,12 +59,7 @@ impl Transport for FakeTransport {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push((method.to_string(), params.clone()));
-        if self.die_once.swap(false, Ordering::SeqCst)
-            || self
-                .deaths
-                .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
-                .is_ok()
-        {
+        if self.die_once.swap(false, Ordering::SeqCst) || take_one(&self.deaths) {
             return Err(McpError::Closed("gone".into()));
         }
         match method {

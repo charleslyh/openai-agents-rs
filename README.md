@@ -75,8 +75,8 @@ async fn main() -> Result<(), AgentsError> {
 ### Start a project
 
 ```bash
-cargo install opai-agents-scaffold   # installs `cargo-agents`
-cargo agents new my-agent              # templates: chat (default), tools, hitl
+cargo install opai-agents-scaffold   # installs `cargo-opai`
+cargo opai new my-agent              # templates: chat (default), tools, hitl
 cd my-agent && AGENTS_OFFLINE=1 cargo run   # no key needed; set one to talk to a model
 ```
 

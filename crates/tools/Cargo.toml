@@ -2,7 +2,7 @@
 name = "opai-agents-tools"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.99"
+rust-version = "1.89"
 description = "Ready-made tools for the Rust OpenAI Agents SDK: calculator, clock, web fetch, read-only files"
 license = "MIT"
 readme = "README.md"

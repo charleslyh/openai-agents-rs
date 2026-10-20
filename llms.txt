@@ -56,5 +56,5 @@ println!("{}", result.final_output_as_str().unwrap_or_default());
 
 ## Optional
 
-- `cargo agents new <name> --template <chat|tools|hitl>` scaffolds a project.
+- `cargo opai new <name> --template <chat|tools|hitl>` scaffolds a project.
 - `conformance/scenarios/` holds the declarative parity scenarios.

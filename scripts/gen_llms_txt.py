@@ -84,7 +84,7 @@ def index_text() -> str:
         out.append(f"- [{path}]({path}): {description}\n")
     out.append(
         "\n## Optional\n\n"
-        "- `cargo agents new <name> --template <chat|tools|hitl>` scaffolds a project.\n"
+        "- `cargo opai new <name> --template <chat|tools|hitl>` scaffolds a project.\n"
         "- `conformance/scenarios/` holds the declarative parity scenarios.\n"
     )
     return "".join(out)
