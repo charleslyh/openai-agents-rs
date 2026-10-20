@@ -4,14 +4,14 @@
 //! inside the team holds (a tool, a teammate's loop): it carries the caller's identity, so a sender
 //! can never be forged from tool arguments, and it can be cloned freely.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
-use opai_agents_core::{RunOptions, Runtime, Session};
+use opai_agents_core::{RunOptions, Runtime, Session, ToolResolution};
 use serde_json::json;
-use tokio::sync::{broadcast, watch};
+use tokio::sync::{broadcast, watch, Notify};
 use tokio::task::JoinSet;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
@@ -24,8 +24,8 @@ use crate::role::{valid_name, Role};
 use crate::taskboard::{InMemoryTaskBoard, TaskBoard};
 use crate::teammate;
 use crate::types::{
-    ClaimOutcome, MemberId, MemberInfo, MemberState, Message, MessageKind, NewTask, Task, TaskId,
-    TaskStatus, TaskUpdate,
+    ApprovalInfo, ClaimOutcome, MemberId, MemberInfo, MemberState, Message, MessageKind, NewTask,
+    Task, TaskId, TaskStatus, TaskUpdate,
 };
 
 /// Longest task title in bytes.
@@ -44,6 +44,13 @@ fn check_size(what: &'static str, len: usize, max: usize) -> Result<(), TeamErro
     }
 }
 
+/// Tool calls of one teammate that wait for the lead.
+#[derive(Default)]
+pub(crate) struct Approvals {
+    pub(crate) pending: BTreeMap<String, ApprovalInfo>,
+    pub(crate) decided: HashMap<String, ToolResolution>,
+}
+
 /// Runtime record of one teammate.
 pub(crate) struct MemberEntry {
     pub(crate) id: MemberId,
@@ -55,6 +62,11 @@ pub(crate) struct MemberEntry {
     pub(crate) unprocessed: AtomicUsize,
     pub(crate) shutdown_requested: AtomicBool,
     pub(crate) token: CancellationToken,
+    pub(crate) approvals: Mutex<Approvals>,
+    /// Wakes a teammate that waits for a decision or a shutdown request.
+    pub(crate) wake: Notify,
+    /// Set once the lead approved this teammate's plan (roles with plan approval).
+    pub(crate) plan_approved: Arc<AtomicBool>,
 }
 
 impl MemberEntry {
@@ -67,6 +79,9 @@ impl MemberEntry {
             unprocessed: AtomicUsize::new(0),
             shutdown_requested: AtomicBool::new(false),
             token,
+            approvals: Mutex::new(Approvals::default()),
+            wake: Notify::new(),
+            plan_approved: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -440,7 +455,7 @@ impl TeamHandle {
 
         let id = entry.id.clone();
         shared.mailbox.register(&id).await;
-        let agent = teammate::prepare_agent(role_def, &id, &shared.name);
+        let agent = teammate::prepare_agent(role_def, &id, &shared.name, &entry.plan_approved);
         let session = role_def.make_session(&id, &shared.team_id);
         let max_turns = role_def
             .max_turns
@@ -562,6 +577,7 @@ impl TeamHandle {
             return Ok(());
         }
         entry.shutdown_requested.store(true, Ordering::SeqCst);
+        entry.wake.notify_one();
         self.shared.transition(
             &entry,
             Some(&[
@@ -578,6 +594,64 @@ impl TeamHandle {
             "Please finish your current work and leave the team.",
         );
         self.shared.deliver(message).await
+    }
+
+    // ---- approvals ----
+
+    /// Tool calls of teammates that wait for the lead, oldest member first.
+    pub fn pending_approvals(&self) -> Vec<ApprovalInfo> {
+        lock(&self.shared.members)
+            .values()
+            .flat_map(|m| {
+                lock(&m.approvals)
+                    .pending
+                    .values()
+                    .cloned()
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
+    /// Decide a tool call that `member` waits on. Lead only.
+    ///
+    /// `call_id` comes from the approval request ([`TeamHandle::pending_approvals`]). The
+    /// teammate resumes right away: it runs the tool, tells the model why it was refused, or hands
+    /// the model an output, depending on `resolution`.
+    pub async fn resolve(
+        &self,
+        member: &MemberId,
+        call_id: &str,
+        resolution: ToolResolution,
+    ) -> Result<(), TeamError> {
+        self.require_lead("decide tool calls")?;
+        let entry = self
+            .shared
+            .member(member)
+            .ok_or_else(|| TeamError::UnknownMember(member.clone()))?;
+        {
+            let mut approvals = lock(&entry.approvals);
+            if approvals.pending.remove(call_id).is_none() {
+                return Err(TeamError::UnknownApproval {
+                    member: member.clone(),
+                    call_id: call_id.to_string(),
+                });
+            }
+            approvals.decided.insert(call_id.to_string(), resolution);
+        }
+        entry.wake.notify_one();
+        self.shared.emit(TeamEvent::ApprovalResolved {
+            member: member.clone(),
+            call_id: call_id.to_string(),
+        });
+        self.shared.notify();
+        Ok(())
+    }
+
+    /// Record that the lead approved the caller's plan (used by `submit_plan`).
+    pub(crate) fn mark_plan_approved(&self) {
+        if let Some(entry) = self.shared.member(&self.me) {
+            entry.plan_approved.store(true, Ordering::SeqCst);
+        }
     }
 
     // ---- tasks ----
@@ -901,6 +975,16 @@ impl TeamBuilder {
                     name: role.name,
                     reason: "the role is registered twice".to_string(),
                 });
+            }
+            // A typo here would leave a tool ungated, which is the unsafe way to fail.
+            for tool in role.approval_tools.iter().chain(&role.plan_tools) {
+                if !role.agent.tools.iter().any(|t| &t.name == tool) {
+                    return Err(TeamError::Invalid(format!(
+                        "role `{}` lists the tool `{tool}` for approval, but its agent has no \
+                         such tool",
+                        role.name
+                    )));
+                }
             }
             roles.insert(role.name.clone(), role);
         }

@@ -13,17 +13,17 @@
 //! by a message.
 
 use std::panic::AssertUnwindSafe;
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, PoisonError};
 
 use futures::FutureExt;
 use opai_agents_core::agent::Instructions;
-use opai_agents_core::{Agent, Runner, Session};
+use opai_agents_core::{Agent, AgentsError, NeedsResolution, RunResult, RunState, Runner, Session};
 
 use crate::events::{HookDecision, TeamEvent};
 use crate::role::Role;
 use crate::team::{MemberEntry, TeamHandle, TeamShared};
-use crate::types::{MemberId, MemberState, Message, MessageKind};
+use crate::types::{ApprovalInfo, MemberId, MemberState, Message, MessageKind};
 
 /// How many times in a row a hook may send a teammate back to work.
 const MAX_IDLE_VETOES: usize = 3;
@@ -31,12 +31,20 @@ const MAX_IDLE_VETOES: usize = 3;
 /// Longest error text sent to the lead.
 const MAX_ERROR_CHARS: usize = 500;
 
+/// Longest tool arguments shown in an approval request.
+const MAX_ARGUMENT_CHARS: usize = 500;
+
 const BEGIN: &str = "<<<MESSAGE";
 const END: &str = "MESSAGE>>>";
 
 /// The agent a teammate runs: the role's agent with a short briefing about the team in front of
 /// its own instructions.
-pub(crate) fn prepare_agent(role: &Role, member: &MemberId, team: &str) -> Agent {
+pub(crate) fn prepare_agent(
+    role: &Role,
+    member: &MemberId,
+    team: &str,
+    plan_approved: &Arc<AtomicBool>,
+) -> Agent {
     let preamble = format!(
         "You are `{member}`, a teammate in the team `{team}` (role: {role}). You work for the team \
          lead, `lead`. You wake up when you receive a message, do the work with your own tools, \
@@ -47,6 +55,24 @@ pub(crate) fn prepare_agent(role: &Role, member: &MemberId, team: &str) -> Agent
         role = role.name,
     );
     let mut agent = role.agent.clone();
+    for tool in &mut agent.tools {
+        if role.approval_tools.contains(&tool.name) {
+            tool.needs_resolution = NeedsResolution::Fixed(true);
+        }
+        if role.plan_tools.contains(&tool.name) {
+            // Gated until the lead approves a plan; `submit_plan` flips the flag.
+            let approved = Arc::clone(plan_approved);
+            tool.needs_resolution = NeedsResolution::dynamic(move |_params, _call_id| {
+                let approved = Arc::clone(&approved);
+                async move { !approved.load(Ordering::SeqCst) }
+            });
+        }
+    }
+    if !role.plan_tools.is_empty() {
+        agent
+            .tools
+            .push(crate::tools::submit_plan_tool(&role.plan_tools));
+    }
     for tool in crate::tools::teammate_tools() {
         // A role's own tool of the same name wins.
         if !agent.tools.iter().any(|t| t.name == tool.name) {
@@ -121,6 +147,103 @@ fn truncate_chars(text: &str, max: usize) -> String {
     let mut out: String = text.chars().take(max).collect();
     out.push('…');
     out
+}
+
+/// What became of the tool calls a run paused on.
+enum Decisions {
+    /// Every call was decided; resume with this state.
+    Resolved(Box<RunState>),
+    /// The team was cancelled while waiting.
+    Cancelled,
+    /// The lead asked the member to leave while it waited.
+    Shutdown,
+}
+
+/// Ask the lead about every paused call of `run` and wait for the answers.
+///
+/// The member is `Blocked` meanwhile and costs nothing. Each call becomes an approval request in
+/// the lead's mailbox; the answers come through `TeamHandle::resolve`.
+async fn await_decisions(
+    shared: &Arc<TeamShared>,
+    entry: &Arc<MemberEntry>,
+    run: &RunResult,
+) -> Result<Decisions, AgentsError> {
+    let mut state = run.to_state()?;
+    let id = &entry.id;
+
+    {
+        let mut approvals = entry
+            .approvals
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        for item in &run.interruptions {
+            approvals.pending.insert(
+                item.call_id.clone(),
+                ApprovalInfo {
+                    member: id.clone(),
+                    call_id: item.call_id.clone(),
+                    tool: item.tool_name.clone(),
+                    arguments: truncate_chars(&item.arguments, MAX_ARGUMENT_CHARS),
+                },
+            );
+        }
+    }
+    shared.transition(entry, Some(&[MemberState::Working]), MemberState::Blocked);
+
+    for item in &run.interruptions {
+        tracing::debug!(member = %id, tool = %item.tool_name, "tool call waits for the lead");
+        shared.emit(TeamEvent::ApprovalRequested {
+            member: id.clone(),
+            call_id: item.call_id.clone(),
+            tool: item.tool_name.clone(),
+        });
+        shared
+            .alert_lead(
+                id,
+                MessageKind::ApprovalRequest,
+                format!(
+                    "`{id}` wants to call `{}` with arguments {} and waits for your decision \
+                     (call_id: {}). Answer with team_resolve.",
+                    item.tool_name,
+                    truncate_chars(&item.arguments, MAX_ARGUMENT_CHARS),
+                    item.call_id
+                ),
+            )
+            .await;
+    }
+
+    loop {
+        {
+            let mut approvals = entry
+                .approvals
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            if run
+                .interruptions
+                .iter()
+                .all(|item| approvals.decided.contains_key(&item.call_id))
+            {
+                for item in &run.interruptions {
+                    if let Some(resolution) = approvals.decided.remove(&item.call_id) {
+                        state.resolve(item, resolution);
+                    }
+                }
+                drop(approvals);
+                shared.transition(entry, Some(&[MemberState::Blocked]), MemberState::Working);
+                return Ok(Decisions::Resolved(Box::new(state)));
+            }
+            if entry.shutdown_requested.load(Ordering::SeqCst) {
+                approvals.pending.clear();
+                approvals.decided.clear();
+                return Ok(Decisions::Shutdown);
+            }
+        }
+        tokio::select! {
+            biased;
+            _ = entry.token.cancelled() => return Ok(Decisions::Cancelled),
+            _ = entry.wake.notified() => {}
+        }
+    }
 }
 
 /// Text of a run's final output.
@@ -258,34 +381,53 @@ async fn work_on(
             return false;
         }
 
-        let options = shared.run_options(
-            handle.clone(),
-            Some(&entry.role),
-            Some(Arc::clone(session)),
-            Some(max_turns),
-        );
-        let result = tokio::select! {
+        let make_options = || {
+            shared.run_options(
+                handle.clone(),
+                Some(&entry.role),
+                Some(Arc::clone(session)),
+                Some(max_turns),
+            )
+        };
+        let mut result = tokio::select! {
             biased;
             _ = entry.token.cancelled() => return true,
-            result = Runner::run(agent, input.clone(), options) => result,
+            result = Runner::run(agent, input.clone(), make_options()) => result,
         };
 
-        let summary = match result {
-            Ok(run) => {
+        // A run that paused on tool calls waits for the lead, then continues where it stopped.
+        let summary = loop {
+            let run = match result {
+                Ok(run) => run,
+                Err(error) => {
+                    tracing::warn!(member = %id, "run failed");
+                    let text = truncate_chars(&error.to_string(), MAX_ERROR_CHARS);
+                    shared
+                        .alert_lead(
+                            id,
+                            MessageKind::Alert,
+                            format!("The run of `{id}` failed: {text}"),
+                        )
+                        .await;
+                    return false;
+                }
+            };
+            if !run.is_interrupted() {
+                // The usage of a resumed run already includes what came before the pause.
                 shared.meter.add_tokens(run.usage.total_tokens);
-                output_text(&run.final_output)
+                break output_text(&run.final_output);
             }
-            Err(error) => {
-                tracing::warn!(member = %id, "run failed");
-                let text = truncate_chars(&error.to_string(), MAX_ERROR_CHARS);
-                shared
-                    .alert_lead(
-                        id,
-                        MessageKind::Alert,
-                        format!("The run of `{id}` failed: {text}"),
-                    )
-                    .await;
-                return false;
+            match await_decisions(shared, entry, &run).await {
+                Ok(Decisions::Resolved(state)) => {
+                    result = tokio::select! {
+                        biased;
+                        _ = entry.token.cancelled() => return true,
+                        result = Runner::run_state(agent, *state, make_options()) => result,
+                    };
+                }
+                Ok(Decisions::Cancelled) => return true,
+                Ok(Decisions::Shutdown) => return false,
+                Err(error) => result = Err(error),
             }
         };
 

@@ -22,6 +22,8 @@ pub struct Role {
     pub(crate) agent: Agent,
     pub(crate) max_turns: Option<usize>,
     pub(crate) session_factory: Option<SessionFactory>,
+    pub(crate) approval_tools: Vec<String>,
+    pub(crate) plan_tools: Vec<String>,
 }
 
 impl Role {
@@ -34,7 +36,37 @@ impl Role {
             agent,
             max_turns: None,
             session_factory: None,
+            approval_tools: Vec::new(),
+            plan_tools: Vec::new(),
         }
+    }
+
+    /// Every call of these tools of the role's agent waits for the lead's decision.
+    ///
+    /// The names must be tools of the role's agent; `TeamBuilder::build` checks that.
+    #[must_use]
+    pub fn require_approval_for(
+        mut self,
+        tools: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.approval_tools
+            .extend(tools.into_iter().map(Into::into));
+        self
+    }
+
+    /// Plan approval: a teammate of this role may call `write_tools` freely only after the lead
+    /// has approved a plan it submitted with the `submit_plan` tool (which is added to the role).
+    /// Until then every call of them waits for the lead's decision.
+    ///
+    /// The names must be tools of the role's agent; `TeamBuilder::build` checks that.
+    #[must_use]
+    pub fn require_plan_approval(
+        mut self,
+        write_tools: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.plan_tools
+            .extend(write_tools.into_iter().map(Into::into));
+        self
     }
 
     /// What this role is good for; shown to the lead.
@@ -80,6 +112,8 @@ impl std::fmt::Debug for Role {
             .field("name", &self.name)
             .field("description", &self.description)
             .field("max_turns", &self.max_turns)
+            .field("approval_tools", &self.approval_tools)
+            .field("plan_tools", &self.plan_tools)
             .finish()
     }
 }

@@ -262,3 +262,16 @@ pub struct MemberInfo {
     /// Messages delivered but not yet fully handled.
     pub unprocessed: usize,
 }
+
+/// A tool call of a teammate that waits for the lead's decision.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApprovalInfo {
+    /// The teammate that wants to call the tool.
+    pub member: MemberId,
+    /// Id of the tool call; pass it back to `TeamHandle::resolve`.
+    pub call_id: String,
+    /// The tool.
+    pub tool: String,
+    /// The arguments, cut to a readable length.
+    pub arguments: String,
+}

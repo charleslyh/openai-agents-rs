@@ -10,7 +10,9 @@
 
 use std::time::Duration;
 
-use opai_agents_core::{AgentsError, FunctionTool, ToolContext, DEFAULT_TOOL_ERROR_MESSAGE};
+use opai_agents_core::{
+    AgentsError, FunctionTool, ToolContext, ToolResolution, DEFAULT_TOOL_ERROR_MESSAGE,
+};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -103,6 +105,36 @@ struct DismissArgs {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct NoArgs {}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct PlanArgs {
+    /// Your plan: what you will change and why, in a few sentences.
+    // The lead reads it from the approval request; the tool body only needs to know it ran.
+    #[allow(dead_code)]
+    plan: String,
+}
+
+/// The lead's decision on a waiting tool call.
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum DecisionArg {
+    /// Let the call run.
+    Approve,
+    /// Refuse the call; the teammate is told why.
+    Reject,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ResolveArgs {
+    /// The teammate that is waiting.
+    member: String,
+    /// The `call_id` from the approval request.
+    call_id: String,
+    /// `approve` or `reject`.
+    decision: DecisionArg,
+    /// Why, or what to do instead. Sent to the teammate with a rejection. Null for none.
+    message: Option<String>,
+}
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct TaskCreateArgs {
@@ -250,6 +282,60 @@ fn dismiss_tool() -> FunctionTool {
     .team_tool()
 }
 
+fn resolve_tool() -> FunctionTool {
+    FunctionTool::typed(
+        "team_resolve",
+        "Decide a tool call or plan that a teammate is waiting on. Requests arrive as messages of \
+         kind `approval_request`. Approve only what you would do yourself; the arguments in the \
+         request are what the teammate will run.",
+        |ctx, args: ResolveArgs| {
+            let team = handle(&ctx);
+            async move {
+                let resolution = match args.decision {
+                    DecisionArg::Approve => ToolResolution::Run,
+                    DecisionArg::Reject => ToolResolution::reject(
+                        args.message
+                            .unwrap_or_else(|| "The lead rejected this call.".to_string()),
+                    ),
+                };
+                team?
+                    .resolve(&MemberId::new(args.member), &args.call_id, resolution)
+                    .await
+                    .map_err(team_err)?;
+                Ok(json!({ "resolved": true }))
+            }
+        },
+    )
+    .team_tool()
+}
+
+/// `submit_plan`, added to roles with plan approval. The call itself waits for the lead; when the
+/// lead approves it, the teammate's gated tools are released.
+pub(crate) fn submit_plan_tool(gated: &[String]) -> FunctionTool {
+    let list = gated
+        .iter()
+        .map(|name| format!("`{name}`"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    FunctionTool::typed(
+        "submit_plan",
+        format!(
+            "Submit your plan to the lead before you make changes. Until the lead approves it, \
+             every call of {list} waits for the lead's decision."
+        ),
+        |ctx, _args: PlanArgs| {
+            let team = handle(&ctx);
+            async move {
+                // Runs only after the lead approved the call.
+                team?.mark_plan_approved();
+                Ok(json!({ "approved": true }))
+            }
+        },
+    )
+    .with_needs_resolution(true)
+    .team_tool()
+}
+
 fn status_tool() -> FunctionTool {
     FunctionTool::typed(
         "team_status",
@@ -259,7 +345,11 @@ fn status_tool() -> FunctionTool {
             async move {
                 let team = team?;
                 let tasks = team.list_tasks().await.map_err(team_err)?;
-                Ok(json!({ "members": team.members(), "tasks": tasks }))
+                Ok(json!({
+                    "members": team.members(),
+                    "tasks": tasks,
+                    "waiting_for_your_decision": team.pending_approvals(),
+                }))
             }
         },
     )
@@ -347,6 +437,7 @@ pub(crate) fn lead_tools(roles: &[(String, String)]) -> Vec<FunctionTool> {
         broadcast_tool(),
         wait_tool(),
         dismiss_tool(),
+        resolve_tool(),
         status_tool(),
         task_create_tool(),
     ]
@@ -366,7 +457,7 @@ pub(crate) fn teammate_tools() -> Vec<FunctionTool> {
 
 impl Team {
     /// The tools for the lead's agent: `team_spawn`, `team_send`, `team_broadcast`, `team_wait`,
-    /// `team_shutdown`, `team_status` and `task_create`.
+    /// `team_shutdown`, `team_resolve`, `team_status` and `task_create`.
     ///
     /// Run the lead with [`Team::lead_options`] so the tools can find the team.
     pub fn tools(&self) -> Vec<FunctionTool> {
