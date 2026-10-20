@@ -161,18 +161,22 @@ path = "src/29_tracing.rs"
 name = "trace_export"
 path = "src/30_trace_export.rs"
 
+[[example]]
+name = "console"
+path = "src/31_console.rs"
+
 # Run control
 [[example]]
 name = "cancel"
-path = "src/31_cancel.rs"
+path = "src/32_cancel.rs"
 
 [[example]]
 name = "settings"
-path = "src/32_settings.rs"
+path = "src/33_settings.rs"
 
 [[example]]
 name = "reasoning"
-path = "src/33_reasoning.rs"
+path = "src/34_reasoning.rs"
 
 # The sources are user-facing code, so they live at the repository root rather than inside
 # `crates/facade`. They depend on the facade the way a user's project would.

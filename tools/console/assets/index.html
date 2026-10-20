@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent console</title>
+<style nonce="__NONCE__">
+  :root {
+    --bg: #0f1115; --panel: #151821; --panel2: #1b1f2a; --line: #262b38;
+    --text: #e6e8ee; --muted: #8a92a6; --accent: #7c8cff;
+    --ok: #4cc38a; --err: #f06c6c; --warn: #e5a24c;
+    --k-task: #7c8cff; --k-agent: #4ec9b0; --k-turn: #8a92a6; --k-generation: #c586c0;
+    --k-response: #c586c0; --k-function: #e5a24c; --k-handoff: #4aa3ff; --k-guardrail: #f06c6c;
+    --k-custom: #9aa5b1;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text); display: flex; flex-direction: column;
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+    border-bottom: 1px solid var(--line); background: var(--panel);
+  }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .2px; }
+  .live { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; margin-left: auto; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; flex: none; }
+  .dot.on, .dot.done { background: var(--ok); }
+  .dot.error { background: var(--err); }
+  .dot.running { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  main { flex: 1; display: grid; grid-template-columns: 300px 1fr; min-height: 0; }
+  aside { border-right: 1px solid var(--line); overflow-y: auto; background: var(--panel); }
+  .run {
+    padding: 10px 14px; border-bottom: 1px solid var(--line); cursor: pointer;
+  }
+  .run:hover { background: var(--panel2); }
+  .run.sel { background: var(--panel2); box-shadow: inset 3px 0 0 var(--accent); }
+  .run .top { display: flex; align-items: center; gap: 8px; }
+  .run .id { font-family: var(--mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .run .preview { color: var(--muted); font-size: 12px; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .run .meta { color: var(--muted); font-size: 11px; margin-top: 3px; display: flex; gap: 10px; }
+  .run .meta .bad { color: var(--err); }
+  section.pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .empty { margin: auto; text-align: center; color: var(--muted); max-width: 420px; padding: 24px; }
+  .empty code { font-family: var(--mono); background: var(--panel2); padding: 2px 6px; border-radius: 4px; color: var(--text); }
+  .summary { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+  .summary .title { font-family: var(--mono); font-size: 13px; }
+  .chip { font-size: 12px; color: var(--muted); }
+  .chip b { color: var(--text); font-weight: 600; }
+  .wf { border-bottom: 1px solid var(--line); max-height: 38vh; overflow-y: auto; background: var(--panel); }
+  .wf-row { display: grid; grid-template-columns: 260px 1fr; align-items: center; height: 24px; cursor: pointer; }
+  .wf-row:hover, .wf-row.sel { background: var(--panel2); }
+  .wf-label { display: flex; align-items: center; gap: 6px; padding-right: 8px; overflow: hidden; white-space: nowrap; font-size: 12px; }
+  .badge { font-size: 10px; text-transform: uppercase; letter-spacing: .4px; padding: 1px 5px; border-radius: 3px; color: #0f1115; flex: none; }
+  .wf-name { overflow: hidden; text-overflow: ellipsis; }
+  .wf-track { position: relative; height: 100%; margin-right: 64px; }
+  .wf-bar { position: absolute; top: 5px; height: 14px; border-radius: 3px; min-width: 3px; }
+  .wf-bar.open { background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.25) 0 6px, transparent 6px 12px); }
+  .wf-bar.err { outline: 2px solid var(--err); }
+  .wf-dur { position: absolute; top: 4px; font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .wf-detail { padding: 8px 16px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); }
+  .wf-detail b { color: var(--text); }
+  .wf-detail .e { color: var(--err); }
+  .conv { flex: 1; overflow-y: auto; padding: 14px 16px 40px; display: flex; flex-direction: column; gap: 10px; }
+  .marker { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 8px; }
+  .marker::before, .marker::after { content: ""; height: 1px; background: var(--line); flex: 1; }
+  .marker.click { cursor: pointer; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; cursor: pointer; }
+  .card.hit { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .card-h { display: flex; gap: 8px; align-items: baseline; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .card-h .what { color: var(--text); font-weight: 600; }
+  .card-h .t { margin-left: auto; font-family: var(--mono); font-size: 11px; }
+  details > summary { cursor: pointer; color: var(--muted); font-size: 12px; list-style: none; }
+  details > summary::-webkit-details-marker { display: none; }
+  details > summary::before { content: "+ "; color: var(--accent); }
+  details[open] > summary::before { content: "- "; }
+  .bubble { border-radius: 8px; padding: 8px 10px; margin-top: 6px; background: var(--panel2); border: 1px solid var(--line); }
+  .bubble .role { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin-bottom: 3px; }
+  .bubble .body { white-space: pre-wrap; word-break: break-word; }
+  .bubble.user { border-left: 3px solid var(--accent); }
+  .bubble.assistant { border-left: 3px solid var(--ok); }
+  .bubble.system, .bubble.developer { border-left: 3px solid var(--warn); }
+  .bubble.reasoning { border-left: 3px solid var(--k-generation); color: var(--muted); font-style: italic; }
+  .bubble.tool { border-left: 3px solid var(--k-function); }
+  pre.json { margin: 4px 0 0; padding: 8px 10px; background: #0b0d12; border: 1px solid var(--line); border-radius: 6px; overflow-x: auto; font: 12px/1.45 var(--mono); white-space: pre-wrap; word-break: break-word; }
+  .usage { font-size: 11px; color: var(--muted); margin-top: 6px; }
+  .note { color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Agent console</h1>
+  <span class="chip" id="count"></span>
+  <span class="live"><span class="dot" id="live-dot"></span><span id="live-text">connecting</span></span>
+</header>
+<main>
+  <aside id="runs"></aside>
+  <section class="pane" id="pane"></section>
+</main>
+<script nonce="__NONCE__">
+(() => {
+  "use strict";
+
+  // Everything that comes from a run is put on the page as text, never as markup.
+  function el(tag, cls, ...kids) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    for (const k of kids) {
+      if (k === null || k === undefined || k === false) continue;
+      e.append(typeof k === "object" ? k : document.createTextNode(String(k)));
+    }
+    return e;
+  }
+
+  const state = {
+    runs: new Map(), selected: null, items: [], maxSeq: -1,
+    span: null, follow: true, rendered: 0, t0: 0,
+  };
+  const KIND_VAR = { task: "--k-task", agent: "--k-agent", turn: "--k-turn", generation: "--k-generation",
+    response: "--k-response", function: "--k-function", handoff: "--k-handoff", guardrail: "--k-guardrail" };
+  const kindColor = (k) => `var(${KIND_VAR[k] || "--k-custom"})`;
+
+  async function getJSON(url) {
+    const r = await fetch(url, { cache: "no-store" });
+    if (!r.ok) throw new Error(url + " " + r.status);
+    return r.json();
+  }
+
+  const fmtDur = (s) => s < 1 ? Math.round(s * 1000) + " ms" : s < 100 ? s.toFixed(2) + " s" : Math.round(s) + " s";
+  const fmtAgo = (t) => {
+    const d = Date.now() / 1000 - t;
+    return d < 5 ? "just now" : d < 90 ? Math.round(d) + "s ago" : d < 5400 ? Math.round(d / 60) + "m ago" : Math.round(d / 3600) + "h ago";
+  };
+  const fmtTok = (n) => n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n);
+
+  // ---- data ----
+
+  function buildSpans(items) {
+    const spans = new Map();
+    for (const it of items) {
+      if (it.kind !== "span_start" && it.kind !== "span_end") continue;
+      let s = spans.get(it.span_id);
+      if (!s) {
+        s = { id: it.span_id, parent: it.parent_id || null, kind: it.span_kind, name: it.name,
+          start: it.started_at, end: null, error: null, usage: null, turn: it.turn };
+        spans.set(s.id, s);
+      }
+      if (it.kind === "span_end") {
+        s.end = it.ended_at; s.error = it.error || null; s.usage = it.usage || null;
+        if (it.name) s.name = it.name;
+        if (it.started_at) s.start = it.started_at;
+      }
+    }
+    return spans;
+  }
+
+  function spanRows(spans) {
+    const kids = new Map();
+    const roots = [];
+    for (const s of spans.values()) {
+      if (s.parent && spans.has(s.parent)) {
+        if (!kids.has(s.parent)) kids.set(s.parent, []);
+        kids.get(s.parent).push(s);
+      } else roots.push(s);
+    }
+    const byStart = (a, b) => (a.start || 0) - (b.start || 0);
+    const rows = [];
+    const walk = (s, depth) => {
+      rows.push({ s, depth });
+      (kids.get(s.id) || []).sort(byStart).forEach((c) => walk(c, depth + 1));
+    };
+    roots.sort(byStart).forEach((r) => walk(r, 0));
+    return rows;
+  }
+
+  const isConversation = (it) => !/^(span|trace)_/.test(it.kind);
+
+  // ---- run list ----
+
+  function agoSpan(t) {
+    const s = el("span", "ago", fmtAgo(t));
+    s.dataset.t = t;
+    return s;
+  }
+
+  function renderRuns() {
+    const box = document.getElementById("runs");
+    const runs = [...state.runs.values()].sort((a, b) => b.last_at - a.last_at);
+    document.getElementById("count").textContent = runs.length + (runs.length === 1 ? " run" : " runs");
+    box.replaceChildren(...runs.map((r) => {
+      const row = el("div", "run" + (r.id === state.selected ? " sel" : ""),
+        el("div", "top", el("span", "dot " + r.status), el("span", "id", r.id)),
+        r.preview ? el("div", "preview", r.preview) : null,
+        el("div", "meta", el("span", null, r.turns + " turns"),
+          el("span", null, fmtTok(r.input_tokens + r.output_tokens) + " tokens"),
+          r.errors ? el("span", "bad", r.errors + " errors") : null, agoSpan(r.last_at)));
+      row.addEventListener("click", () => select(r.id));
+      return row;
+    }));
+    if (!runs.length) {
+      box.replaceChildren(el("div", "note", el("div", "run", "No runs yet.")));
+    }
+  }
+
+  // ---- main pane ----
+
+  function renderPane() {
+    const pane = document.getElementById("pane");
+    const run = state.runs.get(state.selected);
+    if (!run) {
+      pane.replaceChildren(el("div", "empty",
+        el("p", null, state.runs.size ? "Pick a run on the left." : "Waiting for runs."),
+        el("p", null, "Point the application at this console with ",
+          el("code", null, "ConsoleLink::start(LinkConfig::new(\"127.0.0.1:7077\"), &hub)"), ".")));
+      return;
+    }
+    pane.replaceChildren(
+      el("div", "summary", el("span", "dot " + run.status), el("span", "title", run.id),
+        el("span", "chip", "status ", el("b", null, run.status)),
+        el("span", "chip", "turns ", el("b", null, run.turns)),
+        el("span", "chip", "tokens ", el("b", null, run.input_tokens + " in / " + run.output_tokens + " out")),
+        run.errors ? el("span", "chip", "errors ", el("b", null, run.errors)) : null,
+        run.dropped ? el("span", "chip", "not stored ", el("b", null, run.dropped)) : null),
+      el("div", "wf", el("div", null), el("div", "wf-detail")),
+      el("div", "conv"));
+    pane.querySelector(".wf").id = "wf";
+    pane.querySelector(".conv").id = "conv";
+    pane.querySelector(".conv").addEventListener("scroll", (e) => {
+      const c = e.target;
+      state.follow = c.scrollHeight - c.scrollTop - c.clientHeight < 40;
+    });
+    state.rendered = 0;
+    renderWaterfall();
+    appendConversation();
+  }
+
+  function renderSummary() {
+    const run = state.runs.get(state.selected);
+    const bar = document.querySelector(".summary");
+    if (!run || !bar) return;
+    const fresh = el("div", "summary", el("span", "dot " + run.status), el("span", "title", run.id),
+      el("span", "chip", "status ", el("b", null, run.status)),
+      el("span", "chip", "turns ", el("b", null, run.turns)),
+      el("span", "chip", "tokens ", el("b", null, run.input_tokens + " in / " + run.output_tokens + " out")),
+      run.errors ? el("span", "chip", "errors ", el("b", null, run.errors)) : null,
+      run.dropped ? el("span", "chip", "not stored ", el("b", null, run.dropped)) : null);
+    bar.replaceWith(fresh);
+  }
+
+  function renderWaterfall() {
+    const wf = document.getElementById("wf");
+    if (!wf) return;
+    const run = state.runs.get(state.selected);
+    const spans = buildSpans(state.items);
+    const rows = spanRows(spans);
+    const detail = el("div", "wf-detail");
+    if (!rows.length) {
+      wf.replaceChildren(el("div", "wf-detail", "No spans for this run. Install the link's processor with set_trace_processors."), detail);
+      return;
+    }
+    const now = Date.now() / 1000;
+    const live = run && run.status === "running";
+    let lo = Infinity, hi = -Infinity;
+    for (const { s } of rows) {
+      lo = Math.min(lo, s.start || lo);
+      hi = Math.max(hi, s.end || (live ? now : s.start || hi));
+    }
+    const span = Math.max(hi - lo, 0.001);
+    const list = el("div");
+    for (const { s, depth } of rows) {
+      const end = s.end || (live ? now : s.start);
+      const left = ((s.start - lo) / span) * 100;
+      const width = Math.max(((end - s.start) / span) * 100, 0.3);
+      const bar = el("div", "wf-bar" + (s.end ? "" : " open") + (s.error ? " err" : ""));
+      bar.style.left = left + "%";
+      bar.style.width = width + "%";
+      bar.style.background = kindColor(s.kind);
+      const dur = el("div", "wf-dur", fmtDur(end - s.start));
+      dur.style.left = (left + width) + "%";
+      dur.style.paddingLeft = "6px";
+      const badge = el("span", "badge", s.kind);
+      badge.style.background = kindColor(s.kind);
+      const label = el("div", "wf-label", badge, el("span", "wf-name", s.name || ""));
+      label.style.paddingLeft = (6 + depth * 14) + "px";
+      const row = el("div", "wf-row" + (s.id === state.span ? " sel" : ""), label, el("div", "wf-track", bar, dur));
+      row.addEventListener("click", () => { state.span = state.span === s.id ? null : s.id; renderWaterfall(); highlight(); });
+      list.append(row);
+    }
+    const chosen = state.span && spans.get(state.span);
+    if (chosen) {
+      const took = (chosen.end || now) - chosen.start;
+      detail.append(el("b", null, chosen.kind + " " + (chosen.name || "")), "  " + fmtDur(took),
+        chosen.usage ? "  tokens " + (chosen.usage.input_tokens ?? 0) + " in / " + (chosen.usage.output_tokens ?? 0) + " out" : "",
+        "  id " + chosen.id, chosen.error ? el("span", "e", "  error: " + chosen.error.message) : null);
+    } else {
+      detail.append("Click a span to highlight what was said during it.");
+    }
+    wf.replaceChildren(list, detail);
+  }
+
+  // ---- conversation ----
+
+  const textOf = (c) => {
+    if (typeof c === "string") return c;
+    if (Array.isArray(c)) return c.map((p) => typeof p === "string" ? p : (p.text ?? p.output ?? p.refusal ?? JSON.stringify(p))).join("\n");
+    return c === null || c === undefined ? "" : JSON.stringify(c, null, 2);
+  };
+  const json = (v) => el("pre", "json", typeof v === "string" ? v : JSON.stringify(v, null, 2));
+  const bubble = (role, text) => el("div", "bubble " + role, el("div", "role", role), el("div", "body", text));
+  const parseArgs = (a) => { if (typeof a !== "string") return a; try { return JSON.parse(a); } catch { return a; } };
+
+  function renderItem(it) {
+    const type = it.type || (it.role ? "message" : "unknown");
+    if (type === "message") return bubble(it.role || "assistant", textOf(it.content));
+    if (type === "function_call") {
+      return el("div", "bubble tool", el("div", "role", "tool call  " + (it.name || "")), json(parseArgs(it.arguments)));
+    }
+    if (type === "function_call_output") {
+      return el("div", "bubble tool", el("div", "role", "tool result"), json(typeof it.output === "string" ? parseArgs(it.output) : it.output));
+    }
+    if (type === "reasoning") {
+      return bubble("reasoning", (it.summary || []).map((s) => s.text).join("\n") || "(reasoning)");
+    }
+    return json(it);
+  }
+
+  const rel = (at) => "+" + (at - state.t0).toFixed(2) + "s";
+
+  function card(it, what, ...body) {
+    const c = el("div", "card", el("div", "card-h", el("span", "what", what), it.agent, el("span", "t", rel(it.at))), ...body);
+    c.dataset.at = it.at;
+    c.addEventListener("click", () => {
+      state.span = it.span_id && state.span !== it.span_id ? it.span_id : null;
+      renderWaterfall(); highlight();
+    });
+    return c;
+  }
+
+  function renderEvent(it) {
+    const d = it.data || {};
+    switch (it.kind) {
+      case "agent_start": return el("div", "marker", it.agent + " started  " + rel(it.at));
+      case "handoff": return el("div", "marker", d.from + " handed off to " + d.to + "  " + rel(it.at));
+      case "agent_end": {
+        const end = el("div", "marker", it.agent + " finished  " + rel(it.at));
+        if (d.output === undefined) return end;
+        const wrap = el("div", null, end, bubble("assistant", textOf(d.output)));
+        return wrap;
+      }
+      case "llm_start": {
+        if (!d.input) return card(it, "Model request", el("div", "note", d.input_items + " input items (content not recorded)"));
+        const inner = el("div");
+        if (d.system_prompt) inner.append(bubble("system", d.system_prompt));
+        d.input.forEach((i) => inner.append(renderItem(i)));
+        const last = d.input[d.input.length - 1];
+        const hint = last ? textOf(last.content ?? last.output ?? last.arguments ?? "").replace(/\s+/g, " ").slice(0, 90) : "";
+        return card(it, "Model request",
+          el("details", null, el("summary", null, d.input.length + " items" + (hint ? "  -  " + hint : "")), inner));
+      }
+      case "llm_end": {
+        const u = d.usage || {};
+        const usage = el("div", "usage", "tokens " + (u.input_tokens ?? 0) + " in / " + (u.output_tokens ?? 0) + " out");
+        if (!d.output) return card(it, "Model reply", el("div", "note", d.output_items + " output items (content not recorded)"), usage);
+        return card(it, "Model reply", ...d.output.map(renderItem), usage);
+      }
+      case "tool_start":
+        return card(it, "Tool call  " + d.tool, d.arguments === undefined ? el("div", "note", "arguments not recorded") : json(d.arguments));
+      case "tool_end":
+        return card(it, "Tool result  " + d.tool, d.result === undefined ? el("div", "note", "result not recorded") : json(d.result));
+      default:
+        return card(it, it.kind, json(d));
+    }
+  }
+
+  function appendConversation() {
+    const conv = document.getElementById("conv");
+    if (!conv) return;
+    const fresh = state.items.slice(state.rendered);
+    state.rendered = state.items.length;
+    for (const it of fresh) {
+      if (!isConversation(it)) continue;
+      const placeholder = conv.querySelector(".placeholder");
+      if (placeholder) placeholder.remove();
+      conv.append(renderEvent(it));
+    }
+    if (!conv.children.length) {
+      conv.append(el("div", "note placeholder",
+        "No conversation recorded for this run. Attach a recorder with RunOptions::hooks(hub.recorder(run_id))."));
+    }
+    highlight();
+    if (state.follow) conv.scrollTop = conv.scrollHeight;
+  }
+
+  function highlight() {
+    const conv = document.getElementById("conv");
+    if (!conv) return;
+    const s = state.span && buildSpans(state.items).get(state.span);
+    const now = Date.now() / 1000;
+    for (const c of conv.querySelectorAll(".card")) {
+      const at = Number(c.dataset.at);
+      c.classList.toggle("hit", !!s && at >= s.start && at <= (s.end || now));
+    }
+  }
+
+  // ---- wiring ----
+
+  async function select(id) {
+    state.selected = id; state.span = null; state.follow = true;
+    state.items = []; state.maxSeq = -1; state.rendered = 0;
+    try {
+      const view = await getJSON("/api/runs/" + encodeURIComponent(id));
+      state.runs.set(id, view.run);
+      state.items = view.items;
+      state.maxSeq = view.items.reduce((m, i) => Math.max(m, i.seq), -1);
+      const first = view.items.find(isConversation) || view.items[0];
+      state.t0 = first ? (first.at || first.started_at || 0) : 0;
+    } catch (e) {
+      state.items = []; state.maxSeq = -1;
+    }
+    renderRuns(); renderPane();
+  }
+
+  async function loadRuns() {
+    try {
+      const { runs } = await getJSON("/api/runs");
+      state.runs = new Map(runs.map((r) => [r.id, r]));
+      if (state.selected && !state.runs.has(state.selected)) state.selected = null;
+      if (!state.selected && runs.length) { await select(runs[0].id); return; }
+      renderRuns();
+      if (state.selected) { renderSummary(); }
+    } catch (e) { /* the console is restarting; the stream reconnects */ }
+  }
+
+  let dirty = false;
+  function schedule() {
+    if (dirty) return;
+    dirty = true;
+    requestAnimationFrame(() => { dirty = false; renderRuns(); renderSummary(); renderWaterfall(); appendConversation(); });
+  }
+
+  function onMessage(msg) {
+    state.runs.set(msg.run.id, msg.run);
+    if (!state.selected) { select(msg.run.id); return; }
+    if (msg.run.id === state.selected && msg.item.seq > state.maxSeq) {
+      state.maxSeq = msg.item.seq;
+      state.items.push(msg.item);
+      if (!state.t0 && isConversation(msg.item)) state.t0 = msg.item.at;
+    }
+    schedule();
+  }
+
+  function setLive(on) {
+    document.getElementById("live-dot").className = "dot" + (on ? " on" : "");
+    document.getElementById("live-text").textContent = on ? "live" : "reconnecting";
+  }
+
+  function connect() {
+    const es = new EventSource("/api/stream");
+    es.onopen = () => { setLive(true); loadRuns(); if (state.selected) select(state.selected); };
+    es.onerror = () => setLive(false);
+    es.onmessage = (e) => { try { onMessage(JSON.parse(e.data)); } catch (_) { /* ignore a bad frame */ } };
+    es.addEventListener("lagged", () => { loadRuns(); if (state.selected) select(state.selected); });
+  }
+
+  // Refresh the clock in place: rebuilding the list every second would swallow clicks.
+  setInterval(() => {
+    const run = state.runs.get(state.selected);
+    if (run && run.status === "running") renderWaterfall();
+    for (const s of document.querySelectorAll(".ago")) s.textContent = fmtAgo(Number(s.dataset.t));
+  }, 1000);
+
+  renderRuns();
+  renderPane();
+  connect();
+})();
+</script>
+</body>
+</html>

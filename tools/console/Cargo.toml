@@ -1,0 +1,31 @@
+[package]
+name = "opai-agents-console"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "A live console for agent runs: takes spans and conversation as JSON over HTTP and draws them in a browser"
+
+# Inherits the lint config (including the tracked clippy backlog) from `[workspace.lints]`.
+[lints]
+workspace = true
+
+[[bin]]
+name = "opai-console"
+path = "src/main.rs"
+
+# The console knows nothing of the SDK: it reads JSON. Any process in any language can feed it.
+[dependencies]
+# Routing plus SSE. The default feature set is enough (no WebSocket, no multipart, no macros).
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio"] }
+# `stream::unfold` turns a broadcast receiver into the SSE body.
+futures = "0.3"
+serde_json = { version = "1", features = ["preserve_order"] }
+# `net` for the listener, `signal` for graceful shutdown, `time` for SSE keep-alive.
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+# A fresh nonce for the page's content security policy on every start.
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+# The end-to-end test feeds the console the way an application would: a real run through the facade,
+# sent with `ConsoleLink`. Dev-only, so the console itself still links nothing of the SDK.
+opai-agents = { path = "../../crates/facade", version = "0.1.0", default-features = false, features = ["observability"] }

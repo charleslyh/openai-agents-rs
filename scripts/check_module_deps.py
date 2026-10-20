@@ -60,6 +60,7 @@ PROVIDERS = "opai-agents-providers"
 FACADE = "opai-agents"
 EXAMPLES = "opai-agents-examples"
 WEB_DEMO = "opai-agents-web-demo"
+CONSOLE = "opai-agents-console"
 CRATE_DEPS: dict[str, set[str]] = {
     CORE: set(),
     "opai-agents-macros": set(),
@@ -79,6 +80,10 @@ CRATE_DEPS: dict[str, set[str]] = {
     EXAMPLES: {FACADE},
     # The web demo (`demo/web`) follows the same rule as the examples.
     WEB_DEMO: {FACADE},
+    # The console is a separate program that takes JSON over HTTP and knows nothing of the SDK. Its
+    # only workspace dependency is a dev one: the end-to-end test runs an agent through the facade
+    # and sends to it with `ConsoleLink`.
+    CONSOLE: {FACADE},
     # `cargo agents new`: the templates are text compiled into the binary, so it needs no crate of
     # the workspace and cannot drift into the SDK's internals.
     "opai-agents-scaffold": set(),

@@ -6,6 +6,18 @@ entry will be `0.1.0`.
 
 ## [Unreleased]
 
+### Added
+
+- Live console: `ConsoleLink` sends spans and (opt-in) the conversation of each run to the new
+  `opai-console` service in `tools/console`, which shows a waterfall next to prompts, replies and
+  tool calls in the browser. Loopback only, token-protected. See example `31_console`.
+- `ConversationHub` and `ConversationRecorder` in `opai-agents-observability` record a run's
+  conversation on a channel separate from spans, with a `metadata_only()` mode.
+
+### Changed
+
+- Examples `cancel`, `settings` and `reasoning` are now numbered 32, 33 and 34.
+
 ### Fixed
 
 - Chat Completions and MCP streams no longer corrupt multi-byte characters (CJK text, emoji) that

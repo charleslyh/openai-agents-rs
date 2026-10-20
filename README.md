@@ -139,9 +139,10 @@ Ordered like the web demo's capability checklist, one knowledge point per exampl
 | 28 | `usage` | Output and observability | `RunResult::usage` |
 | 29 | `tracing` | Output and observability | Custom `TracingProcessor` |
 | 30 | `trace_export` | Output and observability | Batched console/JSONL export and metrics (Rust-only) |
-| 31 | `cancel` | Run control | `RunResultStreaming::cancel` |
-| 32 | `settings` | Run control | `ModelSettings` temperature + retry, `max_turns` |
-| 33 | `reasoning` | Run control | Typed `Reasoning` effort/summary for either API |
+| 31 | `console` | Output and observability | Live console: spans and the conversation, in a browser (Rust-only) |
+| 32 | `cancel` | Run control | `RunResultStreaming::cancel` |
+| 33 | `settings` | Run control | `ModelSettings` temperature + retry, `max_turns` |
+| 34 | `reasoning` | Run control | Typed `Reasoning` effort/summary for either API |
 
 They need `OPENAI_API_KEY` and `OPENAI_MODEL` in the environment; `OPENAI_BASE_URL` and
 `OPENAI_API` (`chat_completions` | `responses`) are optional.
