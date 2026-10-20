@@ -20,8 +20,9 @@ fn temp_db(name: &str) -> std::path::PathBuf {
 #[tokio::test]
 async fn sqlite_passes_the_session_contract() {
     let path = temp_db("file");
-    let path_string = path.to_string_lossy().to_string();
-    let session = SqliteSession::open(path_string, "contract").expect("open");
+    // The session id comes first, then the file. (The other way round creates a database named
+    // `contract` in the working directory, and tests the wrong file.)
+    let session = SqliteSession::open("contract", &path).expect("open");
     session_contract::assert_session_contract(&session).await;
     std::fs::remove_file(&path).ok();
 }
