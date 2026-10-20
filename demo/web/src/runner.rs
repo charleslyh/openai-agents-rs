@@ -9,11 +9,13 @@ use std::time::{Duration, Instant};
 
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::IntoResponse;
+use opai_agents::teams::Team;
 use opai_agents::{
-    AgentsError, CancelMode, CompactingSession, ContextValue, McpServer, Model, RunConfig,
-    RunOptions, RunState, Runner, Session, StreamEvent, ToolExecutionConfig,
+    AgentsError, CancelMode, CompactingSession, ContextValue, McpServer, Model, RunOptions,
+    RunState, Runner, Session, StreamEvent, ToolExecutionConfig,
 };
 use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 
 use crate::agents;
 use crate::events::{
@@ -29,10 +31,61 @@ use crate::state::{
     AppState, BusyGuard, Conversation, PendingRun, RunSettings, RunSlot, COMPACTION_TRIGGER_ITEMS,
     DEFAULT_APPROVAL_TTL_SECS,
 };
+use crate::team;
 
-/// The whole run is cut off after this long, whatever the faults.
-const RUN_DEADLINE: Duration = Duration::from_secs(60);
+/// The whole run is cut off after this long, whatever the faults. Longer than a solo run: a team
+/// adds a teammate run per helper, each with model turns of its own.
+const RUN_DEADLINE: Duration = Duration::from_secs(120);
 const EVENT_BUFFER: usize = 256;
+
+/// How long a finishing run waits for its teammates to leave before dropping them.
+const TEAM_GRACE: Duration = Duration::from_millis(300);
+
+/// Forwards the Lead's team events into the run's SSE stream, and stops with the run.
+///
+/// The task holds an `Emitter` clone: without aborting it the stream would never close after the
+/// run finished, because the channel would still have a sender.
+struct TeamFeed(JoinHandle<()>);
+
+impl Drop for TeamFeed {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+fn feed(team: &Team, emit: &Emitter) -> TeamFeed {
+    let mut events = team.subscribe();
+    let emit = emit.clone();
+    TeamFeed(tokio::spawn(async move {
+        loop {
+            match events.recv().await {
+                Ok(event) => {
+                    let (kind, detail) = team::describe(&event);
+                    emit.emit(DemoEvent::Team {
+                        kind: kind.to_string(),
+                        detail: crate::events::truncate(&detail, 200),
+                    })
+                    .await;
+                }
+                // A lagging subscriber skips ahead; the timeline is best effort.
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    }))
+}
+
+/// Take a finished run's team down: ask the teammates to leave, wait a moment, then drop them.
+async fn close(team: Option<Team>, emit: &Emitter) {
+    let Some(team) = team else { return };
+    team.shutdown(TEAM_GRACE).await;
+    let usage = team.handle().usage();
+    emit.emit(DemoEvent::Team {
+        kind: "team usage".into(),
+        detail: format!("{} runs, {} tokens", usage.runs, usage.tokens),
+    })
+    .await;
+}
 
 /// What the run starts from.
 pub enum Start {
@@ -117,7 +170,23 @@ async fn drive(app: Arc<AppState>, request: RunRequest, emit: Emitter) {
             emit.clone(),
         )) as Arc<dyn McpServer>
     });
-    let agent = match agents::build_network(model, &faults.tool, mcp) {
+    // The team is per run, like the agent network: the Lead's tools read its handle from the run
+    // options, and dropping it at the end of `drive` stops whatever is left of the teammates.
+    let team = match team::build(Arc::clone(&model), &run_id, &faults.tool).await {
+        Ok(team) => Some(team),
+        Err(error) => {
+            // A run without a team still works: the Lead is simply not offered.
+            emit.emit(DemoEvent::Team {
+                kind: "team unavailable".into(),
+                detail: crate::events::truncate(&error.to_string(), 200),
+            })
+            .await;
+            None
+        }
+    };
+    let _team_feed = team.as_ref().map(|team| feed(team, &emit));
+
+    let agent = match agents::build_network(model, &faults.tool, mcp, team.as_ref()) {
         Ok(agent) => agent,
         Err(e) => {
             emit.emit(classify(&e).into_event()).await;
@@ -149,7 +218,12 @@ async fn drive(app: Arc<AppState>, request: RunRequest, emit: Emitter) {
         flaky_calls: AtomicU32::new(0),
         tool_calls: AtomicU32::new(0),
     });
-    let mut options = RunOptions::default();
+    // The Lead's options must carry the `TeamHandle`; every other field is the demo's own. The
+    // team's base options start from `RunOptions::default`, so nothing else comes along.
+    let mut options = match &team {
+        Some(team) => team.lead_options(),
+        None => RunOptions::default(),
+    };
     options.max_turns = Some(if faults.llm == Some(LlmFault::MaxTurns) {
         1
     } else {
@@ -159,15 +233,15 @@ async fn drive(app: Arc<AppState>, request: RunRequest, emit: Emitter) {
     options.hooks = Some(Arc::new(TimelineHooks));
     options.session = Some(session);
     options.error_handlers = agents::error_handlers();
-    let mut run_config = RunConfig::default();
-    run_config.tracing.workflow_name = Some(run_id.clone());
-    run_config.model.settings = Some(settings.model_settings());
+    // Set the fields in place: replacing the whole `RunConfig` would drop the trace workflow name
+    // and group id the team put there.
+    options.run_config.tracing.workflow_name = Some(run_id.clone());
+    options.run_config.model.settings = Some(settings.model_settings());
     if let Some(n) = settings.tool_concurrency {
-        run_config.tools.execution = Some(ToolExecutionConfig {
+        options.run_config.tools.execution = Some(ToolExecutionConfig {
             max_function_tool_concurrency: Some(n),
         });
     }
-    options.run_config = run_config;
 
     let mut streamed = match start {
         Start::Fresh(input) => Runner::run_streamed(agent, input, options),
@@ -245,6 +319,7 @@ async fn drive(app: Arc<AppState>, request: RunRequest, emit: Emitter) {
     if disconnected {
         // Dropping `streamed` below cancels the model and tool calls (`cancel_on_drop`).
         drop(streamed);
+        close(team, &emit).await;
         app.finish_run(&run_id, "cancelled_on_disconnect");
         let _ = app.trace.take(&run_id);
         return;
@@ -339,6 +414,10 @@ async fn drive(app: Arc<AppState>, request: RunRequest, emit: Emitter) {
         .await;
         status = "failed";
     }
+
+    // The Lead has finished (or stopped). Its teammates are independent tasks: they would keep
+    // calling the model, so they are taken down before the run is reported over.
+    close(team, &emit).await;
 
     emit.emit(usage_event(&usage)).await;
     emit_session(&emit, &conversation, summary_before).await;

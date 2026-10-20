@@ -17,6 +17,7 @@ mod model;
 mod runner;
 mod server;
 mod state;
+mod team;
 mod tools;
 mod trace;
 

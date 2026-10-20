@@ -18,7 +18,8 @@ async-trait = "0.1"
 # WebSocket, no multipart, no macros).
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio"] }
 # `mcp` demonstrates a real MCP server over stdio (this binary re-executed with `--mcp-server`).
-opai-agents = { path = "../../crates/facade", version = "0.1.0", features = ["openai", "mcp"] }
+# `teams` adds the Lead agent: a team of long-lived teammates that work in parallel (Rust-only).
+opai-agents = { path = "../../crates/facade", version = "0.1.0", features = ["openai", "mcp", "teams"] }
 # `stream::unfold` turns the run's event channel into the SSE body.
 futures = "0.3"
 serde = { version = "1", features = ["derive"] }

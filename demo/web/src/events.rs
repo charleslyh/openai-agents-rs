@@ -123,6 +123,11 @@ pub enum DemoEvent {
     Trace {
         spans: Vec<SpanDto>,
     },
+    /// What happened in the Lead's team. `detail` is empty when the event carries nothing to add.
+    Team {
+        kind: String,
+        detail: String,
+    },
     Cancelled {
         mode: String,
     },
@@ -187,6 +192,8 @@ pub fn truncate(text: &str, max: usize) -> String {
 pub fn tool_source(name: &str) -> &'static str {
     if name.starts_with("mcp_") {
         "mcp"
+    } else if name.starts_with("team_") || name.starts_with("task_") {
+        "team"
     } else if name.starts_with("translate_") {
         "agent_tool"
     } else {

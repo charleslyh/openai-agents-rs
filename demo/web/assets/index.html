@@ -114,6 +114,7 @@ button{font:inherit; color:var(--t1); cursor:pointer; background:rgba(17,24,50,.
 .badge{font-family:var(--mono); font-size:10px; padding:2px 7px; border-radius:999px; border:1px solid var(--line2); color:var(--t2)}
 .badge.mcp{color:var(--c3); border-color:rgba(168,85,247,.5)}
 .badge.agent_tool{color:var(--c2); border-color:rgba(34,211,238,.5)}
+.badge.team{color:#A78BFA; border-color:rgba(167,139,250,.5)}
 .badge.inject{color:var(--inject); border-color:rgba(232,121,249,.6); background:rgba(232,121,249,.1)}
 .badge.ok{color:var(--ok); border-color:rgba(52,211,153,.5)}
 .badge.hook{color:var(--t3)}
@@ -404,6 +405,7 @@ const CAPS = [
   {g:"Multi-agent", items:[
     {id:"handoff", name:"Handoff", note:"Triage transfers the turn", prompt:"What do I owe on my last invoice?"},
     {id:"agent_tool", name:"Agent as tool", note:"a sub-agent answers inside a tool call", prompt:"Translate 'Good morning, friends' to French and Spanish."},
+    {id:"team", name:"Agent team", note:"a Lead runs two teammates in parallel (Rust-only)", prompt:"Compare the weather in Paris with the city metrics for Tokyo."},
   ]},
   {g:"Safety and governance", items:[
     {id:"hitl", name:"Human approval (HITL)", note:"a tool call waits for your decision", prompt:"What is the temperature in Oakland?"},
@@ -651,6 +653,7 @@ const NODES = [
   ["weather", "Weather", "sub", "Weather agent"],
   ["ops", "Ops", "sub", "Ops agent"],
   ["translate", "trans", "sub", "Translation sub-agents, called as tools (translate_*)"],
+  ["lead", "Lead", "sub", "Lead: a team of two teammates working in parallel (Rust-only)"],
   ["stdio", "MCP", "mcp", "Local MCP server over stdio"],
 ];
 function chainNode(name) {
@@ -1042,6 +1045,7 @@ function handleEvent(ev) {
       if (ev.name === "whoami") verify("context");
       if (ev.source === "mcp") { verify("mcp"); pulse("stdio"); }
       if (ev.source === "agent_tool") { verify("agent_tool"); pulse("translate"); }
+      if (ev.source === "team") pulse("lead");
       break;
     }
     case "tool_output": {
@@ -1085,6 +1089,12 @@ function handleEvent(ev) {
       }
       block([{kind:"inject", text:"stream interrupted"}], "The answer stops here: the connection broke mid-stream.");
       addEvent("stream", "interrupted after " + ev.delivered_chars + " characters", null, false, "stream_cut");
+      break;
+    case "team":
+      /* The Lead's team: who was created, who is working, what the task board did. Message
+         bodies never reach the page; only who, to whom and which kind. */
+      addEvent("team", ev.kind, ev.detail || null, false, "team");
+      if (ev.kind === "team member") pulse("lead");
       break;
     case "interruption":
       renderApproval(ev);
@@ -1523,7 +1533,7 @@ function buildDebug(body) {
   legend.append(el("h3", null, "Timeline legend"));
   const lg = el("div", "legend");
   [["#34D399","tool"],["#22D3EE","agent / handoff"],["#F87171","guardrail"],["#FBBF24","approval"],
-   ["#E879F9","injected fault"],["#60A5FA","model attempt"],["#5E6A94","hook"]].forEach(([c, t]) => {
+   ["#E879F9","injected fault"],["#60A5FA","model attempt"],["#5E6A94","hook"],["#A78BFA","team"]].forEach(([c, t]) => {
     const s = el("span"); const i = el("i"); i.style.background = c; s.append(i, document.createTextNode(t)); lg.append(s);
   });
   legend.append(lg);
