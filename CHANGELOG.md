@@ -91,11 +91,19 @@ entry will be `0.1.0`.
   installed. Only the OpenTelemetry API is depended on, so the exporter — OTLP or anything else —
   stays the application's choice. The SDK's span and parent ids travel as attributes, because the
   API assigns ids itself.
+- New crate `openai-agents-guardrails` (X-020): `MaxLength`, `PiiRedactor` (redacts by default;
+  emails, Luhn-valid cards, SSNs, phone numbers), `PromptInjection` (a heuristic, documented as
+  one), `BlockedKeywords` (whole-word, literal) and `SchemaValidator` (a subset of JSON Schema that
+  refuses the rest). Each becomes an input or output guardrail with `.input()` / `.output()`; a bad
+  configuration is a `BuildError` at construction; a failure never quotes the text. Facade feature
+  `guardrails`.
 - New crate `openai-agents-tools` (X-019): `calculator` (a parser, not `eval`), `clock` (one
   RFC 3339 shape), `file_read` / `file_list` (one directory, nothing outside it: `..`, symlinks
   that leave and absolute paths refused) and `web_fetch` (`webfetch` feature: private, loopback,
   link-local and reserved addresses refused at connect time, including the `9.`/`11.`/`21.`/`30.`
-  blocks; cross-origin redirects refused; 1 MiB response cap).
+  blocks, also when written into the URL as a decimal, hex or octal number; cross-origin and
+  `https`-to-`http` redirects refused, five hops at most; no system proxy; the 1 MiB response cap
+  is applied while reading). Facade features `tools` and `webfetch`.
 - Facade features `sessions` (`FileSession`, `FileRunStateStore`) and `observability`
   (`BatchedProcessor`, sinks, `Metrics`), both off by default, and two examples: `file_session` and
   `trace_export`.

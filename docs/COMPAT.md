@@ -239,6 +239,9 @@ dictionaries are merged (`model_settings.py:273`).
 | `BatchedProcessor`, `ConsoleSink`, `JsonlSink`, `Metrics` (feature `observability`) | S | Rust-only: batched export that never blocks the run, and counters over the same stream (X-018) |
 | `OtelSink` (feature `otel`) | S | Rust-only: spans into whatever OpenTelemetry pipeline the application installed — OTLP included — through the API only, so no exporter is pulled in (X-018) |
 | `TracingSink` (feature `observability`) | S | Rust-only: SDK events as `tracing` events under the target `openai_agents`, so the application's own subscriber and `RUST_LOG` see a run (X-018) |
+| `calculator`, `clock`, `file_read`, `file_list` (feature `tools`) | S | Rust-only: local tools with their limits built in — a parser instead of `eval`, one RFC 3339 shape, one directory and nothing outside it (X-019) |
+| `web_fetch` (feature `webfetch`) | S | Rust-only: private, loopback, link-local and reserved addresses refused at connect time and on every redirect hop; no proxy; 1 MiB streamed cap (X-019) |
+| `MaxLength`, `PiiRedactor`, `PromptInjection`, `BlockedKeywords`, `SchemaValidator` (feature `guardrails`) | S | Rust-only: input and output guardrails that pass, fail or rewrite; a bad configuration fails at construction (X-020) |
 
 ## Testing
 

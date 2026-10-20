@@ -2,7 +2,8 @@
 //!
 //! This crate is the single entry point: it re-exports everything from `openai-agents-core` under
 //! the paths the SDK has always had, and adds the `#[function_tool]` macro. The Cargo features
-//! (`openai`, `mcp`, `sqlite`, `providers`, `sessions`, `redis`, `postgres`, `observability`) pull
+//! (`openai`, `mcp`, `sqlite`, `providers`, `sessions`, `redis`, `postgres`, `observability`, `tools`,
+//! `webfetch`, `guardrails`) pull
 //! in the crate that implements them. Core knows no concrete model provider; with the `openai`
 //! feature, [`Runner`] installs the OpenAI one as the process default.
 //!
@@ -65,6 +66,16 @@ pub use openai_agents_sessions::{PostgresRunStateStore, PostgresSession};
 /// (Rust-only, X-018).
 #[cfg(feature = "observability")]
 pub use openai_agents_observability as observability;
+
+/// Ready-made tools: calculator, clock, read-only files and, with `webfetch`, a URL fetcher that
+/// stays off the private network (Rust-only, X-019).
+#[cfg(feature = "tools")]
+pub use openai_agents_tools as tools;
+
+/// Ready-made guardrails: length, personal data, prompt injection, keywords, schema
+/// (Rust-only, X-020).
+#[cfg(feature = "guardrails")]
+pub use openai_agents_guardrails as guardrails;
 
 /// Attribute macro: turn a function into a [`FunctionTool`] constructor (Python: `@function_tool`).
 pub use openai_agents_macros::function_tool;

@@ -34,6 +34,12 @@ redis = ["dep:openai-agents-sessions", "openai-agents-sessions/redis"]
 postgres = ["dep:openai-agents-sessions", "openai-agents-sessions/postgres"]
 # Trace processors that export: batched console, JSONL files and counters. Off by default.
 observability = ["dep:openai-agents-observability"]
+# Ready-made tools: calculator, clock, read-only files. Off by default.
+tools = ["dep:openai-agents-tools"]
+# `web_fetch`, with the private network off limits. Brings an HTTP client.
+webfetch = ["dep:openai-agents-tools", "openai-agents-tools/webfetch"]
+# Ready-made guardrails: length, personal data, prompt injection, keywords, schema.
+guardrails = ["dep:openai-agents-guardrails"]
 # Spans as OpenTelemetry spans, in whatever pipeline the process installed.
 otel = ["dep:openai-agents-observability", "openai-agents-observability/otel"]
 
@@ -52,6 +58,8 @@ openai-agents-sqlite = { path = "../sqlite", version = "0.1.0", optional = true 
 openai-agents-providers = { path = "../providers", version = "0.1.0", optional = true }
 openai-agents-sessions = { path = "../sessions", version = "0.1.0", optional = true }
 openai-agents-observability = { path = "../observability", version = "0.1.0", optional = true }
+openai-agents-tools = { path = "../tools", version = "0.1.0", optional = true }
+openai-agents-guardrails = { path = "../guardrails", version = "0.1.0", optional = true }
 
 [dev-dependencies]
 async-trait = "0.1"
