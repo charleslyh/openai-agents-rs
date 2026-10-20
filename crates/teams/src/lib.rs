@@ -14,6 +14,7 @@ pub mod role;
 pub mod taskboard;
 pub mod team;
 mod teammate;
+pub mod tools;
 pub mod types;
 
 pub use budget::Budget;

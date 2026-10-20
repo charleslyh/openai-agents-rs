@@ -47,6 +47,7 @@ pub struct Script {
     steps: Mutex<VecDeque<Step>>,
     inputs: Mutex<Vec<String>>,
     instructions: Mutex<Vec<String>>,
+    tools: Mutex<Vec<Vec<String>>>,
     calls: AtomicUsize,
     call_ids: AtomicUsize,
 }
@@ -57,6 +58,7 @@ impl Script {
             steps: Mutex::new(steps.into()),
             inputs: Mutex::new(Vec::new()),
             instructions: Mutex::new(Vec::new()),
+            tools: Mutex::new(Vec::new()),
             calls: AtomicUsize::new(0),
             call_ids: AtomicUsize::new(0),
         })
@@ -85,6 +87,16 @@ impl Script {
             .unwrap_or_default()
     }
 
+    /// Names of the tools offered on the last call.
+    pub fn last_tools(&self) -> Vec<String> {
+        self.tools
+            .lock()
+            .unwrap()
+            .last()
+            .cloned()
+            .unwrap_or_default()
+    }
+
     pub fn last_instructions(&self) -> String {
         self.instructions
             .lock()
@@ -103,6 +115,10 @@ impl Model for Script {
             .lock()
             .unwrap()
             .push(serde_json::to_string(&request.input.to_owned_items()).unwrap());
+        self.tools
+            .lock()
+            .unwrap()
+            .push(request.tools.iter().map(|t| t.name.clone()).collect());
         self.instructions
             .lock()
             .unwrap()
