@@ -87,8 +87,6 @@ impl Budget {
 }
 
 /// Running totals checked against a [`Budget`].
-// Used by the team runtime, which lands in the next change.
-#[allow(dead_code)]
 pub(crate) struct Meter {
     budget: Budget,
     runs: AtomicU64,
@@ -96,7 +94,6 @@ pub(crate) struct Meter {
     reported: AtomicBool,
 }
 
-#[allow(dead_code)]
 impl Meter {
     pub(crate) fn new(budget: Budget) -> Self {
         Self {
