@@ -52,6 +52,7 @@ EXTENSIONS = {
     "opai-agents-guardrails",
     "opai-agents-testing",
     "opai-agents-tools",
+    "opai-agents-teams",
 }
 # The presets are built on top of the OpenAI-compatible adapters: every preset speaks Chat
 # Completions or Responses. It is the one extension allowed to depend on another, because it is
@@ -72,6 +73,7 @@ CRATE_DEPS: dict[str, set[str]] = {
     "opai-agents-guardrails": {CORE},
     "opai-agents-testing": {CORE},
     "opai-agents-tools": {CORE},
+    "opai-agents-teams": {CORE},
     PROVIDERS: {CORE, "opai-agents-openai"},
     FACADE: {CORE} | EXTENSIONS | {PROVIDERS},
     # The root `examples/` package is user-facing code: it may reach the facade, but must not reach
