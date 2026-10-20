@@ -22,10 +22,13 @@ default = []
 otel = ["dep:opentelemetry"]
 
 [dependencies]
+# `conversation.rs` implements `RunHooks`, whose methods are `async_trait`.
+async-trait = { workspace = true }
 opai-agents-core = { path = "../core", version = "0.1.0", default-features = false }
 opentelemetry = { version = "0.33", default-features = false, features = ["trace"], optional = true }
 serde_json = { version = "1", features = ["preserve_order"] }
 tracing = "0.1"
 
 [dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["registry"] }
