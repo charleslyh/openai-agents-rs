@@ -14,6 +14,7 @@ use crate::model::ModelRef;
 use crate::model_settings::ModelSettings;
 use crate::run_context::{ContextValue, RunContextWrapper};
 use crate::run_state::ToolResolution;
+use crate::runtime::Runtime;
 
 use super::errors::RunErrorHandlers;
 use super::hitl::ToolResolver;
@@ -307,6 +308,9 @@ pub struct RunOptions {
     /// Resolves paused tool calls in-process instead of returning them (Rust-only, X-009); set
     /// with [`RunOptions::resolve_with`].
     pub resolver: Option<ToolResolver>,
+    /// The environment this run executes in: default provider, tracing switch and processors,
+    /// handoff history markers. `None` uses [`Runtime::global()`].
+    pub runtime: Option<Runtime>,
 }
 
 impl Default for RunOptions {
@@ -323,6 +327,7 @@ impl Default for RunOptions {
             session: None,
             error_handlers: RunErrorHandlers::default(),
             resolver: None,
+            runtime: None,
         }
     }
 }
@@ -375,6 +380,17 @@ impl RunOptions {
         Fut: std::future::Future<Output = ToolResolution> + Send + 'static,
     {
         self.resolver = Some(ToolResolver::new(resolve));
+        self
+    }
+
+    /// Run on `runtime` instead of [`Runtime::global()`] (Rust-only, X-022).
+    ///
+    /// The run takes its default model provider, tracing switch and processors, and handoff
+    /// history markers from `runtime`, so two runs on two runtimes share no state. An explicit
+    /// `RunConfig.model.provider` still wins over the runtime's provider.
+    #[must_use]
+    pub fn runtime(mut self, runtime: Runtime) -> Self {
+        self.runtime = Some(runtime);
         self
     }
 

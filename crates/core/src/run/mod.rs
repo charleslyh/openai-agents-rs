@@ -213,6 +213,11 @@ fn spawn_streamed(
     start: LoopStart,
     options: RunOptions,
 ) -> RunResultStreaming {
+    // The spawned task has no task-locals of its own: settle the runtime here, in the caller's.
+    let mut options = options;
+    options
+        .runtime
+        .get_or_insert_with(crate::runtime::Runtime::current);
     let max_turns = options.max_turns;
     let (tx, rx) = mpsc::channel(64);
     let snapshot = Arc::new(Mutex::new(StreamingSnapshot {

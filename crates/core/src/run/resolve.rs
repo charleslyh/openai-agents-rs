@@ -105,9 +105,9 @@ pub fn set_default_model_provider_factory(
     Runtime::global().set_model_provider_factory(factory)
 }
 
-/// The default provider: [`Runtime::global()`]'s provider.
+/// The default provider: that of the runtime in scope (a run's own, else [`Runtime::global()`]).
 pub fn default_provider() -> Arc<dyn ModelProvider> {
-    Runtime::global().provider()
+    Runtime::current().provider()
 }
 
 /// The model for a turn and the reasoning effort its name asked for, if any.

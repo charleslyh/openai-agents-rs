@@ -10,10 +10,10 @@ pub use processor::{
 };
 pub use types::{Span, SpanData, SpanError, Trace, TraceConfig, TracingConfig};
 
-use processor::processor_slot;
+pub(crate) use processor::TracingState;
 
 use std::cell::RefCell;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::time::SystemTime;
 
 use serde_json::Value;
@@ -21,11 +21,36 @@ use uuid::Uuid;
 
 use crate::usage::Usage;
 
-static TRACING_DISABLED: AtomicBool = AtomicBool::new(false);
-
 tokio::task_local! {
     /// Per-run override set by the runner (Python: `RunConfig.tracing_disabled`).
     static RUN_TRACING_DISABLED: bool;
+}
+
+tokio::task_local! {
+    /// The tracing state of the runtime this task's run belongs to.
+    static CURRENT_STATE: Arc<TracingState>;
+}
+
+/// The state behind `Runtime::global()`, which adopts it: spans opened outside any run, and the
+/// free `set_trace_processors`-style functions, use it.
+pub(crate) fn global_state() -> Arc<TracingState> {
+    static GLOBAL: OnceLock<Arc<TracingState>> = OnceLock::new();
+    Arc::clone(GLOBAL.get_or_init(|| Arc::new(TracingState::new())))
+}
+
+/// The state of the run this code is part of, else the global one.
+fn current_state() -> Arc<TracingState> {
+    CURRENT_STATE
+        .try_with(Arc::clone)
+        .unwrap_or_else(|_| global_state())
+}
+
+/// Run `future` reporting to `state` (see `Runtime::scope`).
+pub(crate) fn scope_state<F: std::future::Future>(
+    state: Arc<TracingState>,
+    future: F,
+) -> impl std::future::Future<Output = F::Output> {
+    CURRENT_STATE.scope(state, future)
 }
 
 /// The span new spans attach to, and what to fall back to when it ends.
@@ -57,33 +82,39 @@ pub fn current_span_id() -> Option<String> {
     current_span().id
 }
 
-/// Disable or enable tracing globally (Python: `set_tracing_disabled`).
+/// Disable or enable tracing on `Runtime::global()` (Python: `set_tracing_disabled`).
 ///
-/// Per-run configuration takes precedence in the sense that tracing is off when *either* the
-/// global flag or the current run's `RunConfig.tracing_disabled` is set.
+/// Tracing is off when *either* the runtime's switch or the current run's
+/// `RunConfig.tracing_disabled` is set. For a runtime of your own use
+/// `Runtime::set_tracing_disabled`.
 pub fn set_tracing_disabled(disabled: bool) {
-    TRACING_DISABLED.store(disabled, Ordering::SeqCst);
+    global_state().set_disabled(disabled);
 }
 
-/// Whether tracing is disabled globally.
+/// Whether tracing is disabled on `Runtime::global()`.
 pub fn is_tracing_disabled() -> bool {
-    TRACING_DISABLED.load(Ordering::SeqCst)
+    global_state().disabled()
 }
 
 /// Whether tracing is disabled for the current execution context.
 ///
-/// True when the global switch is off, or when the enclosing run disabled tracing.
+/// True when the switch of the runtime in scope is off (a run's own runtime, else the global one),
+/// or when the enclosing run disabled tracing.
 pub fn tracing_disabled() -> bool {
-    if is_tracing_disabled() {
-        return true;
-    }
-    RUN_TRACING_DISABLED.try_with(|v| *v).unwrap_or(false)
+    disabled_in(&current_state())
+}
+
+fn disabled_in(state: &TracingState) -> bool {
+    state.disabled() || RUN_TRACING_DISABLED.try_with(|v| *v).unwrap_or(false)
 }
 
 /// Run `future` with a per-run tracing switch (Python: `RunConfig.tracing_disabled`).
 ///
-/// The future also inherits the span that is current *where this function is called*, so a
-/// task spawned from a run keeps its spans under the right parent.
+/// The future also inherits the span and the tracing state (the runtime's processors and switch)
+/// that are current *where this function is called*, so a task spawned from a run keeps its spans
+/// under the right parent and reports them to the right processor. It does not carry the
+/// runtime's model provider: a run started inside such a task passes
+/// `RunOptions::runtime(Runtime::current())` itself.
 pub fn with_run_tracing_disabled<F>(
     disabled: bool,
     future: F,
@@ -92,9 +123,12 @@ where
     F: std::future::Future,
 {
     let inherited = current_span();
-    RUN_TRACING_DISABLED.scope(
-        disabled,
-        CURRENT_SPAN.scope(RefCell::new(inherited), future),
+    CURRENT_STATE.scope(
+        current_state(),
+        RUN_TRACING_DISABLED.scope(
+            disabled,
+            CURRENT_SPAN.scope(RefCell::new(inherited), future),
+        ),
     )
 }
 
@@ -130,6 +164,8 @@ pub fn gen_span_id() -> String {
 pub struct TraceGuard {
     trace: Trace,
     active: bool,
+    /// The state the trace started on; it ends there too.
+    state: Arc<TracingState>,
 }
 
 impl TraceGuard {
@@ -144,11 +180,7 @@ impl Drop for TraceGuard {
         if !self.active {
             return;
         }
-        if let Some(p) = processor_slot()
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .as_ref()
-        {
+        if let Some(p) = self.state.processor() {
             p.on_trace_end(&self.trace);
         }
     }
@@ -158,6 +190,8 @@ impl Drop for TraceGuard {
 pub struct SpanGuard {
     span: Span,
     active: bool,
+    /// The state the span started on; it ends there too.
+    state: Arc<TracingState>,
     /// The current span to put back when this guard owned the current-span slot.
     restore: Option<CurrentSpan>,
     usage: Usage,
@@ -220,11 +254,7 @@ impl Drop for SpanGuard {
                 }
             }
             self.span.ended_at = Some(SystemTime::now());
-            if let Some(p) = processor_slot()
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .as_ref()
-            {
+            if let Some(p) = self.state.processor() {
                 p.on_span_end(&self.span);
             }
         }
@@ -278,22 +308,21 @@ pub fn trace_with_config(workflow_name: &str, config: TraceConfig) -> TraceGuard
         group_id: config.group_id,
         metadata: config.metadata,
     };
-    if tracing_disabled() {
+    let state = current_state();
+    if disabled_in(&state) {
         return TraceGuard {
             trace: t,
             active: false,
+            state,
         };
     }
-    if let Some(p) = processor_slot()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .as_ref()
-    {
+    if let Some(p) = state.processor() {
         p.on_trace_start(&t);
     }
     TraceGuard {
         trace: t,
         active: true,
+        state,
     }
 }
 
@@ -310,19 +339,17 @@ fn start_span(data: SpanData, becomes_current: bool) -> SpanGuard {
         ended_at: None,
         error: None,
     };
-    if tracing_disabled() {
+    let state = current_state();
+    if disabled_in(&state) {
         return SpanGuard {
             span,
             active: false,
+            state,
             restore: None,
             usage: Usage::default(),
         };
     }
-    if let Some(p) = processor_slot()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .as_ref()
-    {
+    if let Some(p) = state.processor() {
         p.on_span_start(&span);
     }
     let restore = becomes_current.then(|| {
@@ -336,6 +363,7 @@ fn start_span(data: SpanData, becomes_current: bool) -> SpanGuard {
     SpanGuard {
         span,
         active: true,
+        state,
         restore,
         usage: Usage::default(),
     }

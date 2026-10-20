@@ -139,8 +139,13 @@ entry will be `0.1.0`.
 - A `twenty_tools_ten_turns` benchmark.
 - `Extensions`: typed per-run values (`RunOptions::with(value)`, `ctx.get::<T>()`,
   `ctx.require::<T>()`).
-- `Runtime`: owns the default model provider and the runtime behind blocking calls;
-  `Runtime::global()` keeps the process-wide default.
+- `Runtime`: owns the default model provider, the runtime behind blocking calls, the tracing
+  switch and processors, and the handoff history markers; `Runtime::global()` keeps the
+  process-wide default. `RunOptions::runtime(rt)` runs on a runtime of your own, so two runs on
+  two runtimes share no state (X-022). The `set_trace_processors`, `set_tracing_disabled` and
+  `set_conversation_history_wrappers` free functions act on `Runtime::global()`. Code that spawns
+  its own tasks inside a run should wrap them in `tracing::with_run_tracing_disabled`, which now
+  carries the runtime along. Trace processor callbacks no longer run with the processor lock held.
 - The `Tool` trait (`FunctionTool::from_tool`), `FunctionTool::typed` for schema-from-struct tools,
   `Tool::requires` / `FunctionTool::require::<T>()` checked before the first turn, and
   `ToolMiddleware` / `ModelMiddleware`.

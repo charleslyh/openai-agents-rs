@@ -103,6 +103,7 @@ bench(`cargo bench -p openai-agents --bench run_loop`,本机):
 | `cargo test --workspace --all-features` | 288 | 305 通过 / 0 失败(进入 M1 前);322 通过 / 0 失败(`Runtime` 落地后) |
 | `cargo test --no-default-features` | - | 229 通过 / 0 失败(进入 M1 前);246 通过 / 0 失败(`Runtime` 落地后) |
 | bench(`twenty_tools_ten_turns`) | 347 µs | 345 µs,其余场景在噪声内 |
+| bench(追踪/标记迁入 `Runtime` 之后) | 同机 A/B:基线树 267–271 µs,改动后 270–288 µs | 在噪声内(约 1–2%)。第一次读数 290 µs 是噪声,同机重测后不成立 |
 | clippy / fmt / rustdoc `-D warnings`、`check_module_deps`、`check_runner_api`、`sync_vendor --check` | 通过 | 通过 |
 | Rust 侧 `parity_scenarios`(对 golden) | 通过 | 通过 |
 
@@ -126,8 +127,8 @@ bench(`cargo bench -p openai-agents --bench run_loop`,本机):
 | `RunConfig` 分组 options | 完成(`cb225d6`)。24 个平铺字段拆为 `ModelOptions` / `TracingOptions` / `SessionOptions` / `HandoffOptions` / `ToolOptions` 加两个护栏列表,均可链式构造;`Debug` 改为派生 |
 | `RunOptions` 链式方法 + `non_exhaustive` | 完成(`c9a08e3`)。`RunOptions::new().max_turns(5).temperature(0.2).session(s)`;`tune()` 原地改单个 model setting |
 | `Runtime`(provider 注册表 + 阻塞 runtime) | 完成。9 处全局简化:provider 三处、阻塞 runtime 一处、facade 的 `Once` 一处合并进 `Runtime`;`set_default_model_provider_factory` 降为 `Runtime::global()` 的薄封装 |
-| 追踪全局开关与 processor | **未完成**。仍在 `tracing` 模块的 `static`;`Runtime::tracing_disabled` / `set_tracing_disabled` 只是转发。迁移需要把 `Runtime` 穿到每个 `agent_span()` / `turn_span()` 调用点,单独一步做 |
-| handoff history wrappers | **未完成**。仍在 `handoffs::history` 的 `static`。需要 `HandoffOptions` 或 `Runtime` 传递,与 `nest_handoff_history` 的签名一起改 |
+| 追踪全局开关与 processor | **已完成**。状态移到 `Runtime`(`TracingState`);运行把自己的 `Runtime` 放进 task-local(`RunOptions::runtime`,缺省为全局),`Runtime::current()` 读取,因此不必把 `Runtime` 穿到每个 `agent_span()` 调用点。`TraceGuard`/`SpanGuard` 记住创建时的 `Runtime`,结束事件回到同一个 processor。`tokio::spawn` 不继承 task-local,运行内的 spawn 点已走 `with_run_tracing_disabled`(现在同时携带 `Runtime`),`spawn_streamed` 在 spawn 前确定 runtime。processor 回调不再持锁执行 |
+| handoff history wrappers | **已完成**。标记移到 `Runtime`;`nest_handoff_history` 经 `Runtime::current()` 读取,签名未变。`set_/reset_/get_conversation_history_wrappers` 自由函数仍作用于 `Runtime::global()`(与 Python 的进程级设置一致) |
 | `Tool` trait + `Tool::typed` + `ToolOutput` 隐藏内部字段 | 完成。`tool.rs`:`Tool::{spec,policy,requires,call}`;`FunctionTool` 是默认实现(`impl Tool for FunctionTool`);`FunctionTool::from_tool` 把任意 `impl Tool` 适配成 `FunctionTool`,跑同一条执行路径;`FunctionTool::typed`/`typed_with_result` 用 `schemars` 生成严格 schema,免宏构造;`ToolResult` 改名 `ToolOutput`,`interruptions`/`nested_state` 两个字段降为 `pub(crate)`(`#[non_exhaustive]`),外部只能用 `::output`/`::interrupted` 构造、`is_interrupted()`/`value()` 读取 |
 | 工具/模型中间件 | 完成。新增 `tool_middleware.rs`(`ToolMiddleware` trait + `FunctionTool::with_middleware`,onion 组合,可短路)与 `model_middleware.rs`(`ModelMiddleware` trait,挂在 `ModelOptions::middleware`,在 `call_model_input_filter` 之后按添加顺序执行)。仅覆盖请求改写;包装响应/流是后续工作,登记在 `DEVIATIONS.md` |
 | `Tool::requires` + 启动期校验 | 完成。`extensions.rs` 新增 `TypeRequirement`;`FunctionTool::require::<T>()` 声明依赖,`run/agent_loop.rs` 的 `validate_tool_requirements` 在第一个 turn 前遍历可达 agent 图(含 handoff 目标)逐一检查,缺失类型报错带 agent 名、工具名、类型名、修复提示;不声明的工具不受影响(仍是运行时失败) |

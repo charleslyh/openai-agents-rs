@@ -5,15 +5,15 @@
 //! `<CONVERSATION HISTORY>` markers, while user-visible messages of the handoff turn stay as
 //! real items in their original position.
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use serde_json::{json, Map, Value};
 
 use super::HandoffInputData;
 use crate::support::pyjson;
 
-const DEFAULT_START: &str = "<CONVERSATION HISTORY>";
-const DEFAULT_END: &str = "</CONVERSATION HISTORY>";
+pub(crate) const DEFAULT_START: &str = "<CONVERSATION HISTORY>";
+pub(crate) const DEFAULT_END: &str = "</CONVERSATION HISTORY>";
 const PREAMBLE: &str =
     "For context, here is the conversation so far between the user and the previous agent:";
 const LEGACY_PREAMBLE: &str = "For context, here is the conversation so far:";
@@ -28,38 +28,88 @@ const INTERNAL_KEYS: [&str; 3] = [
     "created_by",
 ];
 
-static WRAPPERS: Mutex<Option<(String, String)>> = Mutex::new(None);
-
 /// Maps the flattened transcript to the history the next agent receives
 /// (Python: `HandoffHistoryMapper`). Synchronous, like Python's.
 pub type HandoffHistoryMapper = std::sync::Arc<dyn Fn(Vec<Value>) -> Vec<Value> + Send + Sync>;
 
+/// The markers around handoff summaries, as owned by one `Runtime`.
+pub(crate) struct HistoryMarkers(Mutex<Option<(String, String)>>);
+
+impl HistoryMarkers {
+    pub(crate) fn new() -> Self {
+        Self(Mutex::new(None))
+    }
+
+    pub(crate) fn get(&self) -> (String, String) {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+            .unwrap_or_else(|| (DEFAULT_START.to_string(), DEFAULT_END.to_string()))
+    }
+
+    /// `None` leaves a side unchanged.
+    pub(crate) fn set(&self, start: Option<&str>, end: Option<&str>) {
+        let (cur_start, cur_end) = self.get();
+        *self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((
+            start.map(str::to_string).unwrap_or(cur_start),
+            end.map(str::to_string).unwrap_or(cur_end),
+        ));
+    }
+
+    pub(crate) fn reset(&self) {
+        *self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    }
+}
+
+tokio::task_local! {
+    /// The markers of the runtime this task's run belongs to.
+    static CURRENT_MARKERS: Arc<HistoryMarkers>;
+}
+
+/// The markers behind `Runtime::global()`, which adopts them.
+pub(crate) fn global_markers() -> Arc<HistoryMarkers> {
+    static GLOBAL: OnceLock<Arc<HistoryMarkers>> = OnceLock::new();
+    Arc::clone(GLOBAL.get_or_init(|| Arc::new(HistoryMarkers::new())))
+}
+
+/// Run `future` with `markers` as the ones new summaries use (see `Runtime::scope`).
+pub(crate) fn scope_markers<F: std::future::Future>(
+    markers: Arc<HistoryMarkers>,
+    future: F,
+) -> impl std::future::Future<Output = F::Output> {
+    CURRENT_MARKERS.scope(markers, future)
+}
+
 /// Override the markers around the generated summary; `None` leaves a side unchanged
-/// (Python: `set_conversation_history_wrappers`). Process-global, like Python's.
+/// (Python: `set_conversation_history_wrappers`). Acts on `Runtime::global()`, like Python's
+/// process-global setting; use `Runtime::set_conversation_history_wrappers` for a runtime of your
+/// own.
 pub fn set_conversation_history_wrappers(start: Option<&str>, end: Option<&str>) {
-    let (cur_start, cur_end) = get_conversation_history_wrappers();
-    *WRAPPERS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((
-        start.map(str::to_string).unwrap_or(cur_start),
-        end.map(str::to_string).unwrap_or(cur_end),
-    ));
+    global_markers().set(start, end);
 }
 
-/// Restore the default `<CONVERSATION HISTORY>` markers.
+/// Restore the default `<CONVERSATION HISTORY>` markers on `Runtime::global()`.
 pub fn reset_conversation_history_wrappers() {
-    *WRAPPERS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    global_markers().reset();
 }
 
-/// The current `(start, end)` markers.
+/// The `(start, end)` markers of `Runtime::global()`.
 pub fn get_conversation_history_wrappers() -> (String, String) {
-    WRAPPERS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .clone()
-        .unwrap_or_else(|| (DEFAULT_START.to_string(), DEFAULT_END.to_string()))
+    global_markers().get()
+}
+
+/// The markers new summaries use: those of the runtime in scope (a run's own, else the global one).
+fn active_wrappers() -> (String, String) {
+    CURRENT_MARKERS
+        .try_with(|m| m.get())
+        .unwrap_or_else(|_| global_markers().get())
 }
 
 /// Fold the earlier transcript into summary messages (Python: `nest_handoff_history`).
@@ -138,7 +188,7 @@ fn build_summary_message(transcript: &[Value]) -> Value {
             .map(|(i, item)| format!("{}. {}", i + 1, format_transcript_item(item)))
             .collect()
     };
-    let (start, end) = get_conversation_history_wrappers();
+    let (start, end) = active_wrappers();
     let mut content = vec![PREAMBLE.to_string(), start];
     content.extend(lines);
     content.push(end);
@@ -214,7 +264,7 @@ fn extract_nested_transcript(item: &Value) -> Option<Vec<Value>> {
         return None;
     }
     let content = item.get("content")?.as_str()?;
-    let (start, end) = get_conversation_history_wrappers();
+    let (start, end) = active_wrappers();
     let (preamble, wrapped) = content.split_once('\n')?;
     if preamble != PREAMBLE && preamble != LEGACY_PREAMBLE {
         return None;

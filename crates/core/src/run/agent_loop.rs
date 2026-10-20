@@ -101,6 +101,7 @@ pub(crate) async fn run_loop(
     snapshot: Option<Arc<Mutex<StreamingSnapshot>>>,
 ) -> Result<RunResult, AgentsError> {
     let run_tracing_disabled = options.run_config.tracing.disabled;
+    let runtime = options.runtime.clone();
     let session = options.session.clone();
     let reasoning_policy = options.run_config.model.reasoning_item_id_policy;
     // Python (`prepare_input_with_session`): stored history comes before the new input.
@@ -144,19 +145,22 @@ pub(crate) async fn run_loop(
         log.input = state.tool_input_guardrail_results.clone();
         log.output = state.tool_output_guardrail_results.clone();
     }
-    let mut result = crate::tracing::with_run_tracing_disabled(
-        run_tracing_disabled,
-        run_loop_inner(
-            starting_agent,
-            start,
-            options,
-            events,
-            snapshot,
-            Arc::clone(&tool_guardrail_log),
-            writer.as_mut(),
-        ),
-    )
-    .await?;
+    let runtime = runtime.unwrap_or_else(crate::runtime::Runtime::current);
+    let mut result = runtime
+        .clone()
+        .run_scope(
+            run_tracing_disabled,
+            run_loop_inner(
+                starting_agent,
+                start,
+                options,
+                events,
+                snapshot,
+                Arc::clone(&tool_guardrail_log),
+                writer.as_mut(),
+            ),
+        )
+        .await?;
     {
         let mut log = tool_guardrail_log
             .lock()
@@ -169,7 +173,8 @@ pub(crate) async fn run_loop(
         if result.interruptions.is_empty() {
             // The run's trace has ended by now, so work a session does here (a compaction
             // summary, say) must not emit spans of its own.
-            crate::tracing::with_run_tracing_disabled(true, writer.flush(&result.new_items))
+            runtime
+                .run_scope(true, writer.flush(&result.new_items))
                 .await?;
         } else if let Some(snapshot) = result.interrupt_state.as_mut() {
             // A paused run keeps the turn in flight out of the session until it is

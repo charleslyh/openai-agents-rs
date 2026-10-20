@@ -1,48 +1,88 @@
-//! Trace processors: the interface, the fan-out, the in-memory sink and the global slot.
+//! Trace processors: the interface, the fan-out, the in-memory sink and the per-runtime state.
 
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
-use super::{Span, Trace};
+use super::{global_state, Span, Trace};
 
-static PROCESSOR: OnceLock<Mutex<Option<Arc<dyn TracingProcessor>>>> = OnceLock::new();
+/// The tracing state one [`Runtime`](crate::runtime::Runtime) owns: the on/off switch and the
+/// processor every span and trace is reported to.
+pub(crate) struct TracingState {
+    disabled: AtomicBool,
+    processor: Mutex<Option<Arc<dyn TracingProcessor>>>,
+}
 
-pub(super) fn processor_slot() -> &'static Mutex<Option<Arc<dyn TracingProcessor>>> {
-    PROCESSOR.get_or_init(|| Mutex::new(Some(Arc::new(InMemoryProcessor::default()))))
+impl TracingState {
+    /// Enabled, with the bounded in-memory processor installed (Python: the default processor).
+    pub(crate) fn new() -> Self {
+        Self {
+            disabled: AtomicBool::new(false),
+            processor: Mutex::new(Some(Arc::new(InMemoryProcessor::default()))),
+        }
+    }
+
+    pub(crate) fn disabled(&self) -> bool {
+        self.disabled.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn set_disabled(&self, disabled: bool) {
+        self.disabled.store(disabled, Ordering::SeqCst);
+    }
+
+    /// The processor, cloned out so callbacks run without the lock held: a processor that adds
+    /// another one from a callback must not deadlock.
+    pub(crate) fn processor(&self) -> Option<Arc<dyn TracingProcessor>> {
+        self.processor
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    pub(crate) fn set_processors(&self, processors: Vec<Arc<dyn TracingProcessor>>) {
+        *self
+            .processor
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Some(Arc::new(MultiProcessor { processors }));
+    }
+
+    pub(crate) fn add_processor(&self, processor: Arc<dyn TracingProcessor>) {
+        let mut slot = self
+            .processor
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let processors = match slot.take() {
+            Some(current) => vec![current, processor],
+            None => vec![processor],
+        };
+        *slot = Some(Arc::new(MultiProcessor { processors }));
+    }
+
+    pub(crate) fn flush(&self) {
+        if let Some(p) = self.processor() {
+            p.force_flush();
+        }
+    }
 }
 
 /// Replace trace processors (Python: `set_trace_processors`).
+///
+/// Acts on `Runtime::global()`; use `Runtime::set_trace_processors` for a runtime of your own.
 pub fn set_trace_processors(processors: Vec<Arc<dyn TracingProcessor>>) {
-    let merged = Arc::new(MultiProcessor { processors });
-    *processor_slot()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(merged);
+    global_state().set_processors(processors);
 }
 
-/// Add a processor alongside the current one.
+/// Add a processor alongside the current one, on `Runtime::global()`.
 pub fn add_trace_processor(processor: Arc<dyn TracingProcessor>) {
-    let mut slot = processor_slot()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let current = slot.take();
-    let processors = match current {
-        Some(p) => vec![p, processor],
-        None => vec![processor],
-    };
-    *slot = Some(Arc::new(MultiProcessor { processors }));
+    global_state().add_processor(processor);
 }
 
-/// Flush processors (Python: `flush_traces`).
+/// Flush processors (Python: `flush_traces`), on `Runtime::global()`.
 ///
 /// Processors that buffer events are expected to implement [`TracingProcessor::force_flush`];
 /// the default is a no-op, so this is safe to call at any time.
 pub fn flush_traces() {
-    if let Some(p) = processor_slot()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .as_ref()
-    {
-        p.force_flush();
-    }
+    global_state().flush();
 }
 
 /// Processor interface (Python: `TracingProcessor`).
