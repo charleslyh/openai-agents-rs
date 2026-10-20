@@ -1,21 +1,18 @@
-//! A structured tool: `impl Tool` instead of a closure (Rust-only)
+//! A structured tool: the argument struct *is* the tool (Rust-only)
 //!
-//! `#[function_tool]` is the shortest path and `FunctionTool::typed` adds typed arguments. This
-//! example is the shape for a tool that is a real component: it has state, typed arguments *and* a
-//! typed result, a declared dependency, and a scheduling policy.
+//! `#[function_tool]` is the shortest path for a function. This example is the shape for a tool that
+//! is a real component: typed arguments *and* a typed result, a declared dependency, and a
+//! scheduling policy. All of it is written next to the fields, as annotations:
 //!
-//! In the order the tool declares them:
+//! - field doc comments become the parameter descriptions the model reads;
+//! - the struct's doc comment becomes the tool description;
+//! - `#[tool(..)]` carries the name, the timeout, the dependency (`requires`), the per-call pause
+//!   for a human (`needs_approval_if`) and the text the model sees when the call fails;
+//! - `impl TypedTool` is the body: it receives the parsed arguments and returns a typed result.
 //!
-//! - `ToolSpec::typed::<Args>(..)`: the schema comes from the argument struct, so the schema the
-//!   model sees and the `Deserialize` inside `call` cannot drift apart.
-//! - `ToolPolicy`: whether a call pauses for a human (decided per call, from the arguments), how
-//!   long it may take, and what the model is told when it fails.
-//! - `Tool::requires`: the run refuses to start, naming the tool and the missing type, instead of
-//!   failing inside the first call.
-//! - `ToolMiddleware`: audit logging around the call, not inside it.
-//!
-//! `FunctionTool::from_tool` is the adapter. The custom tool then runs through the same machinery
-//! as a built-in one; "implement the trait" and "build a `FunctionTool`" are one code path.
+//! A tool with state of its own (a client, a counter) implements `Tool` instead; see
+//! `docs/DEVIATIONS.md` X-023. `ToolMiddleware` wraps either kind: audit logging around the call,
+//! not inside it.
 //!
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
@@ -27,23 +24,33 @@ mod common;
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 use openai_agents::prelude::*;
-use openai_agents::serde_json::{self, Value};
-use openai_agents::{
-    async_trait, NextTool, ToolFailureHandling, ToolMiddleware, ToolPolicy, ToolSpec,
-    ToolTimeoutBehavior, TypeRequirement,
-};
+use openai_agents::{async_trait, NextTool, ToolMeta, ToolMiddleware, TypedTool};
+
+/// Refunds above this many cents pause for a person.
+const APPROVAL_THRESHOLD_CENTS: u64 = 10_000;
+
+/// What a customer's order is worth when `amount_cents` is omitted. A real tool would look the
+/// order up; the example keeps one number so the policy has something to compare.
+const WHOLE_ORDER_CENTS: u64 = 2_500;
 
 // ---------------------------------------------------------------------------------------------
-// The typed surface: arguments in, result out.
+// The tool: arguments, annotations, body.
 // ---------------------------------------------------------------------------------------------
 
-/// Arguments, as the model must send them. The doc comments become the schema descriptions.
-#[derive(openai_agents::serde::Deserialize, openai_agents::schemars::JsonSchema)]
+/// Refund an order, whole or in part. Large refunds wait for human approval.
+#[derive(openai_agents::serde::Deserialize, openai_agents::schemars::JsonSchema, ToolMeta)]
 #[serde(crate = "openai_agents::serde")]
 #[schemars(crate = "openai_agents::schemars")]
+#[tool(
+    name = "refund_order",
+    timeout = 5,
+    requires(Payments),
+    needs_approval_if = is_large,
+    on_failure = "The refund was not made: {error}"
+)]
 struct RefundArgs {
     /// Order to refund, as shown to the customer ("A-1001").
     order_id: String,
@@ -52,6 +59,11 @@ struct RefundArgs {
     /// Amount in cents. Omit to refund the whole order.
     #[serde(default)]
     amount_cents: Option<u64>,
+}
+
+/// Decided per call from the parsed arguments: a small refund runs, a large one waits for a person.
+fn is_large(args: &RefundArgs) -> bool {
+    args.amount_cents.unwrap_or(WHOLE_ORDER_CENTS) > APPROVAL_THRESHOLD_CENTS
 }
 
 /// What the tool answers with. A struct instead of a loose `Value` keeps both halves of the
@@ -66,6 +78,18 @@ struct Refund {
     reference: String,
     /// The reason the model gave, kept so the audit line shows why money moved.
     reason: String,
+}
+
+#[async_trait]
+impl TypedTool for RefundArgs {
+    type Output = Refund;
+
+    async fn run(self, ctx: &ToolContext) -> Result<Refund, AgentsError> {
+        // `requires(Payments)` above means the run would not have started without it.
+        let payments = ctx.require::<Payments>()?;
+        let cents = self.amount_cents.unwrap_or(WHOLE_ORDER_CENTS);
+        Ok(payments.refund(&self.order_id, cents, self.reason))
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -102,82 +126,6 @@ impl Payments {
 }
 
 // ---------------------------------------------------------------------------------------------
-// The tool.
-// ---------------------------------------------------------------------------------------------
-
-/// Refunds an order. A struct with behaviour of its own, not a closure.
-struct RefundTool {
-    /// Refunds above this many cents pause for a person.
-    approval_threshold_cents: u64,
-    /// The types `call` reads from the run. Kept as a field because `Tool::requires` returns a
-    /// slice.
-    requires: [TypeRequirement; 1],
-}
-
-impl RefundTool {
-    fn new(approval_threshold_cents: u64) -> Self {
-        Self {
-            approval_threshold_cents,
-            requires: [TypeRequirement::of::<Payments>()],
-        }
-    }
-}
-
-/// The part of a refund a customer's order is worth when `amount_cents` is omitted. A real tool
-/// would look the order up; the example keeps one number so the policy has something to compare.
-const WHOLE_ORDER_CENTS: u64 = 2_500;
-
-#[async_trait]
-impl Tool for RefundTool {
-    fn spec(&self) -> ToolSpec {
-        ToolSpec::typed::<RefundArgs>(
-            "refund_order",
-            "Refund an order, whole or in part. Large refunds wait for human approval.",
-        )
-    }
-
-    fn policy(&self) -> ToolPolicy {
-        let threshold = self.approval_threshold_cents;
-        ToolPolicy::new()
-            // Per call, not per tool: a small refund runs, a large one waits for a person.
-            .needs_resolution(NeedsResolution::dynamic(
-                move |params, _call_id| async move {
-                    let cents = params
-                        .get("amount_cents")
-                        .and_then(Value::as_u64)
-                        .unwrap_or(WHOLE_ORDER_CENTS);
-                    cents > threshold
-                },
-            ))
-            .timeout(5.0)
-            .timeout_behavior(ToolTimeoutBehavior::ErrorAsResult)
-            // Show the model why it failed so it can tell the customer; the default hides it.
-            .on_failure(ToolFailureHandling::Custom(Arc::new(|_ctx, error| {
-                format!("The refund was not made: {error}")
-            })))
-    }
-
-    fn requires(&self) -> &[TypeRequirement] {
-        &self.requires
-    }
-
-    async fn call(&self, ctx: &ToolContext) -> Result<ToolOutput, AgentsError> {
-        // Typed in, typed out. A malformed call is an error the model reads and can correct.
-        let args: RefundArgs = serde_json::from_str(&ctx.tool_arguments)
-            .map_err(|e| AgentsError::tool_with_source("invalid arguments for refund_order", e))?;
-        // `require` names this tool if the dependency is missing; `requires` above means the run
-        // would not have started without it.
-        let payments = ctx.require::<Payments>()?;
-
-        let cents = args.amount_cents.unwrap_or(WHOLE_ORDER_CENTS);
-        let refund = payments.refund(&args.order_id, cents, args.reason);
-        let value = serde_json::to_value(refund)
-            .map_err(|e| AgentsError::tool_with_source("could not encode the refund", e))?;
-        Ok(ToolOutput::output(value))
-    }
-}
-
-// ---------------------------------------------------------------------------------------------
 // Middleware: work around the call.
 // ---------------------------------------------------------------------------------------------
 
@@ -206,9 +154,9 @@ impl ToolMiddleware for Audit {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // The trait object becomes the SDK's own tool type once; from here on it is indistinguishable
-    // from one built with `FunctionTool::new` or `#[function_tool]`.
-    let refund = FunctionTool::from_tool(RefundTool::new(10_000)).with_middleware(Audit {
+    // The struct becomes the SDK's own tool type once; from here on it is indistinguishable from
+    // one built with `FunctionTool::new` or `#[function_tool]`.
+    let refund = FunctionTool::from_typed::<RefundArgs>().with_middleware(Audit {
         calls: AtomicUsize::new(0),
     });
 

@@ -137,7 +137,7 @@ Ordered like the web demo's capability checklist, one knowledge point per exampl
 | `reasoning` | Run control | Typed `Reasoning` effort/summary for either API |
 | `capability` | Rust-only | A named bundle of tools, instructions and guardrails |
 | `zero_config` | Rust-only | `openai_agents::run`: provider and model from the environment, offline without a key |
-| `structured_tool` | Rust-only | `impl Tool`: typed spec, per-call approval, declared dependency, middleware |
+| `structured_tool` | Rust-only | `#[derive(ToolMeta)]` + `TypedTool`: parameters, per-call approval, timeout and dependency as annotations on the argument struct; middleware |
 | `deferred_capability` | Rust-only | `CapabilityParts::deferred`: tools stay out of the prompt until the model loads them |
 | `builtin_guardrails` | Safety and governance | Ready-made guardrails from `openai-agents-guardrails` |
 | `file_session` | Conversation and memory | `FileSession`: a conversation in a JSONL file |

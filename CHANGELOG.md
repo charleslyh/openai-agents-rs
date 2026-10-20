@@ -95,6 +95,12 @@ entry will be `0.1.0`.
   and the `ToolPolicy` builders (`needs_resolution`, `enabled`, `timeout`, `timeout_behavior`,
   `on_failure`, `timeout_message`), plus `NeedsResolution::dynamic`. See
   `examples/src/33_structured_tool.rs` (X-023).
+- `#[derive(ToolMeta)]` + `TypedTool` + `FunctionTool::from_typed::<Args>()` (X-024): a tool declared
+  by annotations on its argument struct. Field doc comments are the parameter descriptions, the
+  struct's doc comment is the tool description, and `#[tool(name, timeout, requires(..),
+  needs_approval, needs_approval_if = path, on_failure = "..{error}..")]` carries the rest; the body
+  is `impl TypedTool` taking the parsed arguments and returning a typed result. The `structured_tool`
+  example now uses it; `impl Tool` stays for a tool with state of its own.
 - `CapabilityParts::deferred(description)` (X-021): a capability the model loads on demand. Until it
   calls `load_capability`, the prompt carries one catalog line and none of the capability's tools or
   instructions; loading is per agent and run, idempotent, and saved in a paused run's `RunState`

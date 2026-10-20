@@ -3,7 +3,7 @@ name = "openai-agents-macros"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.99"
-description = "Proc-macros for openai-agents (function_tool)"
+description = "Proc-macros for openai-agents (function_tool, ToolMeta)"
 license = "MIT"
 
 # Inherits the lint config (including the tracked clippy backlog) from `[workspace.lints]`.
