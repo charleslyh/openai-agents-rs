@@ -153,6 +153,20 @@ impl From<bool> for NeedsResolution {
 }
 
 impl NeedsResolution {
+    /// Decide per call from the arguments the model sent and the call id.
+    ///
+    /// The common case is a threshold: pause when the call is large enough to matter. `params` is
+    /// the parsed argument object (empty when the arguments are not a JSON object).
+    pub fn dynamic<F, Fut>(f: F) -> Self
+    where
+        F: Fn(Value, String) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = bool> + Send + 'static,
+    {
+        Self::Dynamic(Arc::new(move |params, call_id| {
+            Box::pin(f(params, call_id))
+        }))
+    }
+
     /// Evaluate whether this call pauses for resolution.
     pub async fn requires(&self, arguments_json: &str, call_id: &str) -> bool {
         match self {
@@ -243,10 +257,50 @@ pub struct ToolSpec {
     pub strict_json_schema: bool,
 }
 
+impl ToolSpec {
+    /// A spec with an explicit JSON Schema. The schema is strict, like the one `typed` builds.
+    ///
+    /// The struct is `#[non_exhaustive]`, so this and [`ToolSpec::typed`] are how a crate outside
+    /// the SDK builds one.
+    pub fn new(
+        name: impl Into<String>,
+        description: impl Into<String>,
+        params_json_schema: Value,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            description: description.into(),
+            params_json_schema,
+            strict_json_schema: true,
+        }
+    }
+
+    /// A spec whose schema comes from `Args`, the same one [`FunctionTool::typed`] advertises.
+    ///
+    /// Pair it with `serde_json::from_str::<Args>(&ctx.tool_arguments)` in [`Tool::call`], so the
+    /// schema the model sees and the parse the tool does cannot drift apart.
+    pub fn typed<Args: schemars::JsonSchema>(
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Self {
+        let name = name.into();
+        let schema = typed_params_schema::<Args>(&name);
+        Self::new(name, description, schema)
+    }
+
+    /// Accept non-strict schemas (or not). Strict is the default.
+    #[must_use]
+    pub fn strict(mut self, strict: bool) -> Self {
+        self.strict_json_schema = strict;
+        self
+    }
+}
+
 /// How a [`Tool`] is scheduled: enablement, pause-for-resolution and failure/timeout handling.
 ///
 /// Grouped apart from [`ToolSpec`] because a tool's shape and its scheduling policy change for
 /// different reasons; `Default` is "always enabled, never pauses, default error text, no timeout".
+/// The struct is `#[non_exhaustive]`: start from [`ToolPolicy::new`] and chain.
 #[derive(Clone, Default)]
 #[non_exhaustive]
 pub struct ToolPolicy {
@@ -262,6 +316,60 @@ pub struct ToolPolicy {
     pub timeout_behavior: ToolTimeoutBehavior,
     /// Formats the model-visible timeout text for `ErrorAsResult`.
     pub timeout_error_function: Option<ToolErrorFn>,
+}
+
+impl ToolPolicy {
+    /// The default policy: always enabled, never pauses, default error text, no timeout.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Pause every call (`true`) or none (`false`) for a resolution, or decide per call with a
+    /// [`NeedsResolution::Dynamic`].
+    #[must_use]
+    pub fn needs_resolution(mut self, policy: impl Into<NeedsResolution>) -> Self {
+        self.needs_resolution = policy.into();
+        self
+    }
+
+    /// Offer the tool to the model always (`true`), never (`false`), or decide each turn.
+    #[must_use]
+    pub fn enabled(mut self, enabled: impl Into<ToolEnabled>) -> Self {
+        self.is_enabled = enabled.into();
+        self
+    }
+
+    /// Limit each invocation to `seconds`. Must be finite and greater than zero; checked when the
+    /// run starts.
+    #[must_use]
+    pub fn timeout(mut self, seconds: f64) -> Self {
+        self.timeout_seconds = Some(seconds);
+        self
+    }
+
+    /// Choose what a timeout does.
+    #[must_use]
+    pub fn timeout_behavior(mut self, behavior: ToolTimeoutBehavior) -> Self {
+        self.timeout_behavior = behavior;
+        self
+    }
+
+    /// Choose how a returned error reaches the model (or aborts the run).
+    #[must_use]
+    pub fn on_failure(mut self, handling: ToolFailureHandling) -> Self {
+        self.failure_error_function = handling;
+        self
+    }
+
+    /// Format the model-visible timeout text.
+    #[must_use]
+    pub fn timeout_message<F>(mut self, f: F) -> Self
+    where
+        F: Fn(&RunContextWrapper, &AgentsError) -> String + Send + Sync + 'static,
+    {
+        self.timeout_error_function = Some(Arc::new(f));
+        self
+    }
 }
 
 /// A tool the model can call (Rust-only: Python has no equivalent trait, only the
@@ -730,6 +838,65 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(out.value(), Some(&Value::from(42)));
+    }
+
+    #[test]
+    fn a_typed_spec_advertises_the_same_schema_as_typed() {
+        let spec = ToolSpec::typed::<AddArgs>("add", "adds two numbers");
+        let tool =
+            FunctionTool::typed::<AddArgs, _, _>("add", "adds two numbers", |_c, a| async move {
+                Ok(Value::from(a.a + a.b))
+            });
+        assert_eq!(spec.params_json_schema, tool.params_json_schema);
+        assert!(spec.strict_json_schema);
+        assert!(!spec.strict(false).strict_json_schema);
+    }
+
+    #[tokio::test]
+    async fn the_policy_builders_set_what_they_name() {
+        let policy = ToolPolicy::new()
+            .needs_resolution(NeedsResolution::dynamic(|params, call_id| async move {
+                params["n"].as_u64().unwrap_or(0) > 5 && call_id != "skip"
+            }))
+            .enabled(false)
+            .timeout(2.5)
+            .timeout_behavior(ToolTimeoutBehavior::RaiseException)
+            .on_failure(ToolFailureHandling::Raise)
+            .timeout_message(|_ctx, _err| "too slow".to_string());
+
+        assert_eq!(policy.timeout_seconds, Some(2.5));
+        assert_eq!(policy.timeout_behavior, ToolTimeoutBehavior::RaiseException);
+        assert!(matches!(
+            policy.failure_error_function,
+            ToolFailureHandling::Raise
+        ));
+        assert!(matches!(policy.is_enabled, ToolEnabled::Fixed(false)));
+        assert!(policy.timeout_error_function.is_some());
+
+        let rule = &policy.needs_resolution;
+        assert!(rule.requires(r#"{"n": 9}"#, "c1").await);
+        assert!(!rule.requires(r#"{"n": 1}"#, "c1").await);
+        assert!(
+            !rule.requires(r#"{"n": 9}"#, "skip").await,
+            "the call id is passed through"
+        );
+        // Arguments that are not a JSON object count as "no parameters", not as a panic.
+        assert!(!rule.requires("not json", "c1").await);
+    }
+
+    #[test]
+    fn the_default_policy_is_the_documented_one() {
+        let policy = ToolPolicy::new();
+        assert!(matches!(
+            policy.needs_resolution,
+            NeedsResolution::Fixed(false)
+        ));
+        assert!(matches!(policy.is_enabled, ToolEnabled::Fixed(true)));
+        assert!(matches!(
+            policy.failure_error_function,
+            ToolFailureHandling::Default
+        ));
+        assert_eq!(policy.timeout_seconds, None);
     }
 
     #[tokio::test]
