@@ -2,12 +2,12 @@
 
 use std::sync::Arc;
 
-use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
-use openai_agents::{
+use opai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
+use opai_agents::{
     Agent, AgentOutputSchema, AgentOutputSchemaBase, AgentsError, ModelError, RunOptions, Runner,
 };
 
-#[derive(Debug, Clone, PartialEq, serde::Deserialize, openai_agents::schemars::JsonSchema)]
+#[derive(Debug, Clone, PartialEq, serde::Deserialize, opai_agents::schemars::JsonSchema)]
 struct Answer {
     /// Short answer text.
     text: String,
@@ -121,10 +121,10 @@ async fn stop_on_first_tool_stringifies_without_output_type() {
     )]));
     let agent = Agent::new("counter")
         .model(model)
-        .tools(vec![openai_agents::FunctionTool::constant(
+        .tools(vec![opai_agents::FunctionTool::constant(
             "count", "count", "7",
         )])
-        .tool_use_behavior(openai_agents::ToolUseBehavior::StopOnFirstTool);
+        .tool_use_behavior(opai_agents::ToolUseBehavior::StopOnFirstTool);
     let result = Runner::run(&agent, "count", RunOptions::default())
         .await
         .expect("run");
@@ -136,14 +136,14 @@ async fn stop_on_first_tool_stringifies_without_output_type() {
     )]));
     let agent = Agent::new("counter")
         .model(model)
-        .tools(vec![openai_agents::FunctionTool::new(
+        .tools(vec![opai_agents::FunctionTool::new(
             "count",
             "count",
             serde_json::json!({"type": "object", "properties": {}, "additionalProperties": false}),
             |_ctx, _args| async { Ok(serde_json::json!(7)) },
         )])
         .output_type(Arc::new(AgentOutputSchema::of::<Answer>().expect("schema")))
-        .tool_use_behavior(openai_agents::ToolUseBehavior::StopOnFirstTool);
+        .tool_use_behavior(opai_agents::ToolUseBehavior::StopOnFirstTool);
     let result = Runner::run(&agent, "count", RunOptions::default())
         .await
         .expect("run");

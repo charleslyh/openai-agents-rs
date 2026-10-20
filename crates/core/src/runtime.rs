@@ -63,7 +63,7 @@ impl ProviderSlot {
 /// Builder for a [`Runtime`].
 ///
 /// ```
-/// use openai_agents_core::Runtime;
+/// use opai_agents_core::Runtime;
 ///
 /// let runtime = Runtime::builder().build();
 /// assert!(!runtime.tracing_disabled());
@@ -286,7 +286,7 @@ impl Runtime {
             .get_or_init(|| {
                 tokio::runtime::Builder::new_multi_thread()
                     .enable_all()
-                    .thread_name("openai-agents-blocking")
+                    .thread_name("opai-agents-blocking")
                     .build()
                     .map_err(|e| e.to_string())
             })

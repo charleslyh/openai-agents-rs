@@ -8,8 +8,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
-use openai_agents::{
+use opai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
+use opai_agents::{
     Agent, AgentsError, CompactingSession, InMemorySession, ModelSummarizer, RunOptions, Runner,
     Session, Summarizer,
 };

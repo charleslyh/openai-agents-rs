@@ -2,13 +2,13 @@
 
 use std::sync::Arc;
 
-use openai_agents_core::error::ModelError;
-use openai_agents_core::model::{Model, ModelInput, ModelRequest};
-use openai_agents_core::{
+use opai_agents_core::error::ModelError;
+use opai_agents_core::model::{Model, ModelInput, ModelRequest};
+use opai_agents_core::{
     AgentOutputSchemaBase, AgentsError, FunctionTool, ModelResponse, ModelSettings, ModelTracing,
     Reasoning, ReasoningEffort,
 };
-use openai_agents_providers::{Capabilities, Capability, GuardedModel};
+use opai_agents_providers::{Capabilities, Capability, GuardedModel};
 
 /// Answers with a marker, so a test can tell "the request went through" from "it was refused".
 struct StubModel;
@@ -37,7 +37,7 @@ impl AgentOutputSchemaBase for JsonSchema {
         "answer"
     }
     fn json_schema(&self) -> Result<&serde_json::Value, AgentsError> {
-        Err(openai_agents_core::UserError::new("not needed here").into())
+        Err(opai_agents_core::UserError::new("not needed here").into())
     }
     fn is_strict_json_schema(&self) -> bool {
         false

@@ -2,7 +2,7 @@
 
 use serde_json::{json, Map, Value};
 
-use openai_agents_core::error::ModelError;
+use opai_agents_core::error::ModelError;
 
 use super::{
     default_should_replay_reasoning, str_field, unsupported, ChatConvertOptions,

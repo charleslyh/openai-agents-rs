@@ -5,19 +5,19 @@
 //! environment variable" rather than "know its base URL, protocol and limits":
 //!
 //! ```no_run
-//! use openai_agents_providers::ProviderRegistry;
+//! use opai_agents_providers::ProviderRegistry;
 //!
 //! // Registers every preset whose key variable is set (DEEPSEEK_API_KEY, GEMINI_API_KEY, ...),
 //! // plus AGENTS_PROVIDER_1_ENDPOINT and friends.
 //! let provider = ProviderRegistry::from_env()?.into_provider()?;
-//! # Ok::<(), openai_agents_core::UserError>(())
+//! # Ok::<(), opai_agents_core::UserError>(())
 //! ```
 //!
 //! Three things live here:
 //!
 //! - [`PRESETS`]: static data — base URL, key variable, protocol, capabilities, model prefixes.
 //! - [`Provider`]: a preset (or a URL) turned into a
-//!   [`ModelProvider`](openai_agents_core::ModelProvider).
+//!   [`ModelProvider`](opai_agents_core::ModelProvider).
 //! - [`ProviderRegistry`] / [`ProviderRouter`]: discovery from the environment, and `prefix/model`
 //!   routing with inference for names that carry no prefix.
 //!
@@ -45,7 +45,7 @@ pub use spec::{
 
 pub use spec::LAST_CHECKED;
 
-use openai_agents_core::error::UserError;
+use opai_agents_core::error::UserError;
 
 /// A request needs something the provider does not support (Rust-only, X-013).
 ///
@@ -102,8 +102,8 @@ impl From<UnsupportedCapability> for UserError {
     }
 }
 
-impl From<UnsupportedCapability> for openai_agents_core::AgentsError {
+impl From<UnsupportedCapability> for opai_agents_core::AgentsError {
     fn from(error: UnsupportedCapability) -> Self {
-        openai_agents_core::AgentsError::User(error.into())
+        opai_agents_core::AgentsError::User(error.into())
     }
 }

@@ -8,14 +8,14 @@
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
-//! cargo run -p openai-agents-examples --example hooks
+//! cargo run -p opai-agents-examples --example hooks
 //! ```
 
 mod common;
 
 use std::sync::Arc;
 
-use openai_agents::{Agent, AgentHooks, RunContextWrapper, RunHooks, RunOptions, Runner};
+use opai_agents::{Agent, AgentHooks, RunContextWrapper, RunHooks, RunOptions, Runner};
 
 struct PrintRunHooks;
 

@@ -52,7 +52,7 @@ entry will be `0.1.0`.
 - A paused `RunState` records a fingerprint of the agent graph; resuming it with agents whose
   names, tools or handoffs changed fails with a `UserError`. Call
   `RunState::allow_agent_graph_change()` to resume anyway.
-- New crate `openai-agents-providers`: presets for DeepSeek, Gemini, Groq, OpenRouter, Anthropic and
+- New crate `opai-agents-providers`: presets for DeepSeek, Gemini, Groq, OpenRouter, Anthropic and
   Ollama, `ProviderRegistry::from_env()` discovery, `prefix/model` routing with inference,
   a capability matrix and `UnsupportedCapability` (X-013).
 - Requests a provider cannot honour are refused before they are sent: reasoning, a JSON schema,
@@ -60,22 +60,22 @@ entry will be `0.1.0`.
   naming the provider and the capability.
 - A small model catalogue warns when a run names a retired model (and what to use instead), a
   superseded one, or an id that looks like a typo of a known one (X-014).
-- `openai_agents::run(instructions, input)`: one line, provider and model taken from the
+- `opai_agents::run(instructions, input)`: one line, provider and model taken from the
   environment. `AGENTS_OFFLINE=1` answers locally, so a project can be tried before any key
   exists. New `providers` feature on the facade (off by default) (X-015).
 - `RunOptions::provider(..)` sets the provider that resolves a run's model names.
 - `RunStateStore` (save / load / delete with a TTL) plus `RunStateMigration` and shared schema
   checks: the contract the file, Redis and Postgres backends implement (X-016).
-- `openai_agents_core::session_contract`: the behaviour every `Session` backend must have, as a
+- `opai_agents_core::session_contract`: the behaviour every `Session` backend must have, as a
   suite any backend can run in its own tests. `InMemorySession` and `SqliteSession` pass it
   (X-017).
-- New crate `openai-agents-sessions` with `FileSession`: a conversation in a JSONL file, locked
+- New crate `opai-agents-sessions` with `FileSession`: a conversation in a JSONL file, locked
   across processes, rewritten atomically. Session ids are validated (no path traversal, no
   symlinks), and it passes the contract above.
 - `FileRunStateStore`: a paused run per file, signed with HMAC-SHA256 when `AGENTS_STATE_KEY` is
   set, with a TTL and a migration hook. A state edited outside the process fails to load instead
   of resuming.
-- New crate `openai-agents-observability` with `BatchedProcessor`, a `TracingProcessor` that turns
+- New crate `opai-agents-observability` with `BatchedProcessor`, a `TracingProcessor` that turns
   spans into JSON in the callback and hands them to a background thread through a bounded queue,
   so a slow or broken exporter costs the run nothing. A full queue drops the event and counts it
   (`dropped()`); `force_flush` waits at most 2 s (X-018).
@@ -83,8 +83,8 @@ entry will be `0.1.0`.
 - `Metrics` / `MetricsSink` over the same stream: turns, tool calls, tool failure rate, input and
   output tokens, and cost from a `PriceTable`. A model with no price counts as zero, never as an
   estimate.
-- `TracingSink`: each span end becomes a `tracing` event under the target `openai_agents` (`DEBUG`,
-  or `WARN` when the span failed; starts are `TRACE`), so `RUST_LOG=openai_agents=debug` shows a
+- `TracingSink`: each span end becomes a `tracing` event under the target `opai_agents` (`DEBUG`,
+  or `WARN` when the span failed; starts are `TRACE`), so `RUST_LOG=opai_agents=debug` shows a
   run next to the application's own logs. Events, not `tracing` spans: the export runs on a writer
   thread with no span entered, so `span_id` / `parent_id` are fields.
 - `OtelSink` (`otel` feature): spans as OpenTelemetry spans, in whatever pipeline the process has
@@ -105,13 +105,13 @@ entry will be `0.1.0`.
   calls `load_capability`, the prompt carries one catalog line and none of the capability's tools or
   instructions; loading is per agent and run, idempotent, and saved in a paused run's `RunState`
   (`loaded_capabilities`, absent in older states). Guardrails and model settings apply from the start.
-- New crate `openai-agents-guardrails` (X-020): `MaxLength`, `PiiRedactor` (redacts by default;
+- New crate `opai-agents-guardrails` (X-020): `MaxLength`, `PiiRedactor` (redacts by default;
   emails, Luhn-valid cards, SSNs, phone numbers), `PromptInjection` (a heuristic, documented as
   one), `BlockedKeywords` (whole-word, literal) and `SchemaValidator` (a subset of JSON Schema that
   refuses the rest). Each becomes an input or output guardrail with `.input()` / `.output()`; a bad
   configuration is a `BuildError` at construction; a failure never quotes the text. Facade feature
   `guardrails`.
-- New crate `openai-agents-tools` (X-019): `calculator` (a parser, not `eval`), `clock` (one
+- New crate `opai-agents-tools` (X-019): `calculator` (a parser, not `eval`), `clock` (one
   RFC 3339 shape), `file_read` / `file_list` (one directory, nothing outside it: `..`, symlinks
   that leave and absolute paths refused) and `web_fetch` (`webfetch` feature: private, loopback,
   link-local and reserved addresses refused at connect time, including the `9.`/`11.`/`21.`/`30.`
@@ -139,13 +139,13 @@ entry will be `0.1.0`.
   `enabled_handoffs` take `self: &Arc<Agent>`, and `ToolEnabled::resolve` takes `&Arc<Agent>`.
   Wrap a bare agent with `Arc::new(agent)` to call them.
 - **Breaking:** `ModelProvider::get_model` is `async` so a provider can await credentials or a
-  lookup. Implement it with `#[async_trait]` (re-exported as `openai_agents::async_trait`) and
+  lookup. Implement it with `#[async_trait]` (re-exported as `opai_agents::async_trait`) and
   `.await` direct calls.
 
 ### Added
 
 - `#[function_tool(timeout = <seconds>)]`.
-- `openai_agents_core::utf8_stream::Utf8Stream` for decoding chunked byte streams.
+- `opai_agents_core::utf8_stream::Utf8Stream` for decoding chunked byte streams.
 - A `twenty_tools_ten_turns` benchmark.
 - `Extensions`: typed per-run values (`RunOptions::with(value)`, `ctx.get::<T>()`,
   `ctx.require::<T>()`).
@@ -162,7 +162,7 @@ entry will be `0.1.0`.
 - A `:<effort>` model-name suffix (`"o4-mini:high"`) for names resolved through a provider.
 - `Capability` / `CapabilityParts`: named bundles of tools, instructions, guardrails, default model
   settings and required extensions, mounted with `Agent::capability(..)`.
-- `prelude` modules (`openai_agents::prelude`, `openai_agents_core::prelude`) with the types most
+- `prelude` modules (`opai_agents::prelude`, `opai_agents_core::prelude`) with the types most
   programs need; the facade one also brings `#[function_tool]`.
 - `async_trait` is re-exported at the crate root and in the prelude.
 - `RunOptions` gains `.tracing(..)`, `.tools(..)` and `.session_opts(..)` so a run can be

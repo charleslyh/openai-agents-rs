@@ -1,8 +1,8 @@
 //! Turning `ModelSettings` and tools into request bodies and headers.
 
-use openai_agents_core::error::ModelError;
-use openai_agents_core::model_settings::ModelSettings;
-use openai_agents_core::tool::FunctionTool;
+use opai_agents_core::error::ModelError;
+use opai_agents_core::model_settings::ModelSettings;
+use opai_agents_core::tool::FunctionTool;
 
 /// Settings shared by both OpenAI APIs.
 pub(crate) fn apply_model_settings_common(body: &mut serde_json::Value, settings: &ModelSettings) {
@@ -138,8 +138,8 @@ pub(crate) fn apply_model_settings_responses(
     }
     if let Some(t) = settings.truncation {
         body["truncation"] = serde_json::json!(match t {
-            openai_agents_core::model_settings::Truncation::Auto => "auto",
-            openai_agents_core::model_settings::Truncation::Disabled => "disabled",
+            opai_agents_core::model_settings::Truncation::Auto => "auto",
+            opai_agents_core::model_settings::Truncation::Disabled => "disabled",
         });
     }
     if let Some(r) = &settings.reasoning {
@@ -147,9 +147,9 @@ pub(crate) fn apply_model_settings_responses(
     }
     if let Some(v) = settings.verbosity {
         body["verbosity"] = serde_json::json!(match v {
-            openai_agents_core::model_settings::Verbosity::Low => "low",
-            openai_agents_core::model_settings::Verbosity::Medium => "medium",
-            openai_agents_core::model_settings::Verbosity::High => "high",
+            opai_agents_core::model_settings::Verbosity::Low => "low",
+            opai_agents_core::model_settings::Verbosity::Medium => "medium",
+            opai_agents_core::model_settings::Verbosity::High => "high",
         });
     }
     if let Some(meta) = &settings.metadata {

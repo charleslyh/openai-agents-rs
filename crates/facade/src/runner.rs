@@ -5,71 +5,71 @@
 //! default the first time a run starts, which keeps the "set `OPENAI_API_KEY` and go" behavior of
 //! a single-crate build. Everything else is forwarded to the core runner unchanged.
 //!
-//! Every public method of `openai_agents_core::Runner` needs a twin here;
+//! Every public method of `opai_agents_core::Runner` needs a twin here;
 //! `scripts/check_runner_api.py` (run in CI) fails when the two lists differ.
 
-use openai_agents_core::{
+use opai_agents_core::{
     Agent, AgentsError, InputLike, RunOptions, RunResult, RunResultStreaming, RunState,
 };
 
 /// Entry point for running agents (Python: `Runner`).
 ///
-/// The same methods as `openai_agents_core::Runner`, which documents them. The first call in a
+/// The same methods as `opai_agents_core::Runner`, which documents them. The first call in a
 /// process also installs the default OpenAI model provider (see the module docs).
 pub struct Runner;
 
 impl Runner {
-    /// See `openai_agents_core::Runner::run`.
+    /// See `opai_agents_core::Runner::run`.
     pub async fn run(
         starting_agent: &Agent,
         input: impl Into<InputLike>,
         options: RunOptions,
     ) -> Result<RunResult, AgentsError> {
         install_default_provider();
-        openai_agents_core::Runner::run(starting_agent, input, options).await
+        opai_agents_core::Runner::run(starting_agent, input, options).await
     }
 
-    /// See `openai_agents_core::Runner::run_state`.
+    /// See `opai_agents_core::Runner::run_state`.
     pub async fn run_state(
         starting_agent: &Agent,
         state: RunState,
         options: RunOptions,
     ) -> Result<RunResult, AgentsError> {
         install_default_provider();
-        openai_agents_core::Runner::run_state(starting_agent, state, options).await
+        opai_agents_core::Runner::run_state(starting_agent, state, options).await
     }
 
-    /// See `openai_agents_core::Runner::run_streamed`.
+    /// See `opai_agents_core::Runner::run_streamed`.
     pub fn run_streamed(
         starting_agent: Agent,
         input: impl Into<InputLike>,
         options: RunOptions,
     ) -> RunResultStreaming {
         install_default_provider();
-        openai_agents_core::Runner::run_streamed(starting_agent, input, options)
+        opai_agents_core::Runner::run_streamed(starting_agent, input, options)
     }
 
-    /// See `openai_agents_core::Runner::run_state_streamed`.
+    /// See `opai_agents_core::Runner::run_state_streamed`.
     pub fn run_state_streamed(
         starting_agent: Agent,
         state: RunState,
         options: RunOptions,
     ) -> Result<RunResultStreaming, AgentsError> {
         install_default_provider();
-        openai_agents_core::Runner::run_state_streamed(starting_agent, state, options)
+        opai_agents_core::Runner::run_state_streamed(starting_agent, state, options)
     }
 
-    /// See `openai_agents_core::Runner::run_blocking`.
+    /// See `opai_agents_core::Runner::run_blocking`.
     pub fn run_blocking(
         starting_agent: &Agent,
         input: impl Into<InputLike>,
         options: RunOptions,
     ) -> Result<RunResult, AgentsError> {
         install_default_provider();
-        openai_agents_core::Runner::run_blocking(starting_agent, input, options)
+        opai_agents_core::Runner::run_blocking(starting_agent, input, options)
     }
 
-    /// See `openai_agents_core::Runner::run_blocking_on`.
+    /// See `opai_agents_core::Runner::run_blocking_on`.
     pub fn run_blocking_on(
         runtime: &tokio::runtime::Handle,
         starting_agent: &Agent,
@@ -77,7 +77,7 @@ impl Runner {
         options: RunOptions,
     ) -> Result<RunResult, AgentsError> {
         install_default_provider();
-        openai_agents_core::Runner::run_blocking_on(runtime, starting_agent, input, options)
+        opai_agents_core::Runner::run_blocking_on(runtime, starting_agent, input, options)
     }
 }
 
@@ -87,7 +87,7 @@ impl Runner {
 /// extra `Once` guard is needed here.
 #[cfg(feature = "openai")]
 fn install_default_provider() {
-    openai_agents_core::Runtime::global().set_model_provider_factory(default_model_provider);
+    opai_agents_core::Runtime::global().set_model_provider_factory(default_model_provider);
 }
 
 /// Without the `openai` feature there is nothing to install: core falls back to a provider that
@@ -102,11 +102,11 @@ fn install_default_provider() {}
 /// `openai_chat_completions` and `openai_responses` name prefixes. When neither the key nor a
 /// base URL is set it fails with an actionable error.
 #[cfg(feature = "openai")]
-pub fn default_model_provider() -> std::sync::Arc<dyn openai_agents_core::ModelProvider> {
+pub fn default_model_provider() -> std::sync::Arc<dyn opai_agents_core::ModelProvider> {
     use std::sync::Arc;
 
-    use openai_agents_core::{MissingProvider, MultiProvider};
-    use openai_agents_openai::{DefaultOpenAiApi, OpenAIProvider};
+    use opai_agents_core::{MissingProvider, MultiProvider};
+    use opai_agents_openai::{DefaultOpenAiApi, OpenAIProvider};
 
     match OpenAIProvider::from_env() {
         Ok(provider) => {

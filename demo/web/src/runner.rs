@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::IntoResponse;
-use openai_agents::{
+use opai_agents::{
     AgentsError, CancelMode, CompactingSession, ContextValue, McpServer, Model, RunConfig,
     RunOptions, RunState, Runner, Session, StreamEvent, ToolExecutionConfig,
 };
@@ -357,7 +357,7 @@ async fn report_error(emit: &Emitter, err: &AgentsError, delivered: usize) {
     let cut_mid_stream = delivered > 0
         && matches!(
             err,
-            AgentsError::Model(openai_agents::ModelError::Connection(_))
+            AgentsError::Model(opai_agents::ModelError::Connection(_))
         );
     if cut_mid_stream {
         emit.emit(DemoEvent::StreamInterrupted {

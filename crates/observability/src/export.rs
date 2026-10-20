@@ -10,7 +10,7 @@
 
 use serde_json::{json, Value};
 
-use openai_agents_core::tracing::{Span, SpanData, Trace};
+use opai_agents_core::tracing::{Span, SpanData, Trace};
 
 /// One thing that happened, ready to be written somewhere.
 #[derive(Debug, Clone, PartialEq)]

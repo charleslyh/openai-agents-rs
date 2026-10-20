@@ -20,30 +20,30 @@ trace export. Anything that only needs a compatible *protocol* is in scope. See
 
 ## Crates and features
 
-Depend on `openai-agents`; it re-exports everything below under the paths the SDK has always had.
+Depend on `opai-agents`; it re-exports everything below under the paths the SDK has always had.
 
 | Crate | What it holds | Pulled in by |
 | --- | --- | --- |
-| `openai-agents-core` | agents, tools, handoffs, guardrails, the run loop, sessions, tracing, and the `Model` / `ModelProvider` / `McpServer` contracts. No HTTP client, database or process spawning | always |
-| `openai-agents-macros` | `#[function_tool]` | always |
-| `openai-agents-testing` | `ScriptedModel` and item builders (`openai_agents::testing`) | always |
-| `openai-agents-openai` | Chat Completions and Responses adapters, `OpenAIProvider`, `CompatibleProvider` | feature `openai` (**default**) |
-| `openai-agents-mcp` | MCP client: stdio and streamable HTTP, tool filters, `McpServerManager` | feature `mcp` |
-| `openai-agents-sqlite` | `SqliteSession`, file-compatible with the Python SDK | feature `sqlite` |
-| `openai-agents-providers` | provider presets (DeepSeek, Gemini, Groq, OpenRouter, Anthropic, Ollama), the capability matrix and the offline model | feature `providers` |
-| `openai-agents-sessions` | `FileSession` / `FileRunStateStore`; Redis and Postgres variants | features `sessions`, `redis`, `postgres` |
-| `openai-agents-observability` | console, JSONL and OpenTelemetry export, metrics | features `observability`, `otel` |
-| `openai-agents-tools` | calculator, clock, read-only files, `web_fetch` with private networks refused | features `tools`, `webfetch` |
-| `openai-agents-guardrails` | length, personal data, prompt injection, keywords, JSON Schema | feature `guardrails` |
+| `opai-agents-core` | agents, tools, handoffs, guardrails, the run loop, sessions, tracing, and the `Model` / `ModelProvider` / `McpServer` contracts. No HTTP client, database or process spawning | always |
+| `opai-agents-macros` | `#[function_tool]` | always |
+| `opai-agents-testing` | `ScriptedModel` and item builders (`opai_agents::testing`) | always |
+| `opai-agents-openai` | Chat Completions and Responses adapters, `OpenAIProvider`, `CompatibleProvider` | feature `openai` (**default**) |
+| `opai-agents-mcp` | MCP client: stdio and streamable HTTP, tool filters, `McpServerManager` | feature `mcp` |
+| `opai-agents-sqlite` | `SqliteSession`, file-compatible with the Python SDK | feature `sqlite` |
+| `opai-agents-providers` | provider presets (DeepSeek, Gemini, Groq, OpenRouter, Anthropic, Ollama), the capability matrix and the offline model | feature `providers` |
+| `opai-agents-sessions` | `FileSession` / `FileRunStateStore`; Redis and Postgres variants | features `sessions`, `redis`, `postgres` |
+| `opai-agents-observability` | console, JSONL and OpenTelemetry export, metrics | features `observability`, `otel` |
+| `opai-agents-tools` | calculator, clock, read-only files, `web_fetch` with private networks refused | features `tools`, `webfetch` |
+| `opai-agents-guardrails` | length, personal data, prompt injection, keywords, JSON Schema | feature `guardrails` |
 
 ```toml
-openai-agents = "0.1"                                                        # core + OpenAI
-openai-agents = { version = "0.1", features = ["providers", "tools", "guardrails"] }
-openai-agents = { version = "0.1", features = ["mcp", "sqlite"] }            # plus MCP and SQLite
-openai-agents = { version = "0.1", default-features = false }                # core only, bring your own Model
+opai-agents = "0.1"                                                        # core + OpenAI
+opai-agents = { version = "0.1", features = ["providers", "tools", "guardrails"] }
+opai-agents = { version = "0.1", features = ["mcp", "sqlite"] }            # plus MCP and SQLite
+opai-agents = { version = "0.1", default-features = false }                # core only, bring your own Model
 ```
 
-Features add up; `providers` is what makes `openai_agents::run` and `zero_config_options` work with
+Features add up; `providers` is what makes `opai_agents::run` and `zero_config_options` work with
 anything but OpenAI.
 
 Contributors: each crate carries an `AGENTS.md` with its boundary rules and the traps worth
@@ -57,7 +57,7 @@ With `openai`, `Runner` installs the OpenAI provider on its first call, so `OPEN
 ## Quick start
 
 ```rust
-use openai_agents::prelude::*;
+use opai_agents::prelude::*;
 
 #[tokio::main]
 async fn main() -> Result<(), AgentsError> {
@@ -70,17 +70,17 @@ async fn main() -> Result<(), AgentsError> {
 }
 ```
 
-`openai_agents::prelude` holds the types most programs need; everything else is at the crate root.
+`opai_agents::prelude` holds the types most programs need; everything else is at the crate root.
 
 ### Start a project
 
 ```bash
-cargo install openai-agents-scaffold   # installs `cargo-agents`
+cargo install opai-agents-scaffold   # installs `cargo-agents`
 cargo agents new my-agent              # templates: chat (default), tools, hitl
 cd my-agent && AGENTS_OFFLINE=1 cargo run   # no key needed; set one to talk to a model
 ```
 
-The generated project depends on `openai-agents` with `providers`, so a key in the environment (or
+The generated project depends on `opai-agents` with `providers`, so a key in the environment (or
 `AGENTS_OFFLINE=1`) is the whole setup. `--path` points it at a local checkout instead of the
 published version.
 
@@ -103,14 +103,14 @@ To talk to a server that needs no key, or to route several servers by model pref
 `MultiProvider`: `"local/qwen2.5"`, `"gateway/my-model"`.
 
 The examples live in [`examples/`](./examples) — a workspace member of their own, so they depend
-on `openai-agents` the way your project would rather than reaching into the SDK's internals.
+on `opai-agents` the way your project would rather than reaching into the SDK's internals.
 
 Ordered like the web demo's capability checklist, one knowledge point per example. The number is the file's prefix in `examples/src/` (`01_hello.rs`); the command takes the bare name.
 
 | # | Example | Checklist group | What it shows |
 |---|---------|-----------------|----------------|
 | 01 | `hello` | — | Minimal `Agent` + `Runner::run` |
-| 02 | `zero_config` | — | `openai_agents::run`: provider and model from the environment, offline without a key (Rust-only) |
+| 02 | `zero_config` | — | `opai_agents::run`: provider and model from the environment, offline without a key (Rust-only) |
 | 03 | `streamed` | Conversation and memory | `Runner::run_streamed` events (streaming output) |
 | 04 | `memory` | Conversation and memory | `Session` multi-turn memory |
 | 05 | `compaction` | Conversation and memory | `CompactingSession` context compaction |
@@ -132,7 +132,7 @@ Ordered like the web demo's capability checklist, one knowledge point per exampl
 | 21 | `tool_input_guardrail` | Safety and governance | Tool input guardrail (reject a call) |
 | 22 | `tool_output_guardrail` | Safety and governance | Tool output guardrail (redact a result) |
 | 23 | `verdict_transform` | Safety and governance | `Verdict::Transform`: redact the user's input and keep going (Rust-only) |
-| 24 | `builtin_guardrails` | Safety and governance | Ready-made guardrails from `openai-agents-guardrails` (Rust-only) |
+| 24 | `builtin_guardrails` | Safety and governance | Ready-made guardrails from `opai-agents-guardrails` (Rust-only) |
 | 25 | `structured_output` | Output and observability | `output_type` + typed `final_output_as::<T>()` |
 | 26 | `run_context` | Output and observability | `RunOptions::context` read inside a tool |
 | 27 | `hooks` | Output and observability | `RunHooks` / `AgentHooks` |
@@ -147,19 +147,19 @@ They need `OPENAI_API_KEY` and `OPENAI_MODEL` in the environment; `OPENAI_BASE_U
 `OPENAI_API` (`chat_completions` | `responses`) are optional.
 
 ```bash
-cargo run -p openai-agents-examples --example hello
-cargo run -p openai-agents-examples --example tools
+cargo run -p opai-agents-examples --example hello
+cargo run -p opai-agents-examples --example tools
 
-OPENAI_API=responses cargo run -p openai-agents-examples --example tools
+OPENAI_API=responses cargo run -p opai-agents-examples --example tools
 
 EXAMPLE_INPUT="Translate 'Hello' to French and Spanish." \
-  cargo run -p openai-agents-examples --example agents_as_tools
-HITL_AUTO=approve cargo run -p openai-agents-examples --example hitl
+  cargo run -p opai-agents-examples --example agents_as_tools
+HITL_AUTO=approve cargo run -p opai-agents-examples --example hitl
 
-cargo run -p openai-agents-examples --example structured_output
+cargo run -p opai-agents-examples --example structured_output
 ```
 
-(The `-p openai-agents-examples` is needed because the workspace has more than one default member,
+(The `-p opai-agents-examples` is needed because the workspace has more than one default member,
 so a bare `cargo run --example` cannot tell which package you mean.)
 
 ### Web demo
@@ -169,7 +169,7 @@ multi-agent network, a capability checklist, and a chaos drawer that injects fau
 examples above follow its checklist.
 
 ```bash
-cargo run -p openai-agents-web-demo
+cargo run -p opai-agents-web-demo
 # then open http://127.0.0.1:3000
 ```
 

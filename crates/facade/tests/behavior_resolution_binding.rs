@@ -4,8 +4,8 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
-use openai_agents::{Agent, FunctionTool, RunOptions, RunState, Runner};
+use opai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
+use opai_agents::{Agent, FunctionTool, RunOptions, RunState, Runner};
 use serde_json::Value;
 
 fn deploy_tool(runs: &Arc<AtomicUsize>) -> FunctionTool {

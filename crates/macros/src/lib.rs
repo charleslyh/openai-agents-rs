@@ -1,4 +1,4 @@
-//! `#[function_tool]` attribute macro and `#[derive(ToolMeta)]` for openai-agents.
+//! `#[function_tool]` attribute macro and `#[derive(ToolMeta)]` for opai-agents.
 
 mod tool_meta;
 
@@ -40,12 +40,12 @@ pub fn derive_tool_meta(input: TokenStream) -> TokenStream {
         .into()
 }
 
-/// Turn an async/sync function into an `openai_agents::FunctionTool` constructor.
+/// Turn an async/sync function into an `opai_agents::FunctionTool` constructor.
 ///
 /// The function's parameters are collected into a hidden arguments struct that derives
 /// `serde::Deserialize` and `schemars::JsonSchema`, so nested types, `Vec<T>`, `Option<T>`
 /// and user structs all produce a complete JSON Schema. The schema is then normalized with
-/// `openai_agents::strict_schema::ensure_strict_json_schema`, matching the Python SDK's
+/// `opai_agents::strict_schema::ensure_strict_json_schema`, matching the Python SDK's
 /// `ensure_strict_json_schema`.
 ///
 /// ```ignore
@@ -199,11 +199,11 @@ pub fn function_tool(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let returns_unit = matches!(sig.output, ReturnType::Default);
     let result_to_value = if returns_unit {
-        quote! { Ok(openai_agents::serde_json::Value::Null) }
+        quote! { Ok(opai_agents::serde_json::Value::Null) }
     } else {
         quote! {
-            Ok(openai_agents::serde_json::to_value(__out)
-                .map_err(|e| openai_agents::AgentsError::tool_with_source("could not serialize tool output", e))?)
+            Ok(opai_agents::serde_json::to_value(__out)
+                .map_err(|e| opai_agents::AgentsError::tool_with_source("could not serialize tool output", e))?)
         }
     };
 
@@ -216,22 +216,22 @@ pub fn function_tool(attr: TokenStream, item: TokenStream) -> TokenStream {
         #impl_fn
 
         #(#doc_attrs)*
-        #vis fn #fn_ident() -> openai_agents::FunctionTool {
-            #[derive(openai_agents::serde::Deserialize, openai_agents::schemars::JsonSchema)]
-            #[serde(crate = "openai_agents::serde")]
-            #[schemars(crate = "openai_agents::schemars")]
+        #vis fn #fn_ident() -> opai_agents::FunctionTool {
+            #[derive(opai_agents::serde::Deserialize, opai_agents::schemars::JsonSchema)]
+            #[serde(crate = "opai_agents::serde")]
+            #[schemars(crate = "opai_agents::schemars")]
             #[allow(non_camel_case_types, dead_code)]
             struct #args_ident {
                 #(#fields),*
             }
 
-            let __raw_schema = openai_agents::serde_json::to_value(openai_agents::schemars::schema_for!(#args_ident))
+            let __raw_schema = opai_agents::serde_json::to_value(opai_agents::schemars::schema_for!(#args_ident))
                 .unwrap_or_else(|e| panic!(
                     "function_tool `{}`: could not serialize the parameter JSON schema: {e}",
                     #tool_name
                 ));
             let mut __schema =
-                openai_agents::strict_schema::ensure_strict_json_schema(&__raw_schema)
+                opai_agents::strict_schema::ensure_strict_json_schema(&__raw_schema)
                     .unwrap_or_else(|e| panic!(
                         "function_tool `{}`: parameters cannot be converted to a strict JSON schema: {e}",
                         #tool_name
@@ -242,14 +242,14 @@ pub fn function_tool(attr: TokenStream, item: TokenStream) -> TokenStream {
                 __root.remove("$schema");
             }
 
-            openai_agents::FunctionTool::new(
+            opai_agents::FunctionTool::new(
                 #tool_name,
                 #tool_description,
                 __schema,
                 move |#ctx_pat, args| {
                     async move {
-                        let __parsed: #args_ident = openai_agents::serde_json::from_str(&args).map_err(|e| {
-                            openai_agents::AgentsError::tool_with_source(
+                        let __parsed: #args_ident = opai_agents::serde_json::from_str(&args).map_err(|e| {
+                            opai_agents::AgentsError::tool_with_source(
                                 format!("invalid arguments for tool `{}`", #tool_name),
                                 e,
                             )

@@ -35,19 +35,19 @@ INDEX = """# OpenAI Agents SDK for Rust
 ## Install
 
 ```toml
-openai-agents = "0.1"                                                  # core + OpenAI
-openai-agents = { version = "0.1", features = ["providers", "tools"] } # presets, offline model, tools
+opai-agents = "0.1"                                                  # core + OpenAI
+opai-agents = { version = "0.1", features = ["providers", "tools"] } # presets, offline model, tools
 ```
 
 ```rust
-use openai_agents::prelude::*;
+use opai_agents::prelude::*;
 
 let agent = Agent::new("Assistant").instructions("Be brief.");
 let result = Runner::run(&agent, "Hello", RunOptions::new()).await?;
 println!("{}", result.final_output_as_str().unwrap_or_default());
 ```
 
-`openai_agents::run("instructions", "input")` picks the provider from the environment; with
+`opai_agents::run("instructions", "input")` picks the provider from the environment; with
 `AGENTS_OFFLINE=1` it answers locally and needs no key.
 
 ## The shape of the API
@@ -70,7 +70,7 @@ println!("{}", result.final_output_as_str().unwrap_or_default());
 
 ## Crates
 
-`openai-agents` re-exports everything. Under it: `core` (no HTTP), `macros`, `testing`, `openai`,
+`opai-agents` re-exports everything. Under it: `core` (no HTTP), `macros`, `testing`, `openai`,
 `providers`, `mcp`, `sqlite`, `sessions`, `observability`, `tools`, `guardrails`.
 
 ## Docs

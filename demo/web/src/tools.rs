@@ -4,7 +4,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
-use openai_agents::{
+use opai_agents::{
     AgentsError, FunctionTool, ToolContext, ToolGuardrailFunctionOutput, ToolInputGuardrail,
     ToolOutputGuardrail, ToolTimeoutBehavior,
 };

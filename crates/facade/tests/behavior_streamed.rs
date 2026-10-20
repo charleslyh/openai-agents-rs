@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
-use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
-use openai_agents::{
+use opai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
+use opai_agents::{
     Agent, FunctionTool, RunItemStreamName, RunOptions, Runner, StreamEvent, ToolUseBehavior,
 };
 

@@ -1,5 +1,5 @@
 [package]
-name = "openai-agents-examples"
+name = "opai-agents-examples"
 version = "0.1.0"
 edition = "2021"
 publish = false
@@ -26,7 +26,7 @@ workspace = true
 # governance, output and observability, run control. The number is the position in this file, so
 # when you add an example put it at the end of its group and renumber the ones after it (`git mv`
 # keeps the history). The prefixes are *not* part of the target name: `name` stays a bare
-# identifier, so the command is `cargo run -p openai-agents-examples --example hello`, not
+# identifier, so the command is `cargo run -p opai-agents-examples --example hello`, not
 # `--example 01_hello`.
 #
 # Adding a file means adding a section here — which is also where a per-example
@@ -187,8 +187,8 @@ path = "src/33_reasoning.rs"
 async-trait = "0.1"
 # `mcp` is needed by the `mcp` example only (a real MCP server over stdio: the example's own
 # binary re-executed with `--mcp-server`). Every example in this package compiles the
-# `openai-agents-mcp` crate too because of it.
-openai-agents = { path = "../crates/facade", version = "0.1.0", features = ["openai", "mcp", "providers", "sessions", "observability", "tools", "guardrails"] }
+# `opai-agents-mcp` crate too because of it.
+opai-agents = { path = "../crates/facade", version = "0.1.0", features = ["openai", "mcp", "providers", "sessions", "observability", "tools", "guardrails"] }
 serde = { version = "1", features = ["derive"] }
 schemars = "1"
 serde_json = { version = "1", features = ["preserve_order"] }

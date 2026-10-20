@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 use regex::Regex;
 
-use openai_agents_core::guardrail::Severity;
+use opai_agents_core::guardrail::Severity;
 
 use crate::error::BuildError;
 use crate::guard::{Decision, Guard};
@@ -136,9 +136,9 @@ enum Mode {
 /// model instead.
 ///
 /// ```rust
-/// use openai_agents_guardrails::{Decision, Guard, PiiRedactor};
+/// use opai_agents_guardrails::{Decision, Guard, PiiRedactor};
 ///
-/// # fn build() -> Result<(), openai_agents_guardrails::BuildError> {
+/// # fn build() -> Result<(), opai_agents_guardrails::BuildError> {
 /// let redactor = PiiRedactor::new()?;
 /// assert_eq!(
 ///     redactor.check("write to ada@example.com"),

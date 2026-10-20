@@ -3,8 +3,8 @@
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use openai_agents_core::session_contract;
-use openai_agents_sqlite::SqliteSession;
+use opai_agents_core::session_contract;
+use opai_agents_sqlite::SqliteSession;
 
 /// A path no other test will pick, so parallel test binaries do not share a database.
 fn temp_db(name: &str) -> std::path::PathBuf {
@@ -36,7 +36,7 @@ async fn sqlite_passes_the_contract_in_memory() {
 /// Concurrent writes from several tasks all land, with no lost update.
 #[tokio::test]
 async fn sqlite_keeps_every_concurrent_write() {
-    let session: Arc<dyn openai_agents_core::Session> =
+    let session: Arc<dyn opai_agents_core::Session> =
         Arc::new(SqliteSession::in_memory("shared").expect("open"));
     session_contract::assert_concurrent_writes(Arc::clone(&session), 16).await;
 }

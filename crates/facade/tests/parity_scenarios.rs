@@ -9,8 +9,8 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use openai_agents::testing::{ModelStep, ScriptedModel};
-use openai_agents::{
+use opai_agents::testing::{ModelStep, ScriptedModel};
+use opai_agents::{
     handoff, Agent, AgentsError, CustomOutputSchema, FunctionTool, ModelError,
     RunErrorHandlerResult, RunErrorHandlers, RunItem, RunOptions, RunResult, Runner,
     ToolUseBehavior,

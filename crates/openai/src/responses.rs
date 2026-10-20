@@ -5,12 +5,12 @@ use std::collections::BTreeMap;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-use openai_agents_core::error::ModelError;
-use openai_agents_core::items::{ModelResponse, ResponseOutputItem};
-use openai_agents_core::model::wire_events::emit::{emit_completed, emit_response_stream};
-use openai_agents_core::model::wire_events::{now_seconds, response_object, FAKE_RESPONSES_ID};
-use openai_agents_core::model::{Model, ModelRequest};
-use openai_agents_core::usage::Usage;
+use opai_agents_core::error::ModelError;
+use opai_agents_core::items::{ModelResponse, ResponseOutputItem};
+use opai_agents_core::model::wire_events::emit::{emit_completed, emit_response_stream};
+use opai_agents_core::model::wire_events::{now_seconds, response_object, FAKE_RESPONSES_ID};
+use opai_agents_core::model::{Model, ModelRequest};
+use opai_agents_core::usage::Usage;
 
 use super::{
     apply_model_settings_responses, decorate_request, is_json_response, map_reqwest, map_transport,
@@ -49,8 +49,8 @@ impl OpenAIResponsesModel {
 impl Model for OpenAIResponsesModel {
     fn get_retry_advice(
         &self,
-        request: &openai_agents_core::retry::ModelRetryAdviceRequest,
-    ) -> Option<openai_agents_core::retry::ModelRetryAdvice> {
+        request: &opai_agents_core::retry::ModelRetryAdviceRequest,
+    ) -> Option<opai_agents_core::retry::ModelRetryAdvice> {
         crate::retry_advice::openai_retry_advice(request)
     }
 

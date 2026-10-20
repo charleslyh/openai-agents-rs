@@ -4,8 +4,8 @@
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
-use openai_agents::{
+use opai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
+use opai_agents::{
     handoff, input_guardrail, Agent, AgentsError, FunctionTool, GuardrailFunctionOutput, Handoff,
     ModelError, RunItem, RunOptions, Runner, DEFAULT_TOOL_ERROR_MESSAGE,
 };
@@ -211,7 +211,7 @@ async fn unknown_tool_is_model_behavior_error() {
 /// B10: `tool_not_found_behavior = ReturnErrorToModel` lets the model recover.
 #[tokio::test]
 async fn unknown_tool_can_return_error_to_model() {
-    use openai_agents::ToolNotFoundBehavior;
+    use opai_agents::ToolNotFoundBehavior;
     let model = Arc::new(ScriptedModel::new([
         ModelStep::from(ItemHelpers::function_tool_call("nope", "{}", "c1")),
         ModelStep::from(ItemHelpers::text_message("fine")),
@@ -229,7 +229,7 @@ async fn unknown_tool_can_return_error_to_model() {
 /// D-028: a custom `ToolUseBehavior` can end the run from the tool results.
 #[tokio::test]
 async fn custom_tool_use_behavior_can_finalize() {
-    use openai_agents::{ToolUseBehavior, ToolsToFinalOutputResult};
+    use opai_agents::{ToolUseBehavior, ToolsToFinalOutputResult};
     let model = Arc::new(ScriptedModel::new([ModelStep::from(
         ItemHelpers::function_tool_call("echo", "{}", "c1"),
     )]));
@@ -248,7 +248,7 @@ async fn custom_tool_use_behavior_can_finalize() {
 /// D-026: `call_model_input_filter` rewrites one call without touching the run history.
 #[tokio::test]
 async fn call_model_input_filter_edits_input_and_instructions() {
-    use openai_agents::ModelInputData;
+    use opai_agents::ModelInputData;
     let model = Arc::new(ScriptedModel::new([ModelStep::from(
         ItemHelpers::text_message("ok"),
     )]));
@@ -256,7 +256,7 @@ async fn call_model_input_filter_edits_input_and_instructions() {
         .model(model.clone())
         .instructions("original");
     let mut options = RunOptions::default();
-    options.run_config.model = openai_agents::ModelOptions::new().input_filter(|data| async move {
+    options.run_config.model = opai_agents::ModelOptions::new().input_filter(|data| async move {
         let mut input = data.model_data.input;
         input.push(json!({"role": "user", "content": "extra"}));
         Ok(ModelInputData {
@@ -278,7 +278,7 @@ async fn call_model_input_filter_edits_input_and_instructions() {
 /// D-003: `Handoff.input_filter` rewrites the history the next agent sees.
 #[tokio::test]
 async fn handoff_input_filter_rewrites_next_agent_input() {
-    use openai_agents::handoff_input_filter;
+    use opai_agents::handoff_input_filter;
     let b_model = Arc::new(ScriptedModel::new([ModelStep::from(
         ItemHelpers::text_message("b"),
     )]));
@@ -306,7 +306,7 @@ async fn handoff_input_filter_rewrites_next_agent_input() {
 /// conversations reject filters like Python.
 #[tokio::test]
 async fn run_level_handoff_filter_and_server_managed_conversation() {
-    use openai_agents::{handoff_input_filter, RunConfig};
+    use opai_agents::{handoff_input_filter, RunConfig};
     let build = || {
         let b = Agent::new("B").model(Arc::new(ScriptedModel::new([ModelStep::from(
             ItemHelpers::text_message("b"),
@@ -416,7 +416,7 @@ async fn on_handoff_without_input_runs_and_bad_json_is_behavior_error() {
 /// handoffs are hidden from the model.
 #[tokio::test]
 async fn dynamic_is_enabled_hides_tools_and_handoffs() {
-    use openai_agents::{RunContextWrapper, ToolEnabled};
+    use opai_agents::{RunContextWrapper, ToolEnabled};
     let b = Agent::new("B").model(Arc::new(ScriptedModel::new([])));
     let hidden_handoff = handoff(b).with_is_enabled(false);
     let flagged = FunctionTool::constant("flagged", "f", "x").with_is_enabled(
@@ -452,7 +452,7 @@ async fn dynamic_is_enabled_hides_tools_and_handoffs() {
 /// D-031: `cancel(AfterTurn)` finishes the turn and stops; `cancel(Immediate)` closes the stream.
 #[tokio::test]
 async fn streaming_cancel_after_turn_stops_before_next_turn() {
-    use openai_agents::CancelMode;
+    use opai_agents::CancelMode;
     let model = Arc::new(ScriptedModel::new([
         ModelStep::from(ItemHelpers::function_tool_call("echo", "{}", "c1")),
         ModelStep::from(ItemHelpers::text_message("never reached")),
@@ -471,7 +471,7 @@ async fn streaming_cancel_after_turn_stops_before_next_turn() {
 
 #[tokio::test]
 async fn streaming_cancel_immediate_closes_stream() {
-    use openai_agents::CancelMode;
+    use opai_agents::CancelMode;
     let model = Arc::new(ScriptedModel::new([ModelStep::from(
         ItemHelpers::text_message("hi"),
     )]));
@@ -486,7 +486,7 @@ async fn streaming_cancel_immediate_closes_stream() {
 /// D-027: a session carries history across runs and stores each run's input and output.
 #[tokio::test]
 async fn session_carries_history_between_runs() {
-    use openai_agents::{InMemorySession, Session};
+    use opai_agents::{InMemorySession, Session};
     let model = Arc::new(ScriptedModel::new([
         ModelStep::from(ItemHelpers::text_message("first answer")),
         ModelStep::from(ItemHelpers::text_message("second answer")),
@@ -522,7 +522,7 @@ async fn session_carries_history_between_runs() {
 /// (Python, checked on the same three scenarios: `[user]`, `[user, call, output]`, two turns).
 #[tokio::test]
 async fn session_keeps_the_turns_a_failed_run_completed() {
-    use openai_agents::{InMemorySession, Session};
+    use opai_agents::{InMemorySession, Session};
     let kinds = |items: Vec<Value>| -> Vec<String> {
         items
             .iter()
@@ -571,7 +571,7 @@ async fn session_keeps_the_turns_a_failed_run_completed() {
 /// an older RunState without details still deserializes.
 #[test]
 fn usage_add_tracks_details_and_entries() {
-    use openai_agents::Usage;
+    use opai_agents::Usage;
     let mut total = Usage::default();
     let mut one = Usage::from_responses_usage(&json!({
         "input_tokens": 10, "output_tokens": 2, "total_tokens": 12,
@@ -601,10 +601,10 @@ fn usage_add_tracks_details_and_entries() {
 /// but never an explicit rejection message.
 #[tokio::test]
 async fn tool_error_formatter_rewrites_default_messages() {
-    use openai_agents::{RunConfig, ToolErrorKind, ToolNotFoundBehavior};
+    use opai_agents::{RunConfig, ToolErrorKind, ToolNotFoundBehavior};
     let formatter_config = || {
         let mut config = RunConfig::default();
-        config.tools = openai_agents::ToolOptions::new()
+        config.tools = opai_agents::ToolOptions::new()
             .error_formatter(|args| async move {
                 match args.kind {
                     ToolErrorKind::ApprovalRejected => Some(format!("denied {}", args.tool_name)),
@@ -653,7 +653,7 @@ async fn tool_error_formatter_rewrites_default_messages() {
 /// D-032: a handoff beats a same-named tool; `Error` rejects the configuration up front.
 #[tokio::test]
 async fn tool_name_collision_policy() {
-    use openai_agents::{RunConfig, ToolNameCollisionPolicy};
+    use opai_agents::{RunConfig, ToolNameCollisionPolicy};
     let build = |model: Arc<ScriptedModel>| {
         let b = Agent::new("B").model(Arc::new(ScriptedModel::new([])));
         let h = handoff(b);
@@ -699,7 +699,7 @@ async fn tool_name_collision_policy() {
 /// D-033: a `max_turns` error handler turns the error into a recorded final output.
 #[tokio::test]
 async fn max_turns_error_handler_produces_final_output() {
-    use openai_agents::{RunErrorHandlerResult, RunErrorHandlers};
+    use opai_agents::{RunErrorHandlerResult, RunErrorHandlers};
     let looping = || {
         let model = Arc::new(ScriptedModel::new([
             ModelStep::from(ItemHelpers::function_tool_call("echo", "{}", "c1")),
@@ -712,7 +712,9 @@ async fn max_turns_error_handler_produces_final_output() {
     let mut options = RunOptions::default();
     options.max_turns = Some(2);
     options.error_handlers = RunErrorHandlers::default().on_max_turns(|input| async move {
-        assert!(matches!(input.error, openai_agents::RunHandledError::MaxTurns(ref e) if e.max_turns == 2));
+        assert!(
+            matches!(input.error, opai_agents::RunHandledError::MaxTurns(ref e) if e.max_turns == 2)
+        );
         assert_eq!(input.run_data.output.len(), 4, "two calls and two outputs");
         Ok(Some(RunErrorHandlerResult::new("gave up")))
     });
@@ -734,8 +736,8 @@ async fn max_turns_error_handler_produces_final_output() {
 /// D-033: a handler output that does not fit the structured schema is a user error.
 #[tokio::test]
 async fn max_turns_handler_output_is_validated_against_the_schema() {
-    use openai_agents::{AgentOutputSchema, RunErrorHandlerResult, RunErrorHandlers};
-    #[derive(serde::Deserialize, openai_agents::schemars::JsonSchema)]
+    use opai_agents::{AgentOutputSchema, RunErrorHandlerResult, RunErrorHandlers};
+    #[derive(serde::Deserialize, opai_agents::schemars::JsonSchema)]
     #[allow(dead_code)]
     struct Count {
         n: i64,
@@ -781,7 +783,7 @@ fn nesting_agents(a_steps: Vec<ModelStep>) -> (Agent, Arc<ScriptedModel>) {
 /// text matches what the Python SDK produces (see the `handoff_nested_history` parity scenario).
 #[tokio::test]
 async fn nest_handoff_history_summarizes_the_transcript() {
-    use openai_agents::RunConfig;
+    use opai_agents::RunConfig;
     let (a, b_model) = nesting_agents(vec![
         ModelStep::from(ItemHelpers::function_tool_call("echo", "{}", "c1")),
         ModelStep::from(ItemHelpers::function_tool_call("transfer_to_b", "{}", "h1")),
@@ -813,7 +815,7 @@ async fn nest_handoff_history_summarizes_the_transcript() {
 /// Nesting is off by default, a per-handoff flag overrides it, and an explicit filter replaces it.
 #[tokio::test]
 async fn nest_handoff_history_defaults_and_overrides() {
-    use openai_agents::RunConfig;
+    use opai_agents::RunConfig;
     let steps = || {
         vec![ModelStep::from(ItemHelpers::function_tool_call(
             "transfer_to_b",
@@ -851,11 +853,7 @@ async fn nest_handoff_history_defaults_and_overrides() {
     a.handoffs = a
         .handoffs
         .into_iter()
-        .map(|h| {
-            h.with_input_filter(openai_agents::handoff_input_filter(
-                |d| async move { Ok(d) },
-            ))
-        })
+        .map(|h| h.with_input_filter(opai_agents::handoff_input_filter(|d| async move { Ok(d) })))
         .collect();
     let mut options = RunOptions::default();
     options.run_config = {
@@ -875,7 +873,7 @@ async fn nest_handoff_history_defaults_and_overrides() {
 /// flattens the first summary instead of nesting summaries inside summaries.
 #[tokio::test]
 async fn nest_handoff_history_mapper_and_flattening() {
-    use openai_agents::{nest_handoff_history, HandoffInputData, RunConfig, RunContextWrapper};
+    use opai_agents::{nest_handoff_history, HandoffInputData, RunConfig, RunContextWrapper};
     let (a, b_model) = nesting_agents(vec![ModelStep::from(ItemHelpers::function_tool_call(
         "transfer_to_b",
         "{}",
@@ -916,7 +914,7 @@ async fn nest_handoff_history_mapper_and_flattening() {
 /// stay in call order, and 0 is rejected.
 #[tokio::test]
 async fn max_function_tool_concurrency_limits_parallelism() {
-    use openai_agents::{RunConfig, ToolExecutionConfig};
+    use opai_agents::{RunConfig, ToolExecutionConfig};
     let running = Arc::new(AtomicUsize::new(0));
     let peak = Arc::new(AtomicUsize::new(0));
     let slow = |name: &'static str| {
@@ -983,7 +981,7 @@ async fn max_function_tool_concurrency_limits_parallelism() {
 /// replace it, and `RaiseException` fails the run without going through `failure_error_function`.
 #[tokio::test]
 async fn tool_timeout_behaviors() {
-    use openai_agents::ToolTimeoutBehavior;
+    use opai_agents::ToolTimeoutBehavior;
     let sleepy = || {
         FunctionTool::new(
             "sleepy",
@@ -1041,7 +1039,7 @@ async fn tool_timeout_behaviors() {
 /// `session_input_callback` decides the model input while only new items are saved.
 #[tokio::test]
 async fn session_settings_limit_and_input_callback() {
-    use openai_agents::{InMemorySession, RunConfig, Session, SessionSettings};
+    use opai_agents::{InMemorySession, RunConfig, Session, SessionSettings};
     let seeded = || async {
         let session = InMemorySession::shared("s");
         session
@@ -1132,7 +1130,7 @@ async fn session_settings_limit_and_input_callback() {
 /// D-029: tool input guardrails can allow, reject (the body and hooks never run) or stop the run.
 #[tokio::test]
 async fn tool_input_guardrails_allow_reject_and_raise() {
-    use openai_agents::{ToolGuardrailBehavior, ToolGuardrailFunctionOutput, ToolInputGuardrail};
+    use opai_agents::{ToolGuardrailBehavior, ToolGuardrailFunctionOutput, ToolInputGuardrail};
     let body_runs = Arc::new(AtomicUsize::new(0));
     let build = |guardrail: ToolInputGuardrail| {
         let runs = Arc::clone(&body_runs);
@@ -1217,7 +1215,7 @@ async fn tool_input_guardrails_allow_reject_and_raise() {
 /// D-029: tool output guardrails see the result and can replace it or stop the run.
 #[tokio::test]
 async fn tool_output_guardrails_replace_or_raise() {
-    use openai_agents::{ToolGuardrailFunctionOutput, ToolOutputGuardrail};
+    use opai_agents::{ToolGuardrailFunctionOutput, ToolOutputGuardrail};
     let build = |guardrail: ToolOutputGuardrail| {
         let model = Arc::new(ScriptedModel::new([
             ModelStep::from(ItemHelpers::function_tool_call("t", "{}", "c1")),
@@ -1261,7 +1259,7 @@ async fn tool_output_guardrails_replace_or_raise() {
 /// from `to_input_list`, and only from reasoning items.
 #[tokio::test]
 async fn reasoning_item_id_policy_omit_strips_reasoning_ids() {
-    use openai_agents::{ReasoningItemIdPolicy, RunConfig};
+    use opai_agents::{ReasoningItemIdPolicy, RunConfig};
     let reasoning = json!({"id": "rs_1", "type": "reasoning", "summary": []});
     let run = |policy: Option<ReasoningItemIdPolicy>| {
         let model = Arc::new(ScriptedModel::new([
@@ -1321,7 +1319,7 @@ async fn reasoning_item_id_policy_omit_strips_reasoning_ids() {
 /// carries a placeholder (default, fixed text or formatter) instead. Model text is untouched.
 #[tokio::test]
 async fn output_guardrail_blocked_message_replaces_tool_output() {
-    use openai_agents::{
+    use opai_agents::{
         GuardrailFunctionOutput, OutputGuardrail, OutputGuardrailBlockedMessage, RunConfig,
         ToolUseBehavior, OUTPUT_GUARDRAIL_BLOCKED_TOOL_OUTPUT,
     };
@@ -1430,7 +1428,7 @@ fn refusal_message(text: &str) -> Value {
 /// `model_refusal` handler supplies the output; Python parity scenarios cover the same cases.
 #[tokio::test]
 async fn model_refusal_raises_or_is_handled() {
-    use openai_agents::{RunErrorHandlerResult, RunErrorHandlers, RunHandledError};
+    use opai_agents::{RunErrorHandlerResult, RunErrorHandlers, RunHandledError};
     let build = || {
         Agent::new("a").model(Arc::new(ScriptedModel::new([ModelStep::from(
             refusal_message("no can do"),
@@ -1485,10 +1483,10 @@ async fn model_refusal_raises_or_is_handled() {
 /// handler an unparsable answer raises and an empty one asks the model again, as in Python.
 #[tokio::test]
 async fn invalid_final_output_is_handled_or_retried() {
-    use openai_agents::{
+    use opai_agents::{
         AgentOutputSchema, RunErrorHandlerResult, RunErrorHandlers, RunHandledError,
     };
-    #[derive(serde::Deserialize, openai_agents::schemars::JsonSchema)]
+    #[derive(serde::Deserialize, opai_agents::schemars::JsonSchema)]
     #[allow(dead_code)]
     struct Out {
         a: i64,
@@ -1554,7 +1552,7 @@ async fn invalid_final_output_is_handled_or_retried() {
 /// `Session::replace_items`: the in-memory store swaps its history in one step.
 #[tokio::test]
 async fn in_memory_session_replace_items() {
-    use openai_agents::{InMemorySession, Session};
+    use opai_agents::{InMemorySession, Session};
     let session = InMemorySession::shared("s");
     session
         .add_items(vec![json!({"role": "user", "content": "a"})])
@@ -1581,9 +1579,8 @@ impl Drop for DropFlag {
 
 /// A streamed run that is stuck waiting on a slow parallel input guardrail, and the flag that
 /// shows whether the guardrail future was dropped.
-async fn streamed_run_with_slow_guardrail() -> (openai_agents::RunResultStreaming, Arc<AtomicBool>)
-{
-    use openai_agents::{GuardrailFunctionOutput, InputGuardrail};
+async fn streamed_run_with_slow_guardrail() -> (opai_agents::RunResultStreaming, Arc<AtomicBool>) {
+    use opai_agents::{GuardrailFunctionOutput, InputGuardrail};
     let dropped = Arc::new(AtomicBool::new(false));
     let flag = dropped.clone();
     let agent = Agent::new("a")
@@ -1606,7 +1603,7 @@ async fn streamed_run_with_slow_guardrail() -> (openai_agents::RunResultStreamin
 /// D-031: an immediate cancel also stops the run's child tasks, not just the run task.
 #[tokio::test]
 async fn immediate_cancel_aborts_parallel_input_guardrails() {
-    use openai_agents::CancelMode;
+    use opai_agents::CancelMode;
     let (mut streamed, dropped) = streamed_run_with_slow_guardrail().await;
     assert!(
         !dropped.load(Ordering::SeqCst),
@@ -1647,7 +1644,7 @@ async fn cancel_on_drop_is_opt_in() {
 /// keep their real outputs. Expected values come from the Python SDK's `SQLiteSession` runs.
 #[tokio::test]
 async fn blocked_tool_output_is_withheld_from_the_session_too() {
-    use openai_agents::{
+    use opai_agents::{
         GuardrailFunctionOutput, InMemorySession, OutputGuardrail, RunConfig, Session,
         ToolUseBehavior, OUTPUT_GUARDRAIL_BLOCKED_TOOL_OUTPUT as WITHHELD,
     };
@@ -1729,9 +1726,9 @@ async fn blocked_tool_output_is_withheld_from_the_session_too() {
 
     let custom = {
         let mut c = RunConfig::default();
-        c.tools.guardrail_blocked_message = Some(
-            openai_agents::OutputGuardrailBlockedMessage::Text("[blocked]".into()),
-        );
+        c.tools.guardrail_blocked_message = Some(opai_agents::OutputGuardrailBlockedMessage::Text(
+            "[blocked]".into(),
+        ));
         c
     };
     let items = run(

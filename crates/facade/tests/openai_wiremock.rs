@@ -4,7 +4,7 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
-use openai_agents::{
+use opai_agents::{
     Agent, FunctionTool, ModelSettings, OpenAIChatCompletionsModel, OpenAIProvider,
     OpenAIResponsesModel, Reasoning, ReasoningEffort, RunOptions, Runner, StreamEvent, ToolChoice,
     Truncation, Verbosity,
@@ -917,7 +917,7 @@ async fn chat_maps_expanded_model_settings() {
     assert!(body.get("include").is_none());
 }
 
-#[derive(serde::Deserialize, openai_agents::schemars::JsonSchema)]
+#[derive(serde::Deserialize, opai_agents::schemars::JsonSchema)]
 #[allow(dead_code)]
 struct WiremockAnswer {
     /// The answer.
@@ -953,7 +953,7 @@ async fn responses_advertises_json_schema() {
             Some(&format!("{}/v1", server.uri())),
         )))
         .output_type(Arc::new(
-            openai_agents::AgentOutputSchema::of::<WiremockAnswer>().expect("schema"),
+            opai_agents::AgentOutputSchema::of::<WiremockAnswer>().expect("schema"),
         ));
 
     let result = Runner::run(&agent, "ping", RunOptions::default())
@@ -995,7 +995,7 @@ async fn openai_provider_resolves_model_name() {
         .mount(&server)
         .await;
 
-    openai_agents::set_default_openai_api(openai_agents::DefaultOpenAiApi::Responses);
+    opai_agents::set_default_openai_api(opai_agents::DefaultOpenAiApi::Responses);
     let provider = OpenAIProvider::new("sk-test", Some(&format!("{}/v1", server.uri())), None);
 
     let agent = Agent::new("named").model_name("gpt-test");
@@ -1023,7 +1023,7 @@ async fn openai_provider_resolves_model_name() {
         .mount(&chat_server)
         .await;
 
-    openai_agents::set_default_openai_api(openai_agents::DefaultOpenAiApi::ChatCompletions);
+    opai_agents::set_default_openai_api(opai_agents::DefaultOpenAiApi::ChatCompletions);
     let provider = OpenAIProvider::new("sk-test", Some(&format!("{}/v1", chat_server.uri())), None);
     let mut opts = RunOptions::default();
     opts.run_config.model.provider = Some(Arc::new(provider));
@@ -1031,7 +1031,7 @@ async fn openai_provider_resolves_model_name() {
     assert_eq!(result.final_output_as_str(), Some("via chat"));
 
     // Restore the crate default for the rest of this binary.
-    openai_agents::set_default_openai_api(openai_agents::DefaultOpenAiApi::Responses);
+    opai_agents::set_default_openai_api(opai_agents::DefaultOpenAiApi::Responses);
 }
 
 /// Chat Completions advertises structured output through `response_format`.
@@ -1061,7 +1061,7 @@ async fn chat_advertises_json_schema() {
             Some(&format!("{}/v1", server.uri())),
         )))
         .output_type(Arc::new(
-            openai_agents::AgentOutputSchema::of::<WiremockAnswer>().expect("schema"),
+            opai_agents::AgentOutputSchema::of::<WiremockAnswer>().expect("schema"),
         ));
 
     let result = Runner::run(&agent, "ping", RunOptions::default())
@@ -1191,14 +1191,11 @@ impl wiremock::Respond for QueuedResponses {
     }
 }
 
-fn retrying_agent(
-    model: Arc<dyn openai_agents::Model>,
-    policy: openai_agents::RetryPolicy,
-) -> Agent {
+fn retrying_agent(model: Arc<dyn opai_agents::Model>, policy: opai_agents::RetryPolicy) -> Agent {
     Agent::new("a").model(model).model_settings(ModelSettings {
         retry: Some(
-            openai_agents::ModelRetrySettings::new(2, policy).with_backoff(
-                openai_agents::ModelRetryBackoffSettings {
+            opai_agents::ModelRetrySettings::new(2, policy).with_backoff(
+                opai_agents::ModelRetryBackoffSettings {
                     initial_delay: Some(0.01),
                     jitter: Some(false),
                     ..Default::default()
@@ -1213,7 +1210,7 @@ fn retrying_agent(
 /// runs; the failed attempt shows up in the usage.
 #[tokio::test]
 async fn http_429_is_retried_using_the_provider_retry_after() {
-    use openai_agents::retry_policies;
+    use opai_agents::retry_policies;
     let ok_responses = json!({"id": "r", "output": text_output("done"),
         "usage": {"input_tokens": 1, "output_tokens": 1}});
     let ok_chat = json!({"id": "c", "choices": [{"index": 0, "finish_reason": "stop",
@@ -1238,12 +1235,12 @@ async fn http_429_is_retried_using_the_provider_retry_after() {
             .mount(&server)
             .await;
         let base = format!("{}/v1", server.uri());
-        let model: Arc<dyn openai_agents::Model> = if chat {
+        let model: Arc<dyn opai_agents::Model> = if chat {
             Arc::new(OpenAIChatCompletionsModel::new("m", "sk-test", Some(&base)))
         } else {
             Arc::new(OpenAIResponsesModel::new("m", "sk-test", Some(&base)))
         };
-        let agent = retrying_agent(model, openai_agents::retry_policies::provider_suggested());
+        let agent = retrying_agent(model, opai_agents::retry_policies::provider_suggested());
         let started = std::time::Instant::now();
         let result = Runner::run(&agent, "hi", RunOptions::default())
             .await
@@ -1283,12 +1280,12 @@ async fn http_errors_the_provider_says_not_to_retry_are_returned() {
             "sk-test",
             Some(&format!("{}/v1", server.uri())),
         ));
-        let agent = retrying_agent(model, openai_agents::retry_policies::provider_suggested());
+        let agent = retrying_agent(model, opai_agents::retry_policies::provider_suggested());
         let err = Runner::run(&agent, "hi", RunOptions::default())
             .await
             .unwrap_err();
         match err {
-            openai_agents::AgentsError::Model(openai_agents::ModelError::Status(e)) => {
+            opai_agents::AgentsError::Model(opai_agents::ModelError::Status(e)) => {
                 assert_eq!(e.status_code, status);
                 assert!(e.to_string().contains(&format!("status={status}")), "{e}");
             }
@@ -1324,7 +1321,7 @@ async fn http_5xx_and_connection_failures_are_retried() {
         "sk-test",
         Some(&format!("{}/v1", server.uri())),
     ));
-    let agent = retrying_agent(model, openai_agents::retry_policies::provider_suggested());
+    let agent = retrying_agent(model, opai_agents::retry_policies::provider_suggested());
     let result = Runner::run(&agent, "hi", RunOptions::default())
         .await
         .expect("recovered");
@@ -1336,14 +1333,14 @@ async fn http_5xx_and_connection_failures_are_retried() {
         "sk-test",
         Some("http://127.0.0.1:9/v1"),
     ));
-    let agent = retrying_agent(dead, openai_agents::retry_policies::network_error());
+    let agent = retrying_agent(dead, opai_agents::retry_policies::network_error());
     let err = Runner::run(&agent, "hi", RunOptions::default())
         .await
         .unwrap_err();
     assert!(
         matches!(
             err,
-            openai_agents::AgentsError::Model(openai_agents::ModelError::Connection(_))
+            opai_agents::AgentsError::Model(opai_agents::ModelError::Connection(_))
         ),
         "{err}"
     );

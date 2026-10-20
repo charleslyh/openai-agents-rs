@@ -2,10 +2,10 @@
 
 use serde_json::{json, Value};
 
-use openai_agents_core::error::ModelError;
-use openai_agents_core::items::{ModelResponse, ResponseOutputItem};
-use openai_agents_core::model::ModelRequest;
-use openai_agents_core::usage::Usage;
+use opai_agents_core::error::ModelError;
+use opai_agents_core::items::{ModelResponse, ResponseOutputItem};
+use opai_agents_core::model::ModelRequest;
+use opai_agents_core::usage::Usage;
 
 use super::super::chat_convert::{
     chat_message_to_output_items_with, items_to_chat_messages, ChatConvertOptions,
@@ -48,7 +48,7 @@ pub(super) fn build_chat_body(
 
 fn input_to_chat_messages(
     system: Option<&str>,
-    input: &openai_agents_core::model::ModelInput<'_>,
+    input: &opai_agents_core::model::ModelInput<'_>,
     options: &ChatConvertOptions,
 ) -> Result<Vec<Value>, ModelError> {
     let mut messages = Vec::new();
@@ -56,10 +56,10 @@ fn input_to_chat_messages(
         messages.push(json!({"role": "system", "content": sys}));
     }
     match input {
-        openai_agents_core::model::ModelInput::Text(t) => {
+        opai_agents_core::model::ModelInput::Text(t) => {
             messages.push(json!({"role": "user", "content": t}));
         }
-        openai_agents_core::model::ModelInput::Items(items) => {
+        opai_agents_core::model::ModelInput::Items(items) => {
             messages.extend(items_to_chat_messages(items, options)?);
         }
     }

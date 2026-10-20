@@ -10,8 +10,8 @@
 //! waits at most two seconds.
 //!
 //! ```bash
-//! cargo run -p openai-agents-examples --example trace_export
-//! TRACE_DIR=/tmp/traces cargo run -p openai-agents-examples --example trace_export
+//! cargo run -p opai-agents-examples --example trace_export
+//! TRACE_DIR=/tmp/traces cargo run -p opai-agents-examples --example trace_export
 //! ```
 //!
 //! No key is needed: without `OPENAI_API_KEY` the offline model answers.
@@ -23,9 +23,9 @@ mod common;
 use std::sync::Arc;
 use std::time::Duration;
 
-use openai_agents::observability::{BatchedProcessor, JsonlSink, Metrics, MetricsSink, PriceTable};
-use openai_agents::tracing::{set_trace_processors, TracingProcessor};
-use openai_agents::{function_tool, Agent, RunOptions, Runner};
+use opai_agents::observability::{BatchedProcessor, JsonlSink, Metrics, MetricsSink, PriceTable};
+use opai_agents::tracing::{set_trace_processors, TracingProcessor};
+use opai_agents::{function_tool, Agent, RunOptions, Runner};
 
 #[function_tool(description = "Get operations metrics for a city")]
 async fn get_city_metrics(city: String) -> String {
@@ -73,7 +73,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut prices = PriceTable::new();
     prices.set(
         std::env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-4o".into()),
-        openai_agents::observability::Price::new(2.50, 10.00),
+        opai_agents::observability::Price::new(2.50, 10.00),
     );
     let counting = BatchedProcessor::spawn(
         MetricsSink::new(Arc::clone(&metrics), Arc::new(prices)),

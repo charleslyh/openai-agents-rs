@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use openai_agents::{
+use opai_agents::{
     set_default_openai_api, DefaultOpenAiApi, Model, OpenAIChatCompletionsModel,
     OpenAIResponsesModel,
 };

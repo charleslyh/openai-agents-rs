@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
-use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
-use openai_agents::{Agent, AgentsError, RunOptions, Runner};
+use opai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
+use opai_agents::{Agent, AgentsError, RunOptions, Runner};
 
 fn agent(answer: &str) -> Agent {
     Agent::new("a").model(Arc::new(ScriptedModel::new([ModelStep::from(
@@ -77,7 +77,7 @@ fn run_blocking_on_uses_the_given_runtime() {
 
 #[test]
 fn a_panic_in_the_run_reaches_the_caller() {
-    use openai_agents::FunctionTool;
+    use opai_agents::FunctionTool;
     let model = Arc::new(ScriptedModel::new([ModelStep::from(
         ItemHelpers::function_tool_call("boom", "{}", "c1"),
     )]));

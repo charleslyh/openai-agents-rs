@@ -144,10 +144,10 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
 
     let needs_resolution = if let Some(function) = &attrs.needs_approval_if {
         Some(quote! {
-            .needs_resolution(openai_agents::NeedsResolution::dynamic(
+            .needs_resolution(opai_agents::NeedsResolution::dynamic(
                 |__params, _call_id| async move {
                     // Arguments that do not parse never run, so they never need a person.
-                    match openai_agents::serde_json::from_value::<Self>(__params) {
+                    match opai_agents::serde_json::from_value::<Self>(__params) {
                         Ok(__args) => (#function)(&__args),
                         Err(_) => false,
                     }
@@ -164,7 +164,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         .map(|seconds| quote! { .timeout(#seconds) });
     let on_failure = attrs.on_failure.map(|text| {
         quote! {
-            .on_failure(openai_agents::ToolFailureHandling::Custom(std::sync::Arc::new(
+            .on_failure(opai_agents::ToolFailureHandling::Custom(std::sync::Arc::new(
                 |_ctx, __error| format!(#text, error = __error),
             )))
         }
@@ -173,19 +173,19 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
 
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     Ok(quote! {
-        impl #impl_generics openai_agents::ToolMeta for #ident #ty_generics #where_clause {
+        impl #impl_generics opai_agents::ToolMeta for #ident #ty_generics #where_clause {
             const NAME: &'static str = #name;
             const DESCRIPTION: &'static str = #description;
 
-            fn policy() -> openai_agents::ToolPolicy {
-                openai_agents::ToolPolicy::new()
+            fn policy() -> opai_agents::ToolPolicy {
+                opai_agents::ToolPolicy::new()
                     #needs_resolution
                     #timeout
                     #on_failure
             }
 
-            fn requires() -> ::std::vec::Vec<openai_agents::TypeRequirement> {
-                ::std::vec![ #(openai_agents::TypeRequirement::of::<#requires>()),* ]
+            fn requires() -> ::std::vec::Vec<opai_agents::TypeRequirement> {
+                ::std::vec![ #(opai_agents::TypeRequirement::of::<#requires>()),* ]
             }
         }
     })

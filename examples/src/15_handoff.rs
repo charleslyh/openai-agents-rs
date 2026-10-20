@@ -3,14 +3,14 @@
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
-//! cargo run -p openai-agents-examples --example handoff
+//! cargo run -p opai-agents-examples --example handoff
 //! ```
 
 mod common;
 
 use std::sync::Arc;
 
-use openai_agents::{handoff, Agent, RunOptions, Runner};
+use opai_agents::{handoff, Agent, RunOptions, Runner};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

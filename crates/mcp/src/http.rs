@@ -51,7 +51,7 @@ impl StreamableHttpParams {
 #[derive(Default)]
 struct SseEvents {
     buffer: String,
-    decoder: openai_agents_core::utf8_stream::Utf8Stream,
+    decoder: opai_agents_core::utf8_stream::Utf8Stream,
 }
 
 impl SseEvents {

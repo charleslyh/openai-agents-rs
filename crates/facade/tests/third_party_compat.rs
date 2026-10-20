@@ -8,7 +8,7 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
-use openai_agents::{
+use opai_agents::{
     Agent, AgentsError, FunctionTool, ModelError, ModelSettings, OpenAIChatCompletionsModel,
     OpenAIResponsesModel, RunOptions, Runner,
 };
@@ -148,12 +148,12 @@ async fn typed_user_messages_keep_their_content() {
 /// (a Rust type path such as `crate::Answer` is not a valid schema name).
 #[tokio::test]
 async fn structured_output_schema_name_is_valid() {
-    #[derive(serde::Deserialize, openai_agents::schemars::JsonSchema)]
+    #[derive(serde::Deserialize, opai_agents::schemars::JsonSchema)]
     #[allow(dead_code)]
     struct Answer {
         value: String,
     }
-    let schema = Arc::new(openai_agents::AgentOutputSchema::of::<Answer>().unwrap());
+    let schema = Arc::new(opai_agents::AgentOutputSchema::of::<Answer>().unwrap());
 
     let server = chat_server(vec![completion(
         json!({"role": "assistant", "content": "{\"value\":\"x\"}"}),

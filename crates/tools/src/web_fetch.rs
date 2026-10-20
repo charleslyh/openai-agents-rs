@@ -39,8 +39,8 @@ use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 use reqwest::redirect::{Attempt, Policy};
 use reqwest::{Client, Url};
 
-use openai_agents_core::error::UserError;
-use openai_agents_core::{AgentsError, FunctionTool};
+use opai_agents_core::error::UserError;
+use opai_agents_core::{AgentsError, FunctionTool};
 
 /// The largest response returned.
 pub const MAX_RESPONSE_BYTES: usize = 1024 * 1024;

@@ -9,12 +9,12 @@ use std::sync::Mutex;
 use async_trait::async_trait;
 use serde_json::Value;
 
-use openai_agents_core::error::ModelError;
-use openai_agents_core::items::{ModelResponse, ResponseOutputItem};
-use openai_agents_core::model::{replay_response, Model, ModelRequest, ModelTracing};
-use openai_agents_core::model_settings::ModelSettings;
-use openai_agents_core::retry::{ModelRetryAdvice, ModelRetryAdviceRequest};
-use openai_agents_core::usage::Usage;
+use opai_agents_core::error::ModelError;
+use opai_agents_core::items::{ModelResponse, ResponseOutputItem};
+use opai_agents_core::model::{replay_response, Model, ModelRequest, ModelTracing};
+use opai_agents_core::model_settings::ModelSettings;
+use opai_agents_core::retry::{ModelRetryAdvice, ModelRetryAdviceRequest};
+use opai_agents_core::usage::Usage;
 
 /// Response id used when a step declares none (Python: `"scripted-response"`).
 const SCRIPTED_RESPONSE_ID: &str = "scripted-response";
@@ -453,8 +453,8 @@ impl ScriptedModel {
         let call = ModelCall {
             system_instructions: request.system_instructions.map(str::to_string),
             input: match &request.input {
-                openai_agents_core::model::ModelInput::Text(s) => Value::String((*s).to_string()),
-                openai_agents_core::model::ModelInput::Items(items) => Value::Array(items.to_vec()),
+                opai_agents_core::model::ModelInput::Text(s) => Value::String((*s).to_string()),
+                opai_agents_core::model::ModelInput::Items(items) => Value::Array(items.to_vec()),
             },
             model_settings: request.model_settings.clone(),
             tool_names: request.tools.iter().map(|t| t.name.clone()).collect(),

@@ -5,10 +5,8 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime};
 
-use openai_agents_core::tracing::{Span, SpanData, TracingProcessor};
-use openai_agents_observability::{
-    BatchedProcessor, ConsoleSink, EventSink, ExportEvent, JsonlSink,
-};
+use opai_agents_core::tracing::{Span, SpanData, TracingProcessor};
+use opai_agents_observability::{BatchedProcessor, ConsoleSink, EventSink, ExportEvent, JsonlSink};
 
 /// Records what it was given, so a test can wait for it.
 struct RecordingSink {

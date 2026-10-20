@@ -26,34 +26,34 @@ This convention is also enforced for agents via [`.cursor/rules/commit-messages.
 
 ## Workspace structure
 
-The repo is a Cargo workspace. Do not add to `openai-agents-core` what belongs in an extension
+The repo is a Cargo workspace. Do not add to `opai-agents-core` what belongs in an extension
 crate, and do not reach from one extension crate into another.
 
 | crate | holds |
 | --- | --- |
-| `openai-agents-core` | agents, tools, handoffs, guardrails, the run loop, sessions, tracing, context trimmers. No HTTP, no database, no child processes, and **no features** |
-| `openai-agents-openai` | the OpenAI provider and the Responses / Chat Completions adapters (facade feature `openai`, on by default) |
-| `openai-agents-mcp` | the MCP client and its two transports (facade feature `mcp`, **off** by default) |
-| `openai-agents-sqlite` | `SqliteSession` (facade feature `sqlite`) |
-| `openai-agents-testing` | `ScriptedModel` and item builders |
-| `openai-agents-macros` | `#[function_tool]` |
-| `openai-agents` (facade) | re-exports everything, installs the default model provider |
-| `openai-agents-examples` | the runnable examples, at the repository root in `examples/`. Not a default member: it turns on the facade's `openai` feature, which would defeat `cargo test --no-default-features` |
+| `opai-agents-core` | agents, tools, handoffs, guardrails, the run loop, sessions, tracing, context trimmers. No HTTP, no database, no child processes, and **no features** |
+| `opai-agents-openai` | the OpenAI provider and the Responses / Chat Completions adapters (facade feature `openai`, on by default) |
+| `opai-agents-mcp` | the MCP client and its two transports (facade feature `mcp`, **off** by default) |
+| `opai-agents-sqlite` | `SqliteSession` (facade feature `sqlite`) |
+| `opai-agents-testing` | `ScriptedModel` and item builders |
+| `opai-agents-macros` | `#[function_tool]` |
+| `opai-agents` (facade) | re-exports everything, installs the default model provider |
+| `opai-agents-examples` | the runnable examples, at the repository root in `examples/`. Not a default member: it turns on the facade's `openai` feature, which would defeat `cargo test --no-default-features` |
 
 Two traps worth knowing:
 
-- Run an example with `cargo run -p openai-agents-examples --example hello`. A bare
+- Run an example with `cargo run -p opai-agents-examples --example hello`. A bare
   `cargo run --example hello` fails: the workspace has more than one default member, so cargo
   cannot tell which package you mean.
-- Build them with `cargo build -p openai-agents-examples --examples`; CI does this so a breaking
+- Build them with `cargo build -p opai-agents-examples --examples`; CI does this so a breaking
   change to the public API cannot land unnoticed.
 
 Two more, about features:
 
 - `mcp` is off by default, so `cargo test --test mcp_interop` compiles to zero tests and **still
   passes**. Always pass `--features mcp` explicitly.
-- `#[function_tool]` expands to `openai_agents::…` paths and emits
-  `#[serde(crate = "openai_agents::serde")]`. Inside the workspace that path does not resolve, so
+- `#[function_tool]` expands to `opai_agents::…` paths and emits
+  `#[serde(crate = "opai_agents::serde")]`. Inside the workspace that path does not resolve, so
   tests there must pass the macro's `crate = "..."` override.
 
 Each crate carries an `AGENTS.md` with its own boundary rules and traps

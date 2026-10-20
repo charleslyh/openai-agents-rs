@@ -1,6 +1,6 @@
 //! Refuse text over a limit.
 
-use openai_agents_core::guardrail::Severity;
+use opai_agents_core::guardrail::Severity;
 
 use crate::error::BuildError;
 use crate::guard::{Decision, Guard};
@@ -18,9 +18,9 @@ enum Unit {
 /// what a body size limit means, characters are what a person means by "length".
 ///
 /// ```rust
-/// use openai_agents_guardrails::{Guard, MaxLength};
+/// use opai_agents_guardrails::{Guard, MaxLength};
 ///
-/// # fn build() -> Result<(), openai_agents_guardrails::BuildError> {
+/// # fn build() -> Result<(), opai_agents_guardrails::BuildError> {
 /// let guardrail = MaxLength::chars(4_000)?.input();
 /// # let _ = guardrail;
 /// # Ok(())

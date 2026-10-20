@@ -110,7 +110,7 @@ impl ModelProvider for MissingProvider {
         Err(UserError::new(format!(
             "No ModelProvider can resolve `{}`. Set `RunConfig.model.provider`, or install a \
              default with `Runtime::set_model_provider` / `set_model_provider_factory` (the \
-             `openai-agents` crate installs an OpenAI one on `Runtime::global()` when its \
+             `opai-agents` crate installs an OpenAI one on `Runtime::global()` when its \
              `openai` feature is on and `OPENAI_API_KEY` or `OPENAI_BASE_URL` is set).",
             model_name.unwrap_or("<default>")
         )))

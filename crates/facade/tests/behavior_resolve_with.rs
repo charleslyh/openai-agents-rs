@@ -4,8 +4,8 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
-use openai_agents::{
+use opai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
+use opai_agents::{
     Agent, AgentsError, AsToolConfig, FunctionTool, RunOptions, Runner, ToolInterruptionItem,
     ToolResolution,
 };

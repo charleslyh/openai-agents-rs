@@ -11,9 +11,9 @@
 
 use std::sync::Arc;
 
-use openai_agents_core::error::ModelError;
-use openai_agents_core::model::{Model, ModelInput, ModelRequest};
-use openai_agents_core::ModelResponse;
+use opai_agents_core::error::ModelError;
+use opai_agents_core::model::{Model, ModelInput, ModelRequest};
+use opai_agents_core::ModelResponse;
 
 use super::spec::{Capabilities, Capability};
 use super::UnsupportedCapability;
@@ -160,8 +160,8 @@ impl Model for GuardedModel {
 
     fn get_retry_advice(
         &self,
-        request: &openai_agents_core::retry::ModelRetryAdviceRequest,
-    ) -> Option<openai_agents_core::retry::ModelRetryAdvice> {
+        request: &opai_agents_core::retry::ModelRetryAdviceRequest,
+    ) -> Option<opai_agents_core::retry::ModelRetryAdvice> {
         self.inner.get_retry_advice(request)
     }
 }
@@ -171,7 +171,7 @@ impl Model for GuardedModel {
 /// This is what [`super::Provider::build`] returns, so a single provider and one reached through
 /// [`super::ProviderRegistry`] behave the same.
 pub struct GuardedProvider {
-    inner: Arc<dyn openai_agents_core::model::provider::ModelProvider>,
+    inner: Arc<dyn opai_agents_core::model::provider::ModelProvider>,
     name: String,
     capabilities: Capabilities,
 }
@@ -191,7 +191,7 @@ impl std::fmt::Debug for GuardedProvider {
 impl GuardedProvider {
     /// Wrap `inner`.
     pub fn new(
-        inner: Arc<dyn openai_agents_core::model::provider::ModelProvider>,
+        inner: Arc<dyn opai_agents_core::model::provider::ModelProvider>,
         name: impl Into<String>,
         capabilities: Capabilities,
     ) -> Self {
@@ -204,11 +204,11 @@ impl GuardedProvider {
 }
 
 #[async_trait::async_trait]
-impl openai_agents_core::model::provider::ModelProvider for GuardedProvider {
+impl opai_agents_core::model::provider::ModelProvider for GuardedProvider {
     async fn get_model(
         &self,
         model_name: Option<&str>,
-    ) -> Result<Arc<dyn Model>, openai_agents_core::error::UserError> {
+    ) -> Result<Arc<dyn Model>, opai_agents_core::error::UserError> {
         let model = self.inner.get_model(model_name).await?;
         Ok(Arc::new(GuardedModel::new(
             model,

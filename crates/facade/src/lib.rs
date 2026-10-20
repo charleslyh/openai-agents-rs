@@ -1,6 +1,6 @@
-//! OpenAI Agents SDK for Rust — port of `openai-agents` Python v0.23.1.
+//! OpenAI Agents SDK for Rust — port of `opai-agents` Python v0.23.1.
 //!
-//! This crate is the single entry point: it re-exports everything from `openai-agents-core` under
+//! This crate is the single entry point: it re-exports everything from `opai-agents-core` under
 //! the paths the SDK has always had, and adds the `#[function_tool]` macro. The Cargo features
 //! (`openai`, `mcp`, `sqlite`, `providers`, `sessions`, `redis`, `postgres`, `observability`, `tools`,
 //! `webfetch`, `guardrails`) pull
@@ -14,20 +14,20 @@
 
 mod runner;
 
-pub use openai_agents_core::*;
+pub use opai_agents_core::*;
 
-/// The core runner plus the default OpenAI model provider; shadows `openai_agents_core::Runner`.
+/// The core runner plus the default OpenAI model provider; shadows `opai_agents_core::Runner`.
 pub use runner::Runner;
 
 /// Deterministic test doubles (Python: `agents.testing`).
-pub use openai_agents_testing as testing;
+pub use opai_agents_testing as testing;
 
 /// OpenAI and OpenAI-compatible model adapters (Chat Completions and Responses).
 #[cfg(feature = "openai")]
-pub use openai_agents_openai as openai;
+pub use opai_agents_openai as openai;
 
 #[cfg(feature = "openai")]
-pub use openai_agents_openai::{
+pub use opai_agents_openai::{
     get_default_openai_api, set_default_openai_api, CompatibleProvider, DefaultOpenAiApi,
     OpenAIChatCompletionsModel, OpenAIProvider, OpenAIResponsesModel,
 };
@@ -37,52 +37,52 @@ pub use runner::default_model_provider;
 
 /// MCP client: stdio and streamable HTTP transports, tool filters, approval policy.
 #[cfg(feature = "mcp")]
-pub use openai_agents_mcp::{
+pub use opai_agents_mcp::{
     McpClient, McpError, McpServerManager, RequireApproval, StdioParams, StreamableHttpParams,
     ToolFilter, ToolFilterContext,
 };
 
 /// SQLite-backed [`Session`] (Python: `SQLiteSession`).
 #[cfg(feature = "sqlite")]
-pub use openai_agents_sqlite::SqliteSession;
+pub use opai_agents_sqlite::SqliteSession;
 
 /// Provider presets, discovery and the capability matrix.
 #[cfg(feature = "providers")]
-pub use openai_agents_providers as providers;
+pub use opai_agents_providers as providers;
 
 /// A conversation and a paused run in files (Rust-only, X-016 / X-017).
 #[cfg(feature = "sessions")]
-pub use openai_agents_sessions::{FileRunStateStore, FileSession};
+pub use opai_agents_sessions::{FileRunStateStore, FileSession};
 
 /// A conversation and a paused run in Redis (Rust-only, X-016 / X-017).
 #[cfg(feature = "redis")]
-pub use openai_agents_sessions::{RedisRunStateStore, RedisSession};
+pub use opai_agents_sessions::{RedisRunStateStore, RedisSession};
 
 /// A conversation and a paused run in Postgres (Rust-only, X-016 / X-017).
 #[cfg(feature = "postgres")]
-pub use openai_agents_sessions::{PostgresRunStateStore, PostgresSession};
+pub use opai_agents_sessions::{PostgresRunStateStore, PostgresSession};
 
 /// Trace processors that export somewhere, and counters over the same stream
 /// (Rust-only, X-018).
 #[cfg(feature = "observability")]
-pub use openai_agents_observability as observability;
+pub use opai_agents_observability as observability;
 
 /// Ready-made tools: calculator, clock, read-only files and, with `webfetch`, a URL fetcher that
 /// stays off the private network (Rust-only, X-019).
 #[cfg(feature = "tools")]
-pub use openai_agents_tools as tools;
+pub use opai_agents_tools as tools;
 
 /// Ready-made guardrails: length, personal data, prompt injection, keywords, schema
 /// (Rust-only, X-020).
 #[cfg(feature = "guardrails")]
-pub use openai_agents_guardrails as guardrails;
+pub use opai_agents_guardrails as guardrails;
 
 /// Attribute macro: turn a function into a [`FunctionTool`] constructor (Python: `@function_tool`).
-pub use openai_agents_macros::function_tool;
+pub use opai_agents_macros::function_tool;
 
 /// Derive macro: a tool's name, description and policy, declared on its argument struct. Pairs with
 /// the `ToolMeta` trait of the same name and `TypedTool`.
-pub use openai_agents_macros::ToolMeta;
+pub use opai_agents_macros::ToolMeta;
 
 /// Run one agent end to end, taking the provider from the environment (Rust-only, X-015).
 ///
@@ -92,8 +92,8 @@ pub use openai_agents_macros::ToolMeta;
 /// works before a key exists and after.
 ///
 /// ```no_run
-/// # async fn go() -> Result<(), openai_agents_core::AgentsError> {
-/// let result = openai_agents::run("You answer in one sentence.", "What is Rust?").await?;
+/// # async fn go() -> Result<(), opai_agents_core::AgentsError> {
+/// let result = opai_agents::run("You answer in one sentence.", "What is Rust?").await?;
 /// println!("{}", result.final_output_as_str().unwrap_or_default());
 /// # Ok(())
 /// # }
@@ -135,7 +135,7 @@ pub const FALLBACK_MODEL: &str = "gpt-4o-mini";
 pub fn zero_config_options() -> Result<RunOptions, AgentsError> {
     #[cfg(feature = "providers")]
     {
-        let registry = openai_agents_providers::ProviderRegistry::from_env()?;
+        let registry = opai_agents_providers::ProviderRegistry::from_env()?;
         let model = model_name_from_env()
             .or_else(|| registry.default_model().map(str::to_string))
             .unwrap_or_else(|| FALLBACK_MODEL.to_string());
@@ -149,14 +149,14 @@ pub fn zero_config_options() -> Result<RunOptions, AgentsError> {
     }
 }
 
-/// The types most programs need, for a single glob import: `use openai_agents::prelude::*;`.
+/// The types most programs need, for a single glob import: `use opai_agents::prelude::*;`.
 ///
-/// Same set as [`openai_agents_core::prelude`], plus the `#[function_tool]` macro, with this
+/// Same set as [`opai_agents_core::prelude`], plus the `#[function_tool]` macro, with this
 /// crate's [`Runner`] (which installs the default OpenAI provider) in place of the
 /// core one.
 ///
 /// ```no_run
-/// use openai_agents::prelude::*;
+/// use opai_agents::prelude::*;
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<(), AgentsError> {
@@ -169,7 +169,7 @@ pub fn zero_config_options() -> Result<RunOptions, AgentsError> {
 /// }
 /// ```
 pub mod prelude {
-    pub use openai_agents_core::prelude::*;
+    pub use opai_agents_core::prelude::*;
 
     pub use crate::function_tool;
     pub use crate::Runner;

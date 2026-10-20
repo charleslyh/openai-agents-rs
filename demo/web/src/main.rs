@@ -5,7 +5,7 @@
 //! `DEMO_ADDR` (default `127.0.0.1:3000`), `DEMO_DEBUG` (`1`/`0`; on only for loopback by default).
 //!
 //! ```bash
-//! cargo run -p openai-agents-web-demo
+//! cargo run -p opai-agents-web-demo
 //! ```
 
 mod agents;
@@ -23,7 +23,7 @@ mod trace;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use openai_agents::{McpClient, McpServer, StdioParams, ToolFilter};
+use opai_agents::{McpClient, McpServer, StdioParams, ToolFilter};
 use state::AppState;
 use trace::TraceCollector;
 

@@ -8,12 +8,12 @@
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
-//! cargo run -p openai-agents-examples --example parallel_tools
+//! cargo run -p opai-agents-examples --example parallel_tools
 //! ```
 
 mod common;
 
-use openai_agents::{function_tool, Agent, RunOptions, Runner, ToolExecutionConfig};
+use opai_agents::{function_tool, Agent, RunOptions, Runner, ToolExecutionConfig};
 
 #[function_tool(description = "Get the weather for one city")]
 async fn get_weather(city: String) -> String {

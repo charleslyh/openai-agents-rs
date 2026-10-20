@@ -6,9 +6,9 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use openai_agents::serde_json::{json, Value};
-use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
-use openai_agents::{
+use opai_agents::serde_json::{json, Value};
+use opai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
+use opai_agents::{
     async_trait, Agent, AgentsError, FunctionTool, NextTool, RunOptions, Runner, ToolContext,
     ToolMeta, ToolMiddleware, ToolOutput, TypedTool,
 };
@@ -17,9 +17,9 @@ use openai_agents::{
 struct Ledger(Mutex<Vec<(String, u64)>>);
 
 /// Refund an order. Large refunds wait for a person.
-#[derive(openai_agents::serde::Deserialize, openai_agents::schemars::JsonSchema, ToolMeta)]
-#[serde(crate = "openai_agents::serde")]
-#[schemars(crate = "openai_agents::schemars")]
+#[derive(opai_agents::serde::Deserialize, opai_agents::schemars::JsonSchema, ToolMeta)]
+#[serde(crate = "opai_agents::serde")]
+#[schemars(crate = "opai_agents::schemars")]
 #[tool(
     name = "refund_order",
     timeout = 5,
@@ -55,9 +55,9 @@ impl TypedTool for RefundArgs {
 }
 
 /// Answer pong. Only `name` and `needs_approval` are set; the rest takes the defaults.
-#[derive(openai_agents::serde::Deserialize, openai_agents::schemars::JsonSchema, ToolMeta)]
-#[serde(crate = "openai_agents::serde")]
-#[schemars(crate = "openai_agents::schemars")]
+#[derive(opai_agents::serde::Deserialize, opai_agents::schemars::JsonSchema, ToolMeta)]
+#[serde(crate = "opai_agents::serde")]
+#[schemars(crate = "opai_agents::schemars")]
 #[tool(name = "ping", needs_approval)]
 struct Ping {}
 
@@ -123,7 +123,7 @@ fn a_bare_attribute_gets_the_defaults() {
     assert!(tool.requires.is_empty());
     assert!(matches!(
         tool.needs_resolution,
-        openai_agents::NeedsResolution::Fixed(true)
+        opai_agents::NeedsResolution::Fixed(true)
     ));
 }
 
@@ -233,9 +233,9 @@ async fn unparsable_arguments_read_as_the_on_failure_text() {
 // ---------------------------------------------------------------------------------------------
 
 /// Why a refund is made.
-#[derive(openai_agents::serde::Deserialize, openai_agents::schemars::JsonSchema)]
-#[serde(crate = "openai_agents::serde", rename_all = "snake_case")]
-#[schemars(crate = "openai_agents::schemars")]
+#[derive(opai_agents::serde::Deserialize, opai_agents::schemars::JsonSchema)]
+#[serde(crate = "opai_agents::serde", rename_all = "snake_case")]
+#[schemars(crate = "opai_agents::schemars")]
 enum Reason {
     /// The goods arrived broken.
     Damaged,
@@ -246,9 +246,9 @@ enum Reason {
 }
 
 /// A tool whose fields carry constraints.
-#[derive(openai_agents::serde::Deserialize, openai_agents::schemars::JsonSchema, ToolMeta)]
-#[serde(crate = "openai_agents::serde")]
-#[schemars(crate = "openai_agents::schemars")]
+#[derive(opai_agents::serde::Deserialize, opai_agents::schemars::JsonSchema, ToolMeta)]
+#[serde(crate = "opai_agents::serde")]
+#[schemars(crate = "opai_agents::schemars")]
 #[tool(name = "constrained")]
 #[allow(dead_code)]
 struct Constrained {
@@ -297,7 +297,7 @@ fn field_constraints_reach_the_schema_the_model_reads() {
 /// `run` (the example does, for the amount).
 #[test]
 fn an_enum_is_enforced_on_parse_but_a_range_is_only_advertised() {
-    let parse = |v: Value| openai_agents::serde_json::from_value::<Constrained>(v);
+    let parse = |v: Value| opai_agents::serde_json::from_value::<Constrained>(v);
 
     assert!(parse(json!({"reason": "refund_me", "amount_cents": 5, "note": "x"})).is_err());
     assert!(parse(json!({"reason": "damaged", "amount_cents": 5, "note": "x"})).is_ok());

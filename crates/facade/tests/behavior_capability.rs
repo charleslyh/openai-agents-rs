@@ -3,8 +3,8 @@
 
 use std::sync::Arc;
 
-use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
-use openai_agents::{
+use opai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
+use opai_agents::{
     input_guardrail, Agent, AgentsError, CapabilityParts, FunctionTool, GuardrailFunctionOutput,
     ModelSettings, RunOptions, Runner,
 };

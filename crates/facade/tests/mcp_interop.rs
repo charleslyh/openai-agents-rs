@@ -15,8 +15,8 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
-use openai_agents::{
+use opai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
+use opai_agents::{
     mcp_function_tools, Agent, AgentsError, McpClient, McpConfig, McpServer, RequireApproval,
     RunContextWrapper, RunOptions, Runner, StdioParams, StreamableHttpParams, ToolFilter,
 };
@@ -161,20 +161,20 @@ async fn stdio_lists_tools_and_calls_them() {
     assert!(!sum.is_error);
     assert_eq!(sum.content[0]["text"], "5");
     assert_eq!(sum.structured_content, Some(json!({"result": 5})));
-    assert_eq!(openai_agents::render_tool_result(&sum, false), "5");
+    assert_eq!(opai_agents::render_tool_result(&sum, false), "5");
     assert_eq!(
-        openai_agents::render_tool_result(&sum, true),
+        opai_agents::render_tool_result(&sum, true),
         "{\"result\":5}"
     );
 
     let parts = client.call_tool("two_parts", None).await.unwrap();
     assert_eq!(
-        openai_agents::render_tool_result(&parts, false),
+        opai_agents::render_tool_result(&parts, false),
         "first\nsecond"
     );
     let picture = client.call_tool("picture", None).await.unwrap();
     assert_eq!(
-        openai_agents::render_tool_result(&picture, false),
+        opai_agents::render_tool_result(&picture, false),
         "[image: image/png]\na caption"
     );
 
@@ -182,7 +182,7 @@ async fn stdio_lists_tools_and_calls_them() {
     match client.call_tool("boom", None).await {
         Ok(result) => {
             assert!(result.is_error, "{result:?}");
-            assert!(openai_agents::render_tool_result(&result, false).contains("boom"));
+            assert!(opai_agents::render_tool_result(&result, false).contains("boom"));
         }
         Err(error) => assert!(error.to_string().contains("boom"), "{error}"),
     }

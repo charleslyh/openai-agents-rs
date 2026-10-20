@@ -39,7 +39,7 @@ impl Price {
 /// What each model costs. Unknown models are free, so the totals never claim more than they know.
 ///
 /// ```rust
-/// use openai_agents_observability::{Price, PriceTable};
+/// use opai_agents_observability::{Price, PriceTable};
 ///
 /// let mut prices = PriceTable::new();
 /// prices.set("gpt-4o-mini", Price::new(0.15, 0.60));

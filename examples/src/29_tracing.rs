@@ -9,7 +9,7 @@
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
-//! cargo run -p openai-agents-examples --example tracing
+//! cargo run -p opai-agents-examples --example tracing
 //! ```
 
 mod common;
@@ -17,8 +17,8 @@ mod common;
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use openai_agents::tracing::{set_trace_processors, Span, SpanData, Trace, TracingProcessor};
-use openai_agents::{function_tool, Agent, RunOptions, Runner};
+use opai_agents::tracing::{set_trace_processors, Span, SpanData, Trace, TracingProcessor};
+use opai_agents::{function_tool, Agent, RunOptions, Runner};
 
 #[function_tool(description = "Get operations metrics for a city")]
 async fn get_city_metrics(city: String) -> String {

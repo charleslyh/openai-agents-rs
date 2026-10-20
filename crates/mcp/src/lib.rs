@@ -5,7 +5,7 @@
 //! forwards the call. Give servers to an agent with `Agent::mcp_servers`.
 //!
 //! The contract an agent depends on (`McpServer`, `McpTool`, `McpCallToolResult`, `McpConfig`,
-//! `mcp_function_tools`) lives in `openai-agents-core`. This crate is one implementation of it,
+//! `mcp_function_tools`) lives in `opai-agents-core`. This crate is one implementation of it,
 //! [`McpClient`], plus the tool filters, approval policy and [`McpServerManager`] that go with it.
 //!
 //! ```ignore

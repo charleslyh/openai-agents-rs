@@ -5,7 +5,7 @@
 //! that waits for a human). They are compiled into this binary, so it works from anywhere.
 //!
 //! ```bash
-//! cargo install openai-agents-scaffold   # installs `cargo-agents`
+//! cargo install opai-agents-scaffold   # installs `cargo-agents`
 //! cargo agents new my-agent --template tools
 //! cd my-agent && cargo run
 //! ```
@@ -319,10 +319,7 @@ mod tests {
         };
         let rendered = render(TEMPLATE_CARGO_TOML, &request);
         assert!(rendered.contains("path = \""), "{rendered}");
-        assert!(
-            !rendered.contains("openai-agents = { version"),
-            "{rendered}"
-        );
+        assert!(!rendered.contains("opai-agents = { version"), "{rendered}");
     }
 
     #[test]

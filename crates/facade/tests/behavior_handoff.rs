@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
-use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
-use openai_agents::{
+use opai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
+use opai_agents::{
     handoff, Agent, Handoff, HandoffOutputItem, RunItem, RunItemStreamName, RunOptions, Runner,
     StreamEvent,
 };
@@ -162,7 +162,7 @@ fn default_tool_name_sanitizes() {
 /// cannot express because it owns its target. Python allows cycles.
 #[tokio::test]
 async fn handoffs_can_form_a_cycle() {
-    use openai_agents::handoff_to_name;
+    use opai_agents::handoff_to_name;
     let call = |name: &str, id: &str| {
         ItemHelpers::function_tool_call(Handoff::default_tool_name(name), "{}", id)
     };
@@ -195,7 +195,7 @@ async fn handoffs_can_form_a_cycle() {
 
 #[tokio::test]
 async fn late_bound_handoff_to_an_unknown_agent_is_a_user_error() {
-    use openai_agents::{handoff_to_name, AgentsError};
+    use opai_agents::{handoff_to_name, AgentsError};
     let model = Arc::new(ScriptedModel::new([ModelStep::from(
         ItemHelpers::function_tool_call(Handoff::default_tool_name("Ghost"), "{}", "h1"),
     )]));

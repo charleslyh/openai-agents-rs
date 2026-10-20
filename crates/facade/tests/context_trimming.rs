@@ -5,8 +5,8 @@ mod common;
 
 use std::sync::Arc;
 
-use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
-use openai_agents::{
+use opai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
+use opai_agents::{
     chain_input_filters, Agent, ContextWindowTrimmer, RunOptions, Runner, ToolOutputTrimmer,
 };
 use serde_json::{json, Value};
@@ -242,7 +242,7 @@ async fn filters_apply_to_the_model_call_only_and_chain() {
     let agent =
         Agent::new("a")
             .model(model.clone())
-            .tools(vec![openai_agents::FunctionTool::constant(
+            .tools(vec![opai_agents::FunctionTool::constant(
                 "echo",
                 "e",
                 "q".repeat(400),

@@ -2,13 +2,13 @@
 
 use std::sync::Arc;
 
-use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
-use openai_agents::{function_tool, Agent, RunOptions, Runner};
+use opai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
+use opai_agents::{function_tool, Agent, RunOptions, Runner};
 
 /// Nested parameter type: must produce a complete nested JSON Schema (B2).
-#[derive(openai_agents::serde::Deserialize, openai_agents::schemars::JsonSchema)]
-#[serde(crate = "openai_agents::serde")]
-#[schemars(crate = "openai_agents::schemars")]
+#[derive(opai_agents::serde::Deserialize, opai_agents::schemars::JsonSchema)]
+#[serde(crate = "opai_agents::serde")]
+#[schemars(crate = "opai_agents::schemars")]
 #[allow(dead_code)]
 struct Address {
     /// City name.
@@ -63,7 +63,7 @@ fn macro_uses_doc_comment_as_description() {
 #[tokio::test]
 async fn macro_deserializes_nested_arguments() {
     let out = (summarize().on_invoke_tool)(
-        openai_agents::ToolContext {
+        opai_agents::ToolContext {
             tool_name: "summarize".into(),
             tool_call_id: "c".into(),
             tool_arguments: "{}".into(),
@@ -78,14 +78,14 @@ async fn macro_deserializes_nested_arguments() {
 
 /// Tool context can be requested as the first parameter and is injected by the SDK.
 #[function_tool]
-fn describe(ctx: openai_agents::ToolContext, label: String) -> String {
+fn describe(ctx: opai_agents::ToolContext, label: String) -> String {
     format!("{}:{}", ctx.tool_call_id, label)
 }
 
 #[tokio::test]
 async fn macro_injects_tool_context() {
     let out = (describe().on_invoke_tool)(
-        openai_agents::ToolContext {
+        opai_agents::ToolContext {
             tool_name: "describe".into(),
             tool_call_id: "call-42".into(),
             tool_arguments: "{}".into(),
@@ -130,7 +130,7 @@ async fn macro_tool_invoked_in_runner() {
         .expect("run");
     assert_eq!(result.final_output_as_str(), Some("5"));
     assert!(result.new_items.iter().any(|i| {
-        matches!(i, openai_agents::RunItem::ToolCallOutput(o) if o.output == serde_json::json!(5))
+        matches!(i, opai_agents::RunItem::ToolCallOutput(o) if o.output == serde_json::json!(5))
     }));
 }
 
@@ -140,7 +140,7 @@ async fn macro_name_override_and_sync_fn() {
     assert_eq!(tool.name, "greet");
     assert_eq!(tool.description, "Greet someone");
     let out = (tool.on_invoke_tool)(
-        openai_agents::ToolContext {
+        opai_agents::ToolContext {
             tool_name: "greet".into(),
             tool_call_id: "c".into(),
             tool_arguments: r#"{"name":"Ada"}"#.into(),

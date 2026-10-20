@@ -8,14 +8,14 @@
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
-//! cargo run -p openai-agents-examples --example compaction
+//! cargo run -p opai-agents-examples --example compaction
 //! ```
 
 mod common;
 
 use std::sync::Arc;
 
-use openai_agents::{
+use opai_agents::{
     Agent, CompactingSession, InMemorySession, ModelSummarizer, RunOptions, Runner, Session,
 };
 

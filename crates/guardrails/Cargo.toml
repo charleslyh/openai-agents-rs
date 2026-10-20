@@ -1,10 +1,13 @@
 [package]
-name = "openai-agents-guardrails"
+name = "opai-agents-guardrails"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.99"
 description = "Ready-made guardrails for the Rust OpenAI Agents SDK: length, PII redaction, prompt-injection heuristics, blocked keywords, schema validation"
 license = "MIT"
+readme = "README.md"
+keywords = ["openai", "agents", "guardrails", "llm"]
+categories = ["api-bindings", "asynchronous"]
 repository = "https://github.com/charleslyh/openai-agents-rs"
 
 # Inherits the lint config (including the tracked clippy backlog) from `[workspace.lints]`.
@@ -12,7 +15,7 @@ repository = "https://github.com/charleslyh/openai-agents-rs"
 workspace = true
 
 [dependencies]
-openai-agents-core = { path = "../core", version = "0.1.0", default-features = false }
+opai-agents-core = { path = "../core", version = "0.1.0", default-features = false }
 # Linear-time matching: a pattern in a guardrail runs on text the user controls.
 regex = "1"
 serde_json = { version = "1", features = ["preserve_order"] }

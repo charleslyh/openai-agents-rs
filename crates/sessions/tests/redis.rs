@@ -9,10 +9,10 @@
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use openai_agents_core::{
+use opai_agents_core::{
     session_contract, RunState, RunStateStore, Session, RUN_STATE_SCHEMA_VERSION,
 };
-use openai_agents_sessions::{RedisRunStateStore, RedisSession};
+use opai_agents_sessions::{RedisRunStateStore, RedisSession};
 use serde_json::json;
 
 fn url() -> Option<String> {

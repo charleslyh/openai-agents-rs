@@ -20,8 +20,8 @@ use redis::aio::MultiplexedConnection;
 use redis::{Client, RedisError};
 use serde_json::Value;
 
-use openai_agents_core::error::UserError;
-use openai_agents_core::{
+use opai_agents_core::error::UserError;
+use opai_agents_core::{
     AgentsError, RunState, RunStateMigration, RunStateStore, Session, SessionSettings,
 };
 

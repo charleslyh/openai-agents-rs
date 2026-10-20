@@ -17,7 +17,7 @@
 //! | deferred | tools and instructions wait for `load_capability`; see [`CapabilityParts::deferred`] | — |
 //!
 //! ```
-//! use openai_agents_core::{Agent, CapabilityParts, FunctionTool};
+//! use opai_agents_core::{Agent, CapabilityParts, FunctionTool};
 //!
 //! let clock = CapabilityParts::new()
 //!     .tool(FunctionTool::constant("now", "Current time", "12:00"))

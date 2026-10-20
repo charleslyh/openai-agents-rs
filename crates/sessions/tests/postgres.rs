@@ -9,10 +9,10 @@
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use openai_agents_core::{
+use opai_agents_core::{
     session_contract, RunState, RunStateStore, Session, RUN_STATE_SCHEMA_VERSION,
 };
-use openai_agents_sessions::{PostgresRunStateStore, PostgresSession};
+use opai_agents_sessions::{PostgresRunStateStore, PostgresSession};
 use serde_json::json;
 
 /// The table the session tests use; each run drops it first.

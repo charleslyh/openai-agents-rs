@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Check that the facade `Runner` mirrors `openai_agents_core::Runner`.
+"""Check that the facade `Runner` mirrors `opai_agents_core::Runner`.
 
 Core knows no model provider, so `crates/facade/src/runner.rs` wraps every `Runner` method to
 install the default OpenAI provider first. A method added to the core runner but not wrapped would
-simply not exist for users of `openai-agents` (a compile error, not a silent change), and a changed
+simply not exist for users of `opai-agents` (a compile error, not a silent change), and a changed
 signature would drift. This script compares the two lists and fails on any difference, so the
 wrapper cannot fall behind unnoticed.
 

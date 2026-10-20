@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
-use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
-use openai_agents::{
+use opai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
+use opai_agents::{
     handoff, Agent, AgentsError, FunctionTool, MaxTurnsExceeded, ModelError, ModelSettings,
     RunItem, RunOptions, Runner, ToolChoice, ToolUseBehavior, DEFAULT_MAX_TURNS,
 };
@@ -42,7 +42,7 @@ async fn tool_then_text() {
     assert!(result
         .new_items
         .iter()
-        .any(|i| matches!(i, openai_agents::RunItem::ToolCallOutput(_))));
+        .any(|i| matches!(i, opai_agents::RunItem::ToolCallOutput(_))));
     model.assert_complete();
     assert_eq!(model.calls().len(), 2);
     assert!(model.calls()[0].tool_names.iter().any(|n| n == "echo"));
@@ -81,7 +81,7 @@ async fn max_turns_exceeded() {
         .await
         .expect_err("should exceed");
     match err {
-        openai_agents::AgentsError::MaxTurns(MaxTurnsExceeded { max_turns }) => {
+        opai_agents::AgentsError::MaxTurns(MaxTurnsExceeded { max_turns }) => {
             assert_eq!(max_turns, 2);
         }
         other => panic!("unexpected error: {other}"),
@@ -283,7 +283,7 @@ mod probe {
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
-    use openai_agents::{FunctionTool, ToolContext};
+    use opai_agents::{FunctionTool, ToolContext};
 
     #[derive(Debug, Default)]
     pub struct Probe {
@@ -412,7 +412,7 @@ async fn to_input_list_includes_new_items() {
 /// `RunConfig` is built from topic groups; the chain methods and field assignment agree.
 #[test]
 fn run_config_groups_chain_and_assign_alike() {
-    use openai_agents::{HandoffOptions, ModelOptions, ModelSettings, RunConfig, TracingOptions};
+    use opai_agents::{HandoffOptions, ModelOptions, ModelSettings, RunConfig, TracingOptions};
 
     let settings = ModelSettings {
         temperature: Some(0.2),
@@ -442,7 +442,7 @@ fn run_config_groups_chain_and_assign_alike() {
 /// `RunOptions::default` names the workflow; the grouped default tracing keeps that.
 #[test]
 fn run_options_default_names_the_workflow() {
-    let options = openai_agents::RunOptions::default();
+    let options = opai_agents::RunOptions::default();
     assert_eq!(
         options.run_config.tracing.workflow_name.as_deref(),
         Some("Agent workflow")
@@ -453,7 +453,7 @@ fn run_options_default_names_the_workflow() {
 /// One chain replaces the nested `RunOptions { run_config: RunConfig { model_settings .. } }`.
 #[test]
 fn run_options_chain_sets_model_knobs_in_one_line() {
-    use openai_agents::{ModelSettings, RunOptions};
+    use opai_agents::{ModelSettings, RunOptions};
 
     let options = RunOptions::new()
         .max_turns(3)

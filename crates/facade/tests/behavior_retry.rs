@@ -8,8 +8,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
-use openai_agents::{
+use opai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
+use opai_agents::{
     retry_policies, Agent, AgentsError, Model, ModelConnectionError, ModelError, ModelResponse,
     ModelRetryAdvice, ModelRetryBackoffSettings, ModelRetrySettings, ModelSettings,
     ModelStatusError, ReplaySafety, RetryDecision, RetryPolicy, RunOptions, Runner,
@@ -359,14 +359,14 @@ struct FailsAfterOutput(AtomicUsize);
 impl Model for FailsAfterOutput {
     async fn get_response(
         &self,
-        _request: openai_agents::ModelRequest<'_>,
+        _request: opai_agents::ModelRequest<'_>,
     ) -> Result<ModelResponse, ModelError> {
         Err(connection(false))
     }
 
     async fn stream_response(
         &self,
-        _request: openai_agents::ModelRequest<'_>,
+        _request: opai_agents::ModelRequest<'_>,
         raw_tx: tokio::sync::mpsc::Sender<Value>,
     ) -> Result<ModelResponse, ModelError> {
         self.0.fetch_add(1, Ordering::SeqCst);
@@ -406,7 +406,7 @@ struct Hangs(AtomicUsize);
 impl Model for Hangs {
     async fn get_response(
         &self,
-        _request: openai_agents::ModelRequest<'_>,
+        _request: opai_agents::ModelRequest<'_>,
     ) -> Result<ModelResponse, ModelError> {
         self.0.fetch_add(1, Ordering::SeqCst);
         std::future::pending().await

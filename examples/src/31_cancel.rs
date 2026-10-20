@@ -9,15 +9,15 @@
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`, `OPENAI_API`.
 //!
 //! ```bash
-//! cargo run -p openai-agents-examples --example cancel
+//! cargo run -p opai-agents-examples --example cancel
 //! ```
 
 mod common;
 
 use std::io::{self, Write};
 
-use openai_agents::model::wire_events::{self, WireEvent};
-use openai_agents::{Agent, CancelMode, RunOptions, Runner, StreamEvent};
+use opai_agents::model::wire_events::{self, WireEvent};
+use opai_agents::{Agent, CancelMode, RunOptions, Runner, StreamEvent};
 
 /// Stop after this many streamed text deltas.
 const STOP_AFTER_DELTAS: usize = 25;

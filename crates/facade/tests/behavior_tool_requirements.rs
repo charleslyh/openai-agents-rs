@@ -3,8 +3,8 @@
 
 use std::sync::Arc;
 
-use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
-use openai_agents::{Agent, AgentsError, FunctionTool, RunOptions, Runner};
+use opai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
+use opai_agents::{Agent, AgentsError, FunctionTool, RunOptions, Runner};
 
 struct Db(&'static str);
 
@@ -67,7 +67,7 @@ async fn requirements_are_checked_on_handoff_targets_too() {
     let target = Agent::new("specialist")
         .model(handoff_model)
         .tools(vec![tool_needing_db()]);
-    let agent = Agent::new("assistant").handoffs(vec![openai_agents::handoff(target)]);
+    let agent = Agent::new("assistant").handoffs(vec![opai_agents::handoff(target)]);
 
     let err = Runner::run(&agent, "go", RunOptions::default())
         .await

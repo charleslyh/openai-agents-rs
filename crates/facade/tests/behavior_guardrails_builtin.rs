@@ -1,6 +1,6 @@
 //! Rust-only (X-020): the ready-made guardrails, through a real run.
 //!
-//! The unit tests in `openai-agents-guardrails` check what each guard decides about a string; these
+//! The unit tests in `opai-agents-guardrails` check what each guard decides about a string; these
 //! check what a run does with those decisions: the model sees the rewritten text, the session
 //! stores it, a refused run never reaches the model, and the trace holds counts and no text.
 
@@ -8,11 +8,11 @@
 
 use std::sync::Arc;
 
-use openai_agents::guardrails::{
+use opai_agents::guardrails::{
     BlockedKeywords, Guard, MaxLength, PiiRedactor, PromptInjection, SchemaValidator,
 };
-use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
-use openai_agents::{
+use opai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
+use opai_agents::{
     Agent, AgentsError, InMemorySession, RunOptions, Runner, Session, Severity, Verdict,
 };
 use serde_json::json;

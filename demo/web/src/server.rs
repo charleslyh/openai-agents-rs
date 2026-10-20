@@ -10,7 +10,7 @@ use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use openai_agents::CancelMode;
+use opai_agents::CancelMode;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -199,7 +199,7 @@ async fn create_conversation(State(app): State<Arc<AppState>>) -> Response {
 }
 
 async fn conversation_view(app: &AppState, id: &str) -> Option<Value> {
-    use openai_agents::Session;
+    use opai_agents::Session;
     let conversation = app.conversation(id)?;
     let items = conversation
         .session

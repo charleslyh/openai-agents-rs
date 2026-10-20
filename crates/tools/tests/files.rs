@@ -3,8 +3,8 @@
 
 use std::path::{Path, PathBuf};
 
-use openai_agents_core::{FunctionTool, RunContextWrapper, ToolContext};
-use openai_agents_tools::{file_list, file_read};
+use opai_agents_core::{FunctionTool, RunContextWrapper, ToolContext};
+use opai_agents_tools::{file_list, file_read};
 use serde_json::{json, Value};
 
 struct Sandbox {
@@ -146,7 +146,7 @@ async fn listing_stays_inside_and_hides_nothing_it_may_show() {
 #[tokio::test]
 async fn a_file_over_the_limit_is_not_read() {
     let sandbox = Sandbox::new("big");
-    let big = vec![b'x'; (openai_agents_tools::MAX_FILE_BYTES + 1) as usize];
+    let big = vec![b'x'; (opai_agents_tools::MAX_FILE_BYTES + 1) as usize];
     std::fs::write(sandbox.root.join("big.txt"), big).unwrap();
     let read = file_read(&sandbox.root).unwrap();
     let err = call(&read, "big.txt").await.expect_err("too big");

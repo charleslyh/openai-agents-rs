@@ -7,8 +7,8 @@ mod common;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
-use openai_agents::{Agent, AgentsError, RunOptions, Runner, Session, SqliteSession};
+use opai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
+use opai_agents::{Agent, AgentsError, RunOptions, Runner, Session, SqliteSession};
 use serde_json::{json, Value};
 
 /// A database path in the temp dir, removed (with its WAL files) on drop.
@@ -261,7 +261,7 @@ async fn replace_items_swaps_the_history_atomically() {
 #[tokio::test]
 async fn compacting_session_over_sqlite_persists_the_summary() {
     use async_trait::async_trait;
-    use openai_agents::{CompactingSession, Summarizer};
+    use opai_agents::{CompactingSession, Summarizer};
     struct Fixed;
     #[async_trait]
     impl Summarizer for Fixed {

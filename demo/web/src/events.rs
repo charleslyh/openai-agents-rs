@@ -4,8 +4,8 @@
 use std::fmt;
 use std::sync::atomic::AtomicU32;
 
-use openai_agents::model::wire_events::{self, WireEvent};
-use openai_agents::{AgentsError, ModelError, RunItem, StreamEvent, ToolGuardrailBehavior, Usage};
+use opai_agents::model::wire_events::{self, WireEvent};
+use opai_agents::{AgentsError, ModelError, RunItem, StreamEvent, ToolGuardrailBehavior, Usage};
 use serde::Serialize;
 use serde_json::Value;
 use tokio::sync::mpsc;
@@ -467,7 +467,7 @@ pub fn model_error_kind(err: &ModelError) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use openai_agents::{ModelConnectionError, ModelStatusError};
+    use opai_agents::{ModelConnectionError, ModelStatusError};
     use std::collections::BTreeMap;
 
     fn status(code: u16) -> AgentsError {

@@ -9,8 +9,8 @@
 //! like.
 //!
 //! ```bash
-//! cargo run -p openai-agents-examples --example file_session
-//! SESSION_DIR=./.sessions cargo run -p openai-agents-examples --example file_session
+//! cargo run -p opai-agents-examples --example file_session
+//! SESSION_DIR=./.sessions cargo run -p opai-agents-examples --example file_session
 //! ```
 //!
 //! No key is needed: without `OPENAI_API_KEY` the offline model answers.
@@ -19,7 +19,7 @@ mod common;
 
 use std::sync::Arc;
 
-use openai_agents::{Agent, FileSession, RunOptions, Runner, Session};
+use opai_agents::{Agent, FileSession, RunOptions, Runner, Session};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

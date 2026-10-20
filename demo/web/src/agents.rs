@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use openai_agents::{
+use opai_agents::{
     handoff, input_guardrail, output_guardrail, Agent, AgentOutputSchema, AsToolConfig,
     GuardrailFunctionOutput, InputGuardrail, InputLike, McpServer, Model, ModelSettings,
     OutputGuardrail, RunErrorHandlerInput, RunErrorHandlerResult, RunErrorHandlers, ToolChoice,
@@ -16,7 +16,7 @@ use crate::faults::ToolFaults;
 use crate::tools;
 
 /// The structured answer of the Weather agent.
-#[derive(Debug, Deserialize, openai_agents::schemars::JsonSchema)]
+#[derive(Debug, Deserialize, opai_agents::schemars::JsonSchema)]
 #[allow(dead_code)]
 pub struct WeatherReport {
     /// City the report is about.
@@ -84,7 +84,7 @@ pub fn build_network(
     model: Arc<dyn Model>,
     faults: &ToolFaults,
     mcp: Option<Arc<dyn McpServer>>,
-) -> Result<Agent, openai_agents::AgentsError> {
+) -> Result<Agent, opai_agents::AgentsError> {
     let billing = Agent::new("Billing")
         .handoff_description("Billing, invoices and customer records.")
         .instructions(
@@ -209,7 +209,7 @@ async fn handled(
     input: RunErrorHandlerInput,
     kind: &'static str,
     message: &'static str,
-) -> Result<Option<RunErrorHandlerResult>, openai_agents::AgentsError> {
+) -> Result<Option<RunErrorHandlerResult>, opai_agents::AgentsError> {
     if let Some(demo) = input.context.context::<DemoCtx>() {
         demo.emit
             .emit(DemoEvent::Handled {

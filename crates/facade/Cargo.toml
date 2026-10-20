@@ -1,5 +1,5 @@
 [package]
-name = "openai-agents"
+name = "opai-agents"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.99"
@@ -11,37 +11,37 @@ keywords = ["openai", "agents", "llm", "tools"]
 categories = ["api-bindings", "asynchronous"]
 
 [lib]
-name = "openai_agents"
+name = "opai_agents"
 
 [features]
 default = ["openai"]
-openai = ["dep:openai-agents-openai"]
+openai = ["dep:opai-agents-openai"]
 # MCP client: stdio (child process) and streamable HTTP transports. Off by default, so a build
 # that does not talk to MCP servers compiles neither the client nor its process/HTTP code.
-mcp = ["dep:openai-agents-mcp"]
+mcp = ["dep:opai-agents-mcp"]
 # Provider presets: DeepSeek, Gemini, Groq, OpenRouter, Anthropic, Ollama, custom endpoints, the
 # capability matrix and the offline model. Off by default; it brings the OpenAI adapters with it,
 # because every preset speaks Chat Completions or Responses.
-providers = ["dep:openai-agents-providers"]
+providers = ["dep:opai-agents-providers"]
 # `SqliteSession`: file or in-memory conversation storage, same schema as the Python SDK.
-sqlite = ["dep:openai-agents-sqlite"]
+sqlite = ["dep:opai-agents-sqlite"]
 # `FileSession` (a conversation in a JSONL file) and `FileRunStateStore` (a run that paused for an
 # approval). Off by default: nothing in the core loop needs a file.
-sessions = ["dep:openai-agents-sessions"]
+sessions = ["dep:opai-agents-sessions"]
 # `RedisSession` / `RedisRunStateStore`: a history more than one process shares.
-redis = ["dep:openai-agents-sessions", "openai-agents-sessions/redis"]
+redis = ["dep:opai-agents-sessions", "opai-agents-sessions/redis"]
 # `PostgresSession` / `PostgresRunStateStore`: a history in a database the deployment already has.
-postgres = ["dep:openai-agents-sessions", "openai-agents-sessions/postgres"]
+postgres = ["dep:opai-agents-sessions", "opai-agents-sessions/postgres"]
 # Trace processors that export: batched console, JSONL files and counters. Off by default.
-observability = ["dep:openai-agents-observability"]
+observability = ["dep:opai-agents-observability"]
 # Ready-made tools: calculator, clock, read-only files. Off by default.
-tools = ["dep:openai-agents-tools"]
+tools = ["dep:opai-agents-tools"]
 # `web_fetch`, with the private network off limits. Brings an HTTP client.
-webfetch = ["dep:openai-agents-tools", "openai-agents-tools/webfetch"]
+webfetch = ["dep:opai-agents-tools", "opai-agents-tools/webfetch"]
 # Ready-made guardrails: length, personal data, prompt injection, keywords, schema.
-guardrails = ["dep:openai-agents-guardrails"]
+guardrails = ["dep:opai-agents-guardrails"]
 # Spans as OpenTelemetry spans, in whatever pipeline the process installed.
-otel = ["dep:openai-agents-observability", "openai-agents-observability/otel"]
+otel = ["dep:opai-agents-observability", "opai-agents-observability/otel"]
 
 # Inherits the lint config (including the tracked clippy backlog) from `[workspace.lints]`.
 [lints]
@@ -49,17 +49,17 @@ workspace = true
 
 [dependencies]
 tokio = { version = "1", features = ["rt"] }
-openai-agents-core = { path = "../core", version = "0.1.0" }
-openai-agents-macros = { path = "../macros", version = "0.1.0" }
-openai-agents-testing = { path = "../testing", version = "0.1.0" }
-openai-agents-openai = { path = "../openai", version = "0.1.0", optional = true }
-openai-agents-mcp = { path = "../mcp", version = "0.1.0", optional = true }
-openai-agents-sqlite = { path = "../sqlite", version = "0.1.0", optional = true }
-openai-agents-providers = { path = "../providers", version = "0.1.0", optional = true }
-openai-agents-sessions = { path = "../sessions", version = "0.1.0", optional = true }
-openai-agents-observability = { path = "../observability", version = "0.1.0", optional = true }
-openai-agents-tools = { path = "../tools", version = "0.1.0", optional = true }
-openai-agents-guardrails = { path = "../guardrails", version = "0.1.0", optional = true }
+opai-agents-core = { path = "../core", version = "0.1.0" }
+opai-agents-macros = { path = "../macros", version = "0.1.0" }
+opai-agents-testing = { path = "../testing", version = "0.1.0" }
+opai-agents-openai = { path = "../openai", version = "0.1.0", optional = true }
+opai-agents-mcp = { path = "../mcp", version = "0.1.0", optional = true }
+opai-agents-sqlite = { path = "../sqlite", version = "0.1.0", optional = true }
+opai-agents-providers = { path = "../providers", version = "0.1.0", optional = true }
+opai-agents-sessions = { path = "../sessions", version = "0.1.0", optional = true }
+opai-agents-observability = { path = "../observability", version = "0.1.0", optional = true }
+opai-agents-tools = { path = "../tools", version = "0.1.0", optional = true }
+opai-agents-guardrails = { path = "../guardrails", version = "0.1.0", optional = true }
 
 [dev-dependencies]
 async-trait = "0.1"
@@ -70,7 +70,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"
 uuid = { version = "1", features = ["v4"] }
 # Only the SQLite session tests open a connection themselves, to compare with the Python schema.
 rusqlite = { version = "0.32", features = ["bundled"] }
-# `tracing` here is the external crate; the SDK module of that name is `openai_agents::tracing`.
+# `tracing` here is the external crate; the SDK module of that name is `opai_agents::tracing`.
 tracing = "0.1"
 # Verification layer 1.5: property / randomized tests. See docs/CONTRIBUTING.md.
 proptest = "1"

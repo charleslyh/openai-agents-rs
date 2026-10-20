@@ -18,15 +18,15 @@
 //! `EXAMPLE_INPUT`.
 //!
 //! ```bash
-//! cargo run -p openai-agents-examples --example reasoning
+//! cargo run -p opai-agents-examples --example reasoning
 //! ```
 
 mod common;
 
 use std::io::{self, Write};
 
-use openai_agents::model::wire_events::{self, WireEvent};
-use openai_agents::{
+use opai_agents::model::wire_events::{self, WireEvent};
+use opai_agents::{
     Agent, Reasoning, ReasoningEffort, ReasoningSummary, RunOptions, Runner, StreamEvent,
 };
 

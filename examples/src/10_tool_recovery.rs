@@ -8,7 +8,7 @@
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
-//! cargo run -p openai-agents-examples --example tool_recovery
+//! cargo run -p opai-agents-examples --example tool_recovery
 //! ```
 
 mod common;
@@ -16,7 +16,7 @@ mod common;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
-use openai_agents::{Agent, AgentsError, FunctionTool, RunOptions, Runner};
+use opai_agents::{Agent, AgentsError, FunctionTool, RunOptions, Runner};
 use serde_json::json;
 
 /// The tool's arguments (see [`FunctionTool::typed`]).

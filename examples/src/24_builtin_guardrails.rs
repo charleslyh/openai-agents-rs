@@ -15,15 +15,15 @@
 //! shows which happens.
 //!
 //! ```bash
-//! cargo run -p openai-agents-examples --example builtin_guardrails
+//! cargo run -p opai-agents-examples --example builtin_guardrails
 //! ```
 //!
 //! No key is needed: without `OPENAI_API_KEY` the offline model answers.
 
 mod common;
 
-use openai_agents::guardrails::{BlockedKeywords, Guard, MaxLength, PiiRedactor, PromptInjection};
-use openai_agents::{Agent, AgentsError, RunOptions, Runner};
+use opai_agents::guardrails::{BlockedKeywords, Guard, MaxLength, PiiRedactor, PromptInjection};
+use opai_agents::{Agent, AgentsError, RunOptions, Runner};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -31,7 +31,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let agent = Agent::new("Support")
         .instructions("You help with billing questions. Answer in one short sentence.")
         .model(common::model_or_offline()?)
-        .tools(vec![openai_agents::tools::calculator()])
+        .tools(vec![opai_agents::tools::calculator()])
         .input_guardrails(vec![
             MaxLength::chars(2_000)?.input(),
             PromptInjection::new()?.input(),

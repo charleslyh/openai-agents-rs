@@ -2,9 +2,9 @@
 
 ## Python module -> Rust crate
 
-The SDK is a Cargo workspace. `openai-agents` (the facade, `crates/facade`) re-exports
-`openai_agents_core::*` plus the optional crates, so every path below is reachable from
-`openai_agents::…` without naming the crate — except where a row says otherwise.
+The SDK is a Cargo workspace. `opai-agents` (the facade, `crates/facade`) re-exports
+`opai_agents_core::*` plus the optional crates, so every path below is reachable from
+`opai_agents::…` without naming the crate — except where a row says otherwise.
 
 `RunConfig` rows below use Python's flat field names; the Rust fields are grouped by topic
 (`config.model.settings`, `config.tracing.workflow_name`, ...). See the table in
@@ -12,20 +12,20 @@ The SDK is a Cargo workspace. `openai-agents` (the facade, `crates/facade`) re-e
 
 | Python (`agents.*`) | Rust crate | Where |
 | --- | --- | --- |
-| `agent`, `agent_output`, `result`, `run`, `run_config`, `run_state`, `run_context` | `openai-agents-core` | `crates/core/src/{agent,agent_output,result,run_context}` 与 `crates/core/src/run/{mod,config}.rs`、`crates/core/src/run_state/` |
-| `tool`, `tool_context`, `tool_guardrails`, `function_schema`, `strict_schema` | `openai-agents-core` | `crates/core/src/{tool,tool_guardrails,strict_schema}` |
-| `items`, `handoffs`, `guardrail`, `lifecycle`, `usage`, `stream_events` | `openai-agents-core` | `crates/core/src/…` |
-| `model_settings`, `models` (the `Model` / `ModelProvider` contracts) | `openai-agents-core` | `crates/core/src/model` (contract only, no HTTP) |
-| `context` (trimmers), `memory` (`CompactingSession`) | `openai-agents-core` | `crates/core/src/{context,memory}`; see D13 for why this is not its own crate |
-| `tracing` | `openai-agents-core` | `crates/core/src/tracing`; D3 (allowed to depend only on `usage`) |
-| `retry` | `openai-agents-core` | `crates/core/src/retry`; `openai_retry_advice` moved to `crates/openai/src/retry_advice.rs` (D7) |
-| `models` (OpenAI provider, Responses / Chat Completions) | `openai-agents-openai` | `crates/openai`; facade feature **`openai`** (on by default) |
-| `mcp` | `openai-agents-mcp` | `crates/mcp`; the `McpServer` contract stays in core, facade feature **`mcp`** (**off** by default, D6) |
-| `extensions` (`sqlite`) / `SqliteSession` | `openai-agents-sqlite` | `crates/sqlite`; facade feature `sqlite` |
-| — (Rust-only) `FileSession`, `FileRunStateStore` | `openai-agents-sessions` | `crates/sessions`; facade feature `sessions` (**off** by default, X-016 / X-017) |
-| — (Rust-only) batched trace export, sinks, metrics | `openai-agents-observability` | `crates/observability`; facade feature `observability` (**off** by default, X-018) |
-| `testing` | `openai-agents-testing` | `crates/testing`; re-exported as `openai_agents::testing` (D2) |
-| `decorators` (`@function_tool`) | `openai-agents-macros` | `crates/macros`; `#[function_tool]` |
+| `agent`, `agent_output`, `result`, `run`, `run_config`, `run_state`, `run_context` | `opai-agents-core` | `crates/core/src/{agent,agent_output,result,run_context}` 与 `crates/core/src/run/{mod,config}.rs`、`crates/core/src/run_state/` |
+| `tool`, `tool_context`, `tool_guardrails`, `function_schema`, `strict_schema` | `opai-agents-core` | `crates/core/src/{tool,tool_guardrails,strict_schema}` |
+| `items`, `handoffs`, `guardrail`, `lifecycle`, `usage`, `stream_events` | `opai-agents-core` | `crates/core/src/…` |
+| `model_settings`, `models` (the `Model` / `ModelProvider` contracts) | `opai-agents-core` | `crates/core/src/model` (contract only, no HTTP) |
+| `context` (trimmers), `memory` (`CompactingSession`) | `opai-agents-core` | `crates/core/src/{context,memory}`; see D13 for why this is not its own crate |
+| `tracing` | `opai-agents-core` | `crates/core/src/tracing`; D3 (allowed to depend only on `usage`) |
+| `retry` | `opai-agents-core` | `crates/core/src/retry`; `openai_retry_advice` moved to `crates/openai/src/retry_advice.rs` (D7) |
+| `models` (OpenAI provider, Responses / Chat Completions) | `opai-agents-openai` | `crates/openai`; facade feature **`openai`** (on by default) |
+| `mcp` | `opai-agents-mcp` | `crates/mcp`; the `McpServer` contract stays in core, facade feature **`mcp`** (**off** by default, D6) |
+| `extensions` (`sqlite`) / `SqliteSession` | `opai-agents-sqlite` | `crates/sqlite`; facade feature `sqlite` |
+| — (Rust-only) `FileSession`, `FileRunStateStore` | `opai-agents-sessions` | `crates/sessions`; facade feature `sessions` (**off** by default, X-016 / X-017) |
+| — (Rust-only) batched trace export, sinks, metrics | `opai-agents-observability` | `crates/observability`; facade feature `observability` (**off** by default, X-018) |
+| `testing` | `opai-agents-testing` | `crates/testing`; re-exported as `opai_agents::testing` (D2) |
+| `decorators` (`@function_tool`) | `opai-agents-macros` | `crates/macros`; `#[function_tool]` |
 | `realtime`, `voice`, `prompts`, `computer`, `editor`, `repl` | — | Not ported |
 
 
@@ -82,7 +82,7 @@ Legend: **X** = out of scope (OpenAI-hosted) · **S** = supported · **P** = par
 | `CompatibleProvider` | S | Provider-neutral entry: base URL, optional key, Chat Completions by default (D-013) |
 | Model retry (`ModelSettings.retry`, `retry_policies`) | S | Checked against Python scenario by scenario; typed `ModelError::Status` / `Connection` (D-034) |
 | Per-attempt `ModelSettings.timeout` | S | `ModelError::Timeout`; retryable (D-034) |
-| Litellm / other providers | N | Register a custom `ModelProvider`; the `openai-agents-providers` crate ships presets (DeepSeek, Gemini, Groq, OpenRouter, Anthropic, Ollama) and a capability matrix (X-013) |
+| Litellm / other providers | N | Register a custom `ModelProvider`; the `opai-agents-providers` crate ships presets (DeepSeek, Gemini, Groq, OpenRouter, Anthropic, Ollama) and a capability matrix (X-013) |
 
 ## Streaming wire events
 
@@ -238,7 +238,7 @@ dictionaries are merged (`model_settings.py:273`).
 | `SpanData` payloads (`input` / `output` / `tools`) | N | Only names and usage are recorded |
 | `BatchedProcessor`, `ConsoleSink`, `JsonlSink`, `Metrics` (feature `observability`) | S | Rust-only: batched export that never blocks the run, and counters over the same stream (X-018) |
 | `OtelSink` (feature `otel`) | S | Rust-only: spans into whatever OpenTelemetry pipeline the application installed — OTLP included — through the API only, so no exporter is pulled in (X-018) |
-| `TracingSink` (feature `observability`) | S | Rust-only: SDK events as `tracing` events under the target `openai_agents`, so the application's own subscriber and `RUST_LOG` see a run (X-018) |
+| `TracingSink` (feature `observability`) | S | Rust-only: SDK events as `tracing` events under the target `opai_agents`, so the application's own subscriber and `RUST_LOG` see a run (X-018) |
 | `calculator`, `clock`, `file_read`, `file_list` (feature `tools`) | S | Rust-only: local tools with their limits built in — a parser instead of `eval`, one RFC 3339 shape, one directory and nothing outside it (X-019) |
 | `web_fetch` (feature `webfetch`) | S | Rust-only: private, loopback, link-local and reserved addresses refused at connect time and on every redirect hop; no proxy; 1 MiB streamed cap (X-019) |
 | `MaxLength`, `PiiRedactor`, `PromptInjection`, `BlockedKeywords`, `SchemaValidator` (feature `guardrails`) | S | Rust-only: input and output guardrails that pass, fail or rewrite; a bad configuration fails at construction (X-020) |

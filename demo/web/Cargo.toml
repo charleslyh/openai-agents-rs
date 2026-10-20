@@ -1,5 +1,5 @@
 [package]
-name = "openai-agents-web-demo"
+name = "opai-agents-web-demo"
 version = "0.1.0"
 edition = "2021"
 publish = false
@@ -10,7 +10,7 @@ description = "Web console for the Rust OpenAI Agents SDK: one chat box, a capab
 workspace = true
 
 # Like `examples`, this package turns on the facade's `openai` feature, so the root manifest keeps
-# it out of `default-members`; build it with `-p openai-agents-web-demo`.
+# it out of `default-members`; build it with `-p opai-agents-web-demo`.
 [dependencies]
 # `hooks.rs` implements `RunHooks`, whose methods are `async_trait`.
 async-trait = "0.1"
@@ -18,7 +18,7 @@ async-trait = "0.1"
 # WebSocket, no multipart, no macros).
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio"] }
 # `mcp` demonstrates a real MCP server over stdio (this binary re-executed with `--mcp-server`).
-openai-agents = { path = "../../crates/facade", version = "0.1.0", features = ["openai", "mcp"] }
+opai-agents = { path = "../../crates/facade", version = "0.1.0", features = ["openai", "mcp"] }
 # `stream::unfold` turns the run's event channel into the SSE body.
 futures = "0.3"
 serde = { version = "1", features = ["derive"] }

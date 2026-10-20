@@ -7,7 +7,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use openai_agents_core::{AgentsError, McpServer};
+use opai_agents_core::{AgentsError, McpServer};
 
 #[derive(Default)]
 struct State {
@@ -21,8 +21,8 @@ struct State {
 ///
 /// ```no_run
 /// # use std::sync::Arc;
-/// # use openai_agents_core::{Agent, AgentsError, McpServer};
-/// # use openai_agents_mcp::McpServerManager;
+/// # use opai_agents_core::{Agent, AgentsError, McpServer};
+/// # use opai_agents_mcp::McpServerManager;
 /// # async fn demo(servers: Vec<Arc<dyn McpServer>>) -> Result<(), AgentsError> {
 /// let manager = McpServerManager::new(servers);
 /// let active = manager.connect_all().await?;
@@ -268,9 +268,9 @@ mod tests {
     use serde_json::Value;
 
     use super::*;
-    use openai_agents_core::agent::Agent;
-    use openai_agents_core::mcp::{McpCallToolResult, McpTool};
-    use openai_agents_core::run_context::RunContextWrapper;
+    use opai_agents_core::agent::Agent;
+    use opai_agents_core::mcp::{McpCallToolResult, McpTool};
+    use opai_agents_core::run_context::RunContextWrapper;
 
     /// A server whose `connect` fails the first `fail_times` times, or hangs when `hang`.
     #[derive(Debug)]

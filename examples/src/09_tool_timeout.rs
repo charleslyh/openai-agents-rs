@@ -10,15 +10,15 @@
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
-//! cargo run -p openai-agents-examples --example tool_timeout
-//! TOOL_TIMEOUT_RAISE=1 cargo run -p openai-agents-examples --example tool_timeout
+//! cargo run -p opai-agents-examples --example tool_timeout
+//! TOOL_TIMEOUT_RAISE=1 cargo run -p opai-agents-examples --example tool_timeout
 //! ```
 
 mod common;
 
 use std::time::Duration;
 
-use openai_agents::{Agent, AgentsError, FunctionTool, RunOptions, Runner, ToolTimeoutBehavior};
+use opai_agents::{Agent, AgentsError, FunctionTool, RunOptions, Runner, ToolTimeoutBehavior};
 use serde_json::json;
 
 fn slow_report(behavior: ToolTimeoutBehavior) -> FunctionTool {

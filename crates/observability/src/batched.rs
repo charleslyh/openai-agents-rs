@@ -20,7 +20,7 @@ use std::sync::mpsc::{sync_channel, SyncSender};
 use std::sync::Arc;
 use std::time::Duration;
 
-use openai_agents_core::tracing::{Span, Trace, TracingProcessor};
+use opai_agents_core::tracing::{Span, Trace, TracingProcessor};
 
 use super::export::{span_to_json, trace_to_json, ExportEvent};
 

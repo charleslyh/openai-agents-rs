@@ -10,7 +10,7 @@
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
-//! cargo run -p openai-agents-examples --example deferred_capability
+//! cargo run -p opai-agents-examples --example deferred_capability
 //! ```
 
 mod common;
@@ -18,8 +18,8 @@ mod common;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use openai_agents::prelude::*;
-use openai_agents::{ModelError, ModelRequest, ModelResponse, NamedCapability};
+use opai_agents::prelude::*;
+use opai_agents::{ModelError, ModelRequest, ModelResponse, NamedCapability};
 
 /// A bundle that is only worth its context when the model actually needs SQL.
 fn database() -> NamedCapability {

@@ -20,7 +20,7 @@
 //! ```rust,no_run
 //! // The application installs the pipeline it wants, once, at startup:
 //! // opentelemetry_otlp::new_pipeline().tracing()...install_batch(opentelemetry_sdk::runtime::Tokio)
-//! use openai_agents_observability::{BatchedProcessor, OtelSink};
+//! use opai_agents_observability::{BatchedProcessor, OtelSink};
 //!
 //! let processor = BatchedProcessor::spawn(OtelSink::new(), 1024, std::time::Duration::from_millis(200));
 //! # let _ = processor;
@@ -37,7 +37,7 @@ use super::batched::EventSink;
 use super::export::ExportEvent;
 
 /// The name this sink's tracer is registered under.
-pub const TRACER_NAME: &str = "openai-agents";
+pub const TRACER_NAME: &str = "opai-agents";
 
 /// Writes events as OpenTelemetry spans, through the tracer the process installed.
 pub struct OtelSink {

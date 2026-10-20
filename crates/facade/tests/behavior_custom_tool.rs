@@ -8,17 +8,17 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use openai_agents::serde_json::{self, json, Value};
-use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
-use openai_agents::{
+use opai_agents::serde_json::{self, json, Value};
+use opai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
+use opai_agents::{
     async_trait, Agent, AgentsError, FunctionTool, NeedsResolution, NextTool, RunOptions, Runner,
     Tool, ToolContext, ToolFailureHandling, ToolMiddleware, ToolOutput, ToolPolicy, ToolSpec,
     TypeRequirement,
 };
 
-#[derive(openai_agents::serde::Deserialize, openai_agents::schemars::JsonSchema)]
-#[serde(crate = "openai_agents::serde")]
-#[schemars(crate = "openai_agents::schemars")]
+#[derive(opai_agents::serde::Deserialize, opai_agents::schemars::JsonSchema)]
+#[serde(crate = "opai_agents::serde")]
+#[schemars(crate = "opai_agents::schemars")]
 struct RefundArgs {
     /// Order to refund.
     order_id: String,

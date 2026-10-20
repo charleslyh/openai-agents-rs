@@ -47,7 +47,7 @@ before the first release, and a `Transform` verdict that redacts instead of refu
 - **`RunState` is not Python's wire format.** The JSON schema is `openai-agents-rs/4`; use one
   language per durable state store.
 - **Additions with no Python counterpart**: `Capability` bundles and `deferred` loading,
-  `Verdict::Transform`, the provider presets, the ready-made tools and guardrails, `openai_agents::run`.
+  `Verdict::Transform`, the provider presets, the ready-made tools and guardrails, `opai_agents::run`.
   They are registered under "extensions" in `docs/DEVIATIONS.md` and kept out of the parity
   comparison, so the behaviour alignment stays a clean check.
 

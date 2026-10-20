@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-use openai_agents::{
+use opai_agents::{
     retry_policies, CancelMode, InMemorySession, McpServer, Model, ModelRetryBackoffSettings,
     ModelRetrySettings, ModelSettings, ModelSummarizer, RunState, Session, ToolInterruptionItem,
 };

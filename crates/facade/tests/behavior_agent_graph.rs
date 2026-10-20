@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
-use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
-use openai_agents::{Agent, AgentsError, FunctionTool, RunOptions, RunState, Runner};
+use opai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
+use opai_agents::{Agent, AgentsError, FunctionTool, RunOptions, RunState, Runner};
 
 fn model() -> Arc<ScriptedModel> {
     Arc::new(ScriptedModel::new([

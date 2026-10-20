@@ -6,9 +6,9 @@
 
 use std::sync::Arc;
 
-use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
-use openai_agents::tracing::{InMemoryProcessor, SpanData};
-use openai_agents::{
+use opai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
+use opai_agents::tracing::{InMemoryProcessor, SpanData};
+use opai_agents::{
     handoff, input_guardrail, Agent, GuardrailFunctionOutput, RunConfig, RunOptions, Runner,
     Runtime,
 };

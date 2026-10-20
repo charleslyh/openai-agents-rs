@@ -10,8 +10,8 @@
 use std::sync::Arc;
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use openai_agents::testing::{assistant_message, function_call, ModelStep, ScriptedModel};
-use openai_agents::{Agent, FunctionTool, RunOptions, Runner, ToolUseBehavior};
+use opai_agents::testing::{assistant_message, function_call, ModelStep, ScriptedModel};
+use opai_agents::{Agent, FunctionTool, RunOptions, Runner, ToolUseBehavior};
 use serde_json::json;
 use tokio::runtime::Runtime;
 
@@ -118,7 +118,7 @@ fn bench_stop_on_first_tool(c: &mut Criterion) {
 
 /// Session write + read: what a long conversation pays per turn.
 fn bench_session_round_trip(c: &mut Criterion) {
-    use openai_agents::{InMemorySession, Session};
+    use opai_agents::{InMemorySession, Session};
 
     let rt = Runtime::new().expect("runtime");
     let session = InMemorySession::shared("bench");
@@ -146,7 +146,7 @@ fn bench_strict_schema(c: &mut Criterion) {
         "required": ["name"]
     });
     c.bench_function("ensure_strict_json_schema", |b| {
-        b.iter(|| openai_agents::strict_schema::ensure_strict_json_schema(&schema).expect("strict"))
+        b.iter(|| opai_agents::strict_schema::ensure_strict_json_schema(&schema).expect("strict"))
     });
 }
 

@@ -1,8 +1,8 @@
-# openai-agents (facade)
+# opai-agents (facade)
 
-The crate users depend on. It keeps the `openai-agents` package name and re-exports
-`openai_agents_core::*` plus whatever optional crates the enabled features pull in, so every public
-path stays `openai_agents::…`.
+The crate users depend on. It keeps the `opai-agents` package name and re-exports
+`opai_agents_core::*` plus whatever optional crates the enabled features pull in, so every public
+path stays `opai_agents::…`.
 
 ## Hard rules
 
@@ -13,9 +13,9 @@ path stays `openai_agents::…`.
 
   | feature | default | pull in |
   | --- | --- | --- |
-  | `openai` | yes | `openai-agents-openai` |
-  | `mcp` | **no** | `openai-agents-mcp` (D6) |
-  | `sqlite` | no | `openai-agents-sqlite` |
+  | `openai` | yes | `opai-agents-openai` |
+  | `mcp` | **no** | `opai-agents-mcp` (D6) |
+  | `sqlite` | no | `opai-agents-sqlite` |
 
 - **`mcp` is off by default, which has a sharp edge.** `cargo test --test mcp_interop` without
   `--features mcp` compiles to zero tests and **still passes**. CI, docs and any new command must
@@ -24,7 +24,7 @@ path stays `openai_agents::…`.
 ## Examples are not in this crate
 
 They live at the repository root in `examples/`, as their own workspace member, so they depend on
-`openai-agents` the way a user's project would. Keep it that way: if an example needs something the
+`opai-agents` the way a user's project would. Keep it that way: if an example needs something the
 facade does not re-export, that is a gap in the public API — do not let it reach into `core`.
 
 The one thing this crate still owns is `benches/`: they are a performance guard on the public API,

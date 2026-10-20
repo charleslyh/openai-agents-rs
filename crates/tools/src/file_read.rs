@@ -20,8 +20,8 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 
-use openai_agents_core::error::UserError;
-use openai_agents_core::{AgentsError, FunctionTool};
+use opai_agents_core::error::UserError;
+use opai_agents_core::{AgentsError, FunctionTool};
 
 /// The largest file `file_read` returns.
 pub const MAX_FILE_BYTES: u64 = 1024 * 1024;

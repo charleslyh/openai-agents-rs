@@ -27,9 +27,9 @@
 //! turned into a denial of service by what a user types.
 //!
 //! ```rust
-//! use openai_agents_guardrails::{Guard, MaxLength, PiiRedactor, PromptInjection};
+//! use opai_agents_guardrails::{Guard, MaxLength, PiiRedactor, PromptInjection};
 //!
-//! # fn build() -> Result<(), openai_agents_guardrails::BuildError> {
+//! # fn build() -> Result<(), opai_agents_guardrails::BuildError> {
 //! let input_guardrails = vec![
 //!     MaxLength::chars(8_000)?.input(),
 //!     PromptInjection::new()?.input(),

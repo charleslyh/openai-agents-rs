@@ -2,7 +2,7 @@
 
 use serde_json::{Map, Value};
 
-use openai_agents_core::guardrail::Severity;
+use opai_agents_core::guardrail::Severity;
 
 use crate::error::BuildError;
 use crate::guard::{Decision, Guard, ValueDecision};
@@ -61,10 +61,10 @@ const SUPPORTED: &[&str] = &[
 /// A failure names the place and the rule (`/items/0/age: expected integer`), never the value.
 ///
 /// ```rust
-/// use openai_agents_guardrails::{Guard, SchemaValidator};
+/// use opai_agents_guardrails::{Guard, SchemaValidator};
 /// use serde_json::json;
 ///
-/// # fn build() -> Result<(), openai_agents_guardrails::BuildError> {
+/// # fn build() -> Result<(), opai_agents_guardrails::BuildError> {
 /// let guardrail = SchemaValidator::new(json!({
 ///     "type": "object",
 ///     "required": ["answer"],

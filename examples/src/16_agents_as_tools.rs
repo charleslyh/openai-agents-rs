@@ -4,14 +4,14 @@
 //!
 //! ```bash
 //! EXAMPLE_INPUT="Translate 'Hello, world!' to French and Spanish." \
-//!   cargo run -p openai-agents-examples --example agents_as_tools
+//!   cargo run -p opai-agents-examples --example agents_as_tools
 //! ```
 
 mod common;
 
 use std::sync::Arc;
 
-use openai_agents::{Agent, AsToolConfig, ItemHelpers, RunItem, RunOptions, Runner};
+use opai_agents::{Agent, AsToolConfig, ItemHelpers, RunItem, RunOptions, Runner};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

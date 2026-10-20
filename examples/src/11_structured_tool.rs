@@ -22,7 +22,7 @@
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
-//! cargo run -p openai-agents-examples --example structured_tool
+//! cargo run -p opai-agents-examples --example structured_tool
 //! ```
 
 mod common;
@@ -31,8 +31,8 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
-use openai_agents::prelude::*;
-use openai_agents::{async_trait, NextTool, ToolMeta, ToolMiddleware, TypedTool};
+use opai_agents::prelude::*;
+use opai_agents::{async_trait, NextTool, ToolMeta, ToolMiddleware, TypedTool};
 
 /// Refunds above this many cents pause for a person.
 const APPROVAL_THRESHOLD_CENTS: u64 = 10_000;
@@ -46,9 +46,9 @@ const WHOLE_ORDER_CENTS: u64 = 2_500;
 // ---------------------------------------------------------------------------------------------
 
 /// Refund an order, whole or in part. Large refunds wait for human approval.
-#[derive(openai_agents::serde::Deserialize, openai_agents::schemars::JsonSchema, ToolMeta)]
-#[serde(crate = "openai_agents::serde")]
-#[schemars(crate = "openai_agents::schemars")]
+#[derive(opai_agents::serde::Deserialize, opai_agents::schemars::JsonSchema, ToolMeta)]
+#[serde(crate = "opai_agents::serde")]
+#[schemars(crate = "opai_agents::schemars")]
 #[tool(
     name = "refund_order",
     timeout = 5,
@@ -69,12 +69,12 @@ struct RefundArgs {
 
 /// The reasons the refund policy knows. The model must pick one; anything else fails to parse.
 #[derive(
-    openai_agents::serde::Deserialize,
-    openai_agents::serde::Serialize,
-    openai_agents::schemars::JsonSchema,
+    opai_agents::serde::Deserialize,
+    opai_agents::serde::Serialize,
+    opai_agents::schemars::JsonSchema,
 )]
-#[serde(crate = "openai_agents::serde", rename_all = "snake_case")]
-#[schemars(crate = "openai_agents::schemars")]
+#[serde(crate = "opai_agents::serde", rename_all = "snake_case")]
+#[schemars(crate = "opai_agents::schemars")]
 enum RefundReason {
     /// The goods arrived broken.
     Damaged,
@@ -91,8 +91,8 @@ fn is_large(args: &RefundArgs) -> bool {
 
 /// What the tool answers with. A struct instead of a loose `Value` keeps both halves of the
 /// contract, arguments and result, in types the compiler checks.
-#[derive(openai_agents::serde::Serialize)]
-#[serde(crate = "openai_agents::serde")]
+#[derive(opai_agents::serde::Serialize)]
+#[serde(crate = "opai_agents::serde")]
 struct Refund {
     order_id: String,
     refunded_cents: u64,

@@ -8,20 +8,20 @@
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
-//! cargo run -p openai-agents-examples --example structured_output
+//! cargo run -p opai-agents-examples --example structured_output
 //! ```
 
 mod common;
 
 use std::sync::Arc;
 
-use openai_agents::{Agent, AgentOutputSchema, RunOptions, Runner};
+use opai_agents::{Agent, AgentOutputSchema, RunOptions, Runner};
 use serde::Deserialize;
 
 /// The shape the model must answer with.
 ///
 /// `JsonSchema` produces the schema; `Deserialize` lets the SDK validate the reply.
-#[derive(Debug, Deserialize, openai_agents::schemars::JsonSchema)]
+#[derive(Debug, Deserialize, opai_agents::schemars::JsonSchema)]
 struct WeatherReport {
     /// City the report is about.
     city: String,

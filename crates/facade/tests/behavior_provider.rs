@@ -2,20 +2,20 @@
 
 use std::sync::Arc;
 
-use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
-use openai_agents::{
+use opai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
+use opai_agents::{
     Agent, AgentsError, ModelProvider, ModelRef, MultiProvider, RunOptions, Runner, UserError,
 };
 
 /// A test provider that always returns a scripted model.
 struct ScriptedProvider;
 
-#[openai_agents::async_trait]
+#[opai_agents::async_trait]
 impl ModelProvider for ScriptedProvider {
     async fn get_model(
         &self,
         model_name: Option<&str>,
-    ) -> Result<Arc<dyn openai_agents::Model>, UserError> {
+    ) -> Result<Arc<dyn opai_agents::Model>, UserError> {
         let _ = model_name;
         Ok(Arc::new(ScriptedModel::new([ModelStep::from(
             ItemHelpers::text_message("from provider"),
@@ -56,7 +56,7 @@ async fn run_config_model_instance_wins() {
     let mut opts = RunOptions::default();
     opts.run_config.model.provider = Some(Arc::new(ScriptedProvider));
     opts.run_config.model.model_ref =
-        Some(ModelRef::Instance(model as Arc<dyn openai_agents::Model>));
+        Some(ModelRef::Instance(model as Arc<dyn opai_agents::Model>));
 
     let result = Runner::run(&agent, "go", opts).await.expect("run");
     assert_eq!(result.final_output_as_str(), Some("instance"));
@@ -105,7 +105,7 @@ async fn provider_without_name_is_an_error() {
 /// The default provider reports a clear message when it cannot resolve names.
 #[tokio::test]
 async fn missing_provider_is_actionable() {
-    let provider = openai_agents::MissingProvider;
+    let provider = opai_agents::MissingProvider;
     let err = provider
         .get_model(Some("openai/gpt-x"))
         .await
@@ -118,7 +118,7 @@ async fn missing_provider_is_actionable() {
 /// the process-wide `Runtime::global()` still backs `set_default_model_provider_factory`).
 #[tokio::test]
 async fn separate_runtimes_do_not_share_a_default_provider() {
-    use openai_agents::Runtime;
+    use opai_agents::Runtime;
 
     let a = Runtime::new();
     let b = Runtime::new();
@@ -139,12 +139,12 @@ struct RecordingProvider {
     model: Arc<ScriptedModel>,
 }
 
-#[openai_agents::async_trait]
+#[opai_agents::async_trait]
 impl ModelProvider for RecordingProvider {
     async fn get_model(
         &self,
         model_name: Option<&str>,
-    ) -> Result<Arc<dyn openai_agents::Model>, UserError> {
+    ) -> Result<Arc<dyn opai_agents::Model>, UserError> {
         self.names
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -165,7 +165,7 @@ fn recording_provider() -> Arc<RecordingProvider> {
 /// Rust-only (X-006): `name:<effort>` resolves `name` and sets the reasoning effort.
 #[tokio::test]
 async fn model_name_effort_suffix_is_stripped_and_applied() {
-    use openai_agents::ReasoningEffort;
+    use opai_agents::ReasoningEffort;
 
     let provider = recording_provider();
     let agent = Agent::new("thinker").model_name("o4-mini:high");
@@ -184,7 +184,7 @@ async fn model_name_effort_suffix_is_stripped_and_applied() {
 /// An explicit effort wins over the suffix; a tag that is not an effort is left alone.
 #[tokio::test]
 async fn explicit_effort_wins_and_other_tags_are_untouched() {
-    use openai_agents::ReasoningEffort;
+    use opai_agents::ReasoningEffort;
 
     let provider = recording_provider();
     let agent = Agent::new("thinker").model_name("o4-mini:high");
@@ -216,12 +216,12 @@ struct SlowProvider {
     calls: std::sync::atomic::AtomicUsize,
 }
 
-#[openai_agents::async_trait]
+#[opai_agents::async_trait]
 impl ModelProvider for SlowProvider {
     async fn get_model(
         &self,
         _model_name: Option<&str>,
-    ) -> Result<Arc<dyn openai_agents::Model>, UserError> {
+    ) -> Result<Arc<dyn opai_agents::Model>, UserError> {
         tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Ok(Arc::new(ScriptedModel::new([ModelStep::from(
@@ -246,7 +246,7 @@ async fn an_async_provider_is_awaited_by_the_runner() {
 /// Concurrent cache misses on `CachedProvider` still end up sharing one model instance.
 #[tokio::test]
 async fn cached_provider_shares_one_instance_across_concurrent_misses() {
-    use openai_agents::model::provider::CachedProvider;
+    use opai_agents::model::provider::CachedProvider;
 
     let cached = Arc::new(CachedProvider::new(Arc::new(SlowProvider {
         calls: Default::default(),

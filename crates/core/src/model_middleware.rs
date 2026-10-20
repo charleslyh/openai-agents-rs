@@ -14,12 +14,12 @@
 //!
 //! ```
 //! use async_trait::async_trait;
-//! use openai_agents_core::agent::Agent;
-//! use openai_agents_core::error::AgentsError;
-//! use openai_agents_core::model::ModelInputData;
-//! use openai_agents_core::model_middleware::ModelMiddleware;
-//! use openai_agents_core::run::ModelOptions;
-//! use openai_agents_core::run_context::RunContextWrapper;
+//! use opai_agents_core::agent::Agent;
+//! use opai_agents_core::error::AgentsError;
+//! use opai_agents_core::model::ModelInputData;
+//! use opai_agents_core::model_middleware::ModelMiddleware;
+//! use opai_agents_core::run::ModelOptions;
+//! use opai_agents_core::run_context::RunContextWrapper;
 //!
 //! struct AppendNote;
 //!

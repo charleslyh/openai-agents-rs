@@ -1,10 +1,13 @@
 [package]
-name = "openai-agents-openai"
+name = "opai-agents-openai"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.99"
 description = "OpenAI and OpenAI-compatible model adapters (Chat Completions, Responses) for the Rust OpenAI Agents SDK"
 license = "MIT"
+readme = "README.md"
+keywords = ["openai", "llm", "chat-completions", "responses"]
+categories = ["api-bindings", "asynchronous"]
 repository = "https://github.com/charleslyh/openai-agents-rs"
 
 # Inherits the lint config (including the tracked clippy backlog) from `[workspace.lints]`.
@@ -12,7 +15,7 @@ repository = "https://github.com/charleslyh/openai-agents-rs"
 workspace = true
 
 [dependencies]
-openai-agents-core = { path = "../core", version = "0.1.0" }
+opai-agents-core = { path = "../core", version = "0.1.0" }
 async-openai = { version = "0.42", default-features = false, features = ["chat-completion", "responses"] }
 async-trait = { workspace = true }
 futures = { workspace = true }

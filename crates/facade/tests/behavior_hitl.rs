@@ -3,8 +3,8 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
-use openai_agents::{
+use opai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
+use opai_agents::{
     Agent, FunctionTool, RunOptions, RunState, Runner, DEFAULT_APPROVAL_REJECTION_MESSAGE,
     RUN_STATE_SCHEMA_VERSION, SUPPORTED_RUN_STATE_SCHEMAS,
 };
@@ -34,7 +34,7 @@ async fn mixed_batch_executes_unapproved_tools_before_pausing() {
     // The sibling tool still ran in the same turn.
     assert!(result.new_items.iter().any(|i| matches!(
         i,
-        openai_agents::RunItem::ToolCallOutput(o)
+        opai_agents::RunItem::ToolCallOutput(o)
             if o.raw_item.get("call_id").and_then(|c| c.as_str()) == Some("c1")
     )));
 }
@@ -351,9 +351,9 @@ async fn run_state_json_round_trip() {
     let json = state.to_json();
     assert_eq!(
         json.get("$schemaVersion").and_then(|v| v.as_str()),
-        Some(openai_agents::RUN_STATE_SCHEMA_VERSION)
+        Some(opai_agents::RUN_STATE_SCHEMA_VERSION)
     );
-    let restored = openai_agents::RunState::from_json(&agent.name, json).expect("from_json");
+    let restored = opai_agents::RunState::from_json(&agent.name, json).expect("from_json");
     let result = Runner::run_state(&agent, restored, RunOptions::default())
         .await
         .expect("resume");
@@ -387,7 +387,7 @@ async fn agent_as_tool_nested_approval_bubbles_to_outer() {
         .model(nested_model.clone())
         .tools(vec![nested_tool]);
 
-    let agent_tool = nested_agent.as_tool(openai_agents::AsToolConfig {
+    let agent_tool = nested_agent.as_tool(opai_agents::AsToolConfig {
         name: Some("call_helper".into()),
         description: Some("Call helper".into()),
         needs_resolution: false,
@@ -417,7 +417,7 @@ async fn agent_as_tool_nested_approval_bubbles_to_outer() {
 
     let state = result.to_state().expect("state");
     let mut state =
-        openai_agents::RunState::from_string(&outer.name, &state.to_string()).expect("from_string");
+        opai_agents::RunState::from_string(&outer.name, &state.to_string()).expect("from_string");
     state.approve(&result.interruptions[0], false);
 
     let result = Runner::run_state(&outer, state, RunOptions::default())
@@ -436,7 +436,7 @@ async fn agent_as_tool_nested_approval_bubbles_to_outer() {
 /// which this SDK does not.
 #[tokio::test]
 async fn paused_run_saves_each_item_once_across_resume() {
-    use openai_agents::{InMemorySession, Session};
+    use opai_agents::{InMemorySession, Session};
     let kinds = |items: Vec<serde_json::Value>| -> Vec<String> {
         items
             .iter()
@@ -475,7 +475,7 @@ async fn paused_run_saves_each_item_once_across_resume() {
 
     // The state survives a JSON round trip, including how much was already saved.
     let json = paused.to_state().expect("state").to_json();
-    let mut state = openai_agents::RunState::from_json("a", json).expect("from_json");
+    let mut state = opai_agents::RunState::from_json("a", json).expect("from_json");
     state.approve(&paused.interruptions[0], false);
     let resumed = Runner::run_state(&agent, state, options())
         .await
@@ -498,7 +498,7 @@ async fn paused_run_saves_each_item_once_across_resume() {
 /// after the state went through JSON.
 #[tokio::test]
 async fn guardrail_results_survive_a_pause_and_resume() {
-    use openai_agents::{
+    use opai_agents::{
         GuardrailFunctionOutput, InputGuardrail, ToolGuardrailFunctionOutput, ToolOutputGuardrail,
     };
     let seen = ToolOutputGuardrail::new("seen", |_data| async {
@@ -531,7 +531,7 @@ async fn guardrail_results_survive_a_pause_and_resume() {
     assert_eq!(paused.tool_output_guardrail_results.len(), 1);
 
     let json = paused.to_state().expect("state").to_json();
-    let mut state = openai_agents::RunState::from_json("a", json).expect("from_json");
+    let mut state = opai_agents::RunState::from_json("a", json).expect("from_json");
     state.approve(&paused.interruptions[0], false);
     let resumed = Runner::run_state(&agent, state, RunOptions::default())
         .await

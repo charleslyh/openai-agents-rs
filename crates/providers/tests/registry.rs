@@ -3,10 +3,10 @@
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use openai_agents_core::error::UserError;
-use openai_agents_core::model::provider::ModelProvider;
-use openai_agents_core::model::Model;
-use openai_agents_providers::{Capabilities, Capability, ProviderRegistry, UnsupportedCapability};
+use opai_agents_core::error::UserError;
+use opai_agents_core::model::provider::ModelProvider;
+use opai_agents_core::model::Model;
+use opai_agents_providers::{Capabilities, Capability, ProviderRegistry, UnsupportedCapability};
 
 /// Records the names it is asked for and answers with its own name, so a test can see which
 /// provider a name was routed to.
@@ -200,7 +200,7 @@ async fn discovery_from_the_environment() {
         .get_model(Some("gpt-4o"))
         .await
         .expect("an offline model");
-    let answer = openai_agents_providers::OfflineModel::answer();
+    let answer = opai_agents_providers::OfflineModel::answer();
     assert!(answer.contains("offline"), "{answer}");
     std::env::remove_var("AGENTS_OFFLINE");
     drop(model);

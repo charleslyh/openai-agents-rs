@@ -362,7 +362,7 @@ impl RunOptions {
     /// runs fail with a `UserError` when a resolver is set.
     ///
     /// ```
-    /// use openai_agents_core::{RunOptions, ToolResolution};
+    /// use opai_agents_core::{RunOptions, ToolResolution};
     ///
     /// let options = RunOptions::new().resolve_with(|call| async move {
     ///     if call.tool_name == "delete_file" {

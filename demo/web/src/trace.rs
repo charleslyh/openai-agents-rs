@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
-use openai_agents::tracing::{set_trace_processors, Span, SpanData, Trace, TracingProcessor};
+use opai_agents::tracing::{set_trace_processors, Span, SpanData, Trace, TracingProcessor};
 
 use crate::events::SpanDto;
 

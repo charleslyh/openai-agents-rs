@@ -7,15 +7,15 @@
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`, `OPENAI_API`.
 //!
 //! ```bash
-//! cargo run -p openai-agents-examples --example streamed
+//! cargo run -p opai-agents-examples --example streamed
 //! ```
 
 mod common;
 
 use std::io::{self, Write};
 
-use openai_agents::model::wire_events::{self, WireEvent};
-use openai_agents::{
+use opai_agents::model::wire_events::{self, WireEvent};
+use opai_agents::{
     function_tool, Agent, ItemHelpers, RunItem, RunItemStreamName, RunOptions, Runner, StreamEvent,
 };
 

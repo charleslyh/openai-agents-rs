@@ -1,6 +1,6 @@
 //! Trace processors that export somewhere, without costing the run anything (Rust-only, X-018).
 //!
-//! Core defines [`TracingProcessor`](openai_agents_core::tracing::TracingProcessor) and ships an
+//! Core defines [`TracingProcessor`](opai_agents_core::tracing::TracingProcessor) and ships an
 //! in-memory sink; it has no file, console or network code. This crate is where those live:
 //!
 //! * [`BatchedProcessor`]: hands events to a background thread through a bounded queue, so a slow

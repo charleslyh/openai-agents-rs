@@ -3,9 +3,9 @@
 
 use serde_json::json;
 
-use openai_agents_core::model::wire_events::emit::WireEventEmitter;
-use openai_agents_core::model::wire_events::{now_seconds, response_object, FAKE_RESPONSES_ID};
-use openai_agents_core::usage::Usage;
+use opai_agents_core::model::wire_events::emit::WireEventEmitter;
+use opai_agents_core::model::wire_events::{now_seconds, response_object, FAKE_RESPONSES_ID};
+use opai_agents_core::usage::Usage;
 
 /// One synthesized tool call.
 #[derive(Debug, Default, Clone)]

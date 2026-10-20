@@ -3,8 +3,8 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
-use openai_agents_observability::bridge::{level_of, TARGET};
-use openai_agents_observability::{EventSink, ExportEvent, TracingSink};
+use opai_agents_observability::bridge::{level_of, TARGET};
+use opai_agents_observability::{EventSink, ExportEvent, TracingSink};
 use serde_json::json;
 use tracing::field::{Field, Visit};
 use tracing::{Level, Subscriber};

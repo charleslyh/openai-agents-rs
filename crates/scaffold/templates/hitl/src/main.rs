@@ -7,8 +7,8 @@
 //!
 //! Non-interactive use: `AGENTS_AUTO=approve` or `AGENTS_AUTO=reject`.
 
-use openai_agents::prelude::*;
-use openai_agents::function_tool;
+use opai_agents::prelude::*;
+use opai_agents::function_tool;
 
 #[function_tool(description = "Refund an order; spends real money")]
 async fn refund(order_id: String) -> String {
@@ -25,7 +25,7 @@ async fn main() -> Result<(), AgentsError> {
         .unwrap_or_else(|| "Refund order 1234.".to_string());
 
     let auto = std::env::var("AGENTS_AUTO").unwrap_or_default();
-    let options = openai_agents::zero_config_options()?.resolve_with(move |call: ToolInterruptionItem| {
+    let options = opai_agents::zero_config_options()?.resolve_with(move |call: ToolInterruptionItem| {
         let auto = auto.clone();
         async move {
             println!("Tool `{}` wants to run with {}", call.tool_name, call.arguments);

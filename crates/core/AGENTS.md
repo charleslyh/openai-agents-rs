@@ -1,4 +1,4 @@
-# openai-agents-core
+# opai-agents-core
 
 The agent, tool, handoff, guardrail, run loop and session contracts. This is the crate every
 other crate depends on, and it depends on none of them.
@@ -34,7 +34,7 @@ other crate depends on, and it depends on none of them.
 From the workspace root:
 
 ```
-cargo test -p openai-agents-core
+cargo test -p opai-agents-core
 python3 scripts/check_module_deps.py
 ```
 

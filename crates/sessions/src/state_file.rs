@@ -20,8 +20,8 @@ use async_trait::async_trait;
 use fs2::FileExt;
 use serde_json::Value;
 
-use openai_agents_core::error::UserError;
-use openai_agents_core::{AgentsError, RunState, RunStateMigration, RunStateStore};
+use opai_agents_core::error::UserError;
+use opai_agents_core::{AgentsError, RunState, RunStateMigration, RunStateStore};
 
 use super::file::file_name;
 use super::state::{decode, key_from_env, to_state, wrap};
@@ -175,7 +175,7 @@ fn atomic_write(path: &Path, value: &Value) -> Result<(), AgentsError> {
 mod tests {
     use super::*;
     use crate::state::now_seconds;
-    use openai_agents_core::RUN_STATE_SCHEMA_VERSION;
+    use opai_agents_core::RUN_STATE_SCHEMA_VERSION;
     use serde_json::json;
     use std::sync::Arc;
 

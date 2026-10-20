@@ -1,4 +1,4 @@
-//! The zero-configuration entry point: `openai_agents::run` takes the provider from the
+//! The zero-configuration entry point: `opai_agents::run` takes the provider from the
 //! environment (Rust-only, X-015).
 
 #![cfg(feature = "providers")]
@@ -13,7 +13,7 @@ async fn without_a_key_it_says_what_to_set_and_offline_it_answers() {
     std::env::remove_var("AGENTS_PROVIDER_1_ENDPOINT");
 
     // Nothing configured: the error names the variables that would fix it.
-    let error = openai_agents::run("You answer.", "Hello")
+    let error = opai_agents::run("You answer.", "Hello")
         .await
         .expect_err("no provider is configured");
     let message = error.to_string();
@@ -22,7 +22,7 @@ async fn without_a_key_it_says_what_to_set_and_offline_it_answers() {
 
     // Offline, one line is enough: the run completes without a key and without the network.
     std::env::set_var("AGENTS_OFFLINE", "1");
-    let result = openai_agents::run("You answer in one sentence.", "What is Rust?").await;
+    let result = opai_agents::run("You answer in one sentence.", "What is Rust?").await;
     std::env::remove_var("AGENTS_OFFLINE");
 
     let result = result.expect("the offline model answers");

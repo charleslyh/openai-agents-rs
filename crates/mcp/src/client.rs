@@ -8,16 +8,16 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use tokio::sync::Mutex as AsyncMutex;
 
-use openai_agents_core::agent::Agent;
-use openai_agents_core::error::AgentsError;
-use openai_agents_core::run_context::RunContextWrapper;
-use openai_agents_core::tool::NeedsResolution;
+use opai_agents_core::agent::Agent;
+use opai_agents_core::error::AgentsError;
+use opai_agents_core::run_context::RunContextWrapper;
+use opai_agents_core::tool::NeedsResolution;
 
 use super::http::StreamableHttpParams;
 use super::rpc::{Connector, McpError, Transport};
 use super::stdio::StdioParams;
 use super::{RequireApproval, ToolFilter, ToolFilterContext};
-use openai_agents_core::{McpCallToolResult, McpServer, McpTool};
+use opai_agents_core::{McpCallToolResult, McpServer, McpTool};
 
 /// Upper bound on `tools/list` pages followed, so a misbehaving server cannot loop forever.
 const MAX_TOOL_PAGES: usize = 100;
@@ -135,7 +135,7 @@ impl McpClient {
         self
     }
 
-    /// Wrap in an `Arc`, ready for [`Agent::mcp_servers`](openai_agents_core::Agent::mcp_servers).
+    /// Wrap in an `Arc`, ready for [`Agent::mcp_servers`](opai_agents_core::Agent::mcp_servers).
     pub fn shared(self) -> Arc<Self> {
         Arc::new(self)
     }

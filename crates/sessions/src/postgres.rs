@@ -20,8 +20,8 @@ use async_trait::async_trait;
 use serde_json::Value;
 use sqlx::{AssertSqlSafe, PgPool, Row};
 
-use openai_agents_core::error::UserError;
-use openai_agents_core::{
+use opai_agents_core::error::UserError;
+use opai_agents_core::{
     AgentsError, RunState, RunStateMigration, RunStateStore, Session, SessionSettings,
 };
 

@@ -1,10 +1,13 @@
 [package]
-name = "openai-agents-providers"
+name = "opai-agents-providers"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.99"
 description = "Named provider presets (DeepSeek, Gemini, Groq, OpenRouter, Ollama, ...) and a capability matrix for the Rust OpenAI Agents SDK"
 license = "MIT"
+readme = "README.md"
+keywords = ["openai", "llm", "providers", "agents"]
+categories = ["api-bindings", "asynchronous"]
 repository = "https://github.com/charleslyh/openai-agents-rs"
 
 # Inherits the lint config (including the tracked clippy backlog) from `[workspace.lints]`.
@@ -12,10 +15,10 @@ repository = "https://github.com/charleslyh/openai-agents-rs"
 workspace = true
 
 [dependencies]
-openai-agents-core = { path = "../core", version = "0.1.0" }
+opai-agents-core = { path = "../core", version = "0.1.0" }
 # The presets speak the OpenAI Chat Completions / Responses protocol; a native protocol adapter
 # (Anthropic) would be a feature of this crate.
-openai-agents-openai = { path = "../openai", version = "0.1.0" }
+opai-agents-openai = { path = "../openai", version = "0.1.0" }
 async-trait = { workspace = true }
 serde_json = { workspace = true }
 tokio = { version = "1", features = ["sync"] }

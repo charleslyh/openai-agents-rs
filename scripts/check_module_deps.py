@@ -41,37 +41,37 @@ SRC = ROOT / "crates" / "core" / "src"
 # depends on core, `cargo test` would link two copies of core and trait objects would stop lining
 # up (the "double types" problem). Extension crates must never depend on one another either, so
 # any of them can be dropped from a build without touching the rest.
-CORE = "openai-agents-core"
+CORE = "opai-agents-core"
 EXTENSIONS = {
-    "openai-agents-macros",
-    "openai-agents-mcp",
-    "openai-agents-openai",
-    "openai-agents-sqlite",
-    "openai-agents-observability",
-    "openai-agents-sessions",
-    "openai-agents-guardrails",
-    "openai-agents-testing",
-    "openai-agents-tools",
+    "opai-agents-macros",
+    "opai-agents-mcp",
+    "opai-agents-openai",
+    "opai-agents-sqlite",
+    "opai-agents-observability",
+    "opai-agents-sessions",
+    "opai-agents-guardrails",
+    "opai-agents-testing",
+    "opai-agents-tools",
 }
 # The presets are built on top of the OpenAI-compatible adapters: every preset speaks Chat
 # Completions or Responses. It is the one extension allowed to depend on another, because it is
 # nothing but a table over it plus the routing on top.
-PROVIDERS = "openai-agents-providers"
-FACADE = "openai-agents"
-EXAMPLES = "openai-agents-examples"
-WEB_DEMO = "openai-agents-web-demo"
+PROVIDERS = "opai-agents-providers"
+FACADE = "opai-agents"
+EXAMPLES = "opai-agents-examples"
+WEB_DEMO = "opai-agents-web-demo"
 CRATE_DEPS: dict[str, set[str]] = {
     CORE: set(),
-    "openai-agents-macros": set(),
-    "openai-agents-mcp": {CORE},
-    "openai-agents-openai": {CORE},
-    "openai-agents-sqlite": {CORE},
-    "openai-agents-observability": {CORE},
-    "openai-agents-sessions": {CORE},
-    "openai-agents-guardrails": {CORE},
-    "openai-agents-testing": {CORE},
-    "openai-agents-tools": {CORE},
-    PROVIDERS: {CORE, "openai-agents-openai"},
+    "opai-agents-macros": set(),
+    "opai-agents-mcp": {CORE},
+    "opai-agents-openai": {CORE},
+    "opai-agents-sqlite": {CORE},
+    "opai-agents-observability": {CORE},
+    "opai-agents-sessions": {CORE},
+    "opai-agents-guardrails": {CORE},
+    "opai-agents-testing": {CORE},
+    "opai-agents-tools": {CORE},
+    PROVIDERS: {CORE, "opai-agents-openai"},
     FACADE: {CORE} | EXTENSIONS | {PROVIDERS},
     # The root `examples/` package is user-facing code: it may reach the facade, but must not reach
     # past it into core or an extension. If an example needs something the facade does not
@@ -81,7 +81,7 @@ CRATE_DEPS: dict[str, set[str]] = {
     WEB_DEMO: {FACADE},
     # `cargo agents new`: the templates are text compiled into the binary, so it needs no crate of
     # the workspace and cannot drift into the SDK's internals.
-    "openai-agents-scaffold": set(),
+    "opai-agents-scaffold": set(),
 }
 
 # Third-party crates core must not depend on, and tokio features it must not enable. They are what

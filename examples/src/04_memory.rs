@@ -7,14 +7,14 @@
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
-//! cargo run -p openai-agents-examples --example memory
+//! cargo run -p opai-agents-examples --example memory
 //! ```
 
 mod common;
 
 use std::sync::Arc;
 
-use openai_agents::{Agent, InMemorySession, RunOptions, Runner, Session};
+use opai_agents::{Agent, InMemorySession, RunOptions, Runner, Session};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

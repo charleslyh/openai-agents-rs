@@ -10,7 +10,7 @@ use super::export::ExportEvent;
 /// Print one line per event, for a terminal or a container log.
 ///
 /// ```rust
-/// use openai_agents_observability::{BatchedProcessor, ConsoleSink};
+/// use opai_agents_observability::{BatchedProcessor, ConsoleSink};
 ///
 /// # fn install() -> std::sync::Arc<BatchedProcessor> {
 /// BatchedProcessor::spawn(ConsoleSink, 1024, std::time::Duration::from_millis(200))

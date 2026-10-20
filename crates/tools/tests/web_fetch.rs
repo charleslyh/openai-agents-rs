@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use openai_agents_tools::web_fetch::{check_redirect, fetch, FetchOptions};
+use opai_agents_tools::web_fetch::{check_redirect, fetch, FetchOptions};
 use reqwest::Url;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;

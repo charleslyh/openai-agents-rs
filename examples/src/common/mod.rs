@@ -12,7 +12,7 @@
 use std::io::{self, Write};
 use std::sync::Arc;
 
-use openai_agents::{
+use opai_agents::{
     set_default_openai_api, DefaultOpenAiApi, Model, OpenAIChatCompletionsModel,
     OpenAIResponsesModel,
 };
@@ -89,7 +89,7 @@ pub fn model_or_offline() -> Result<Arc<dyn Model>, Box<dyn std::error::Error>> 
         Ok(_) => model(),
         Err(_) => {
             eprintln!("OPENAI_API_KEY is not set: answering with the offline model");
-            Ok(Arc::new(openai_agents::providers::OfflineModel))
+            Ok(Arc::new(opai_agents::providers::OfflineModel))
         }
     }
 }

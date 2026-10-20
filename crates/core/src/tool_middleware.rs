@@ -11,10 +11,10 @@
 //! ```
 //! use std::sync::Arc;
 //! use async_trait::async_trait;
-//! use openai_agents_core::error::AgentsError;
-//! use openai_agents_core::run_context::ToolContext;
-//! use openai_agents_core::tool::{FunctionTool, ToolOutput};
-//! use openai_agents_core::tool_middleware::{NextTool, ToolMiddleware};
+//! use opai_agents_core::error::AgentsError;
+//! use opai_agents_core::run_context::ToolContext;
+//! use opai_agents_core::tool::{FunctionTool, ToolOutput};
+//! use opai_agents_core::tool_middleware::{NextTool, ToolMiddleware};
 //!
 //! struct CallCounter(std::sync::atomic::AtomicUsize);
 //!

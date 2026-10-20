@@ -8,9 +8,9 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use openai_agents_core::error::UserError;
-use openai_agents_core::model::provider::ModelProvider;
-use openai_agents_core::model::Model;
+use opai_agents_core::error::UserError;
+use opai_agents_core::model::provider::ModelProvider;
+use opai_agents_core::model::Model;
 
 use super::catalog::advise;
 use super::spec::{infer_preset, Capabilities, ProviderApi, PRESETS};
@@ -47,12 +47,12 @@ impl std::fmt::Debug for Entry {
 /// The providers available to a process, keyed by prefix.
 ///
 /// ```no_run
-/// use openai_agents_providers::ProviderRegistry;
+/// use opai_agents_providers::ProviderRegistry;
 ///
 /// let registry = ProviderRegistry::from_env()?;
 /// println!("{}", registry.names().collect::<Vec<_>>().join(", "));
 /// let provider = registry.into_provider()?; // Arc<dyn ModelProvider>
-/// # Ok::<(), openai_agents_core::UserError>(())
+/// # Ok::<(), opai_agents_core::UserError>(())
 /// ```
 #[derive(Debug, Default)]
 pub struct ProviderRegistry {

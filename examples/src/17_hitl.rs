@@ -8,16 +8,16 @@
 //! Non-interactive: `HITL_AUTO=approve` or `HITL_AUTO=reject`.
 //!
 //! ```bash
-//! cargo run -p openai-agents-examples --example hitl
-//! HITL_AUTO=approve cargo run -p openai-agents-examples --example hitl
-//! HITL_MODE=persist HITL_AUTO=approve cargo run -p openai-agents-examples --example hitl
+//! cargo run -p opai-agents-examples --example hitl
+//! HITL_AUTO=approve cargo run -p opai-agents-examples --example hitl
+//! HITL_MODE=persist HITL_AUTO=approve cargo run -p opai-agents-examples --example hitl
 //! ```
 
 mod common;
 
 use std::path::Path;
 
-use openai_agents::prelude::*;
+use opai_agents::prelude::*;
 
 #[function_tool(description = "Get the weather for a given city")]
 async fn get_weather(city: String) -> String {

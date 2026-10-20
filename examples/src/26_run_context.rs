@@ -8,12 +8,12 @@
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
-//! cargo run -p openai-agents-examples --example run_context
+//! cargo run -p opai-agents-examples --example run_context
 //! ```
 
 mod common;
 
-use openai_agents::{Agent, FunctionTool, RunOptions, Runner};
+use opai_agents::{Agent, FunctionTool, RunOptions, Runner};
 
 /// The user context carried through the run.
 struct Tenant {

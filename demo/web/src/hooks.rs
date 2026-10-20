@@ -1,7 +1,7 @@
 //! Run-scoped lifecycle hooks, turned into timeline events.
 
 use async_trait::async_trait;
-use openai_agents::{
+use opai_agents::{
     Agent, FunctionTool, ModelResponse, ResponseInputItem, RunContextWrapper, RunHooks, ToolContext,
 };
 use serde_json::Value;

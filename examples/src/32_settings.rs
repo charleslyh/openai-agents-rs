@@ -8,12 +8,12 @@
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
-//! cargo run -p openai-agents-examples --example settings
+//! cargo run -p opai-agents-examples --example settings
 //! ```
 
 mod common;
 
-use openai_agents::{retry_policies, Agent, ModelRetrySettings, RunOptions, Runner};
+use opai_agents::{retry_policies, Agent, ModelRetrySettings, RunOptions, Runner};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

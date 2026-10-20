@@ -9,11 +9,11 @@ use std::time::Duration;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-use openai_agents_core::agent::Agent;
-use openai_agents_core::error::AgentsError;
-use openai_agents_core::run_context::RunContextWrapper;
-use openai_agents_core::tool::{FunctionTool, NeedsResolution, ToolContext};
-use openai_agents_core::{
+use opai_agents_core::agent::Agent;
+use opai_agents_core::error::AgentsError;
+use opai_agents_core::run_context::RunContextWrapper;
+use opai_agents_core::tool::{FunctionTool, NeedsResolution, ToolContext};
+use opai_agents_core::{
     mcp_function_tools, render_tool_result, McpCallToolResult, McpConfig, McpServer,
 };
 

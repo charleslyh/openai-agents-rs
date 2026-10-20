@@ -6,8 +6,8 @@
 
 #![cfg(all(feature = "openai", feature = "providers"))]
 
-use openai_agents::providers::{Capabilities, Capability, Provider};
-use openai_agents::{Agent, ModelSettings, Reasoning, ReasoningEffort, RunOptions, Runner};
+use opai_agents::providers::{Capabilities, Capability, Provider};
+use opai_agents::{Agent, ModelSettings, Reasoning, ReasoningEffort, RunOptions, Runner};
 use serde_json::json;
 use wiremock::matchers::method;
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -68,7 +68,7 @@ async fn every_chat_preset_sends_reasoning_as_its_effort_field() {
     for name in CHAT_PRESETS {
         let server = MockServer::start().await;
         mock_chat(&server).await;
-        let preset = openai_agents::providers::preset(name).expect("a preset");
+        let preset = opai_agents::providers::preset(name).expect("a preset");
         assert!(
             preset.capabilities.supports(Capability::Reasoning),
             "`{name}` is expected to report reasoning"
@@ -135,7 +135,7 @@ async fn a_preset_without_reasoning_refuses_the_request() {
         .expect("the mock is loopback")
         .build()
         .expect("built");
-    assert!(!openai_agents::providers::preset("ollama")
+    assert!(!opai_agents::providers::preset("ollama")
         .expect("a preset")
         .capabilities
         .supports(Capability::Reasoning));
@@ -200,7 +200,7 @@ async fn requests_go_to_the_presets_own_path() {
 /// The matrix is readable, and every preset claims at least the protocol basics.
 #[test]
 fn every_preset_claims_the_basics_and_names_its_key() {
-    for spec in openai_agents::providers::PRESETS {
+    for spec in opai_agents::providers::PRESETS {
         assert!(
             spec.capabilities.supports(Capability::Streaming),
             "`{}` cannot stream?",

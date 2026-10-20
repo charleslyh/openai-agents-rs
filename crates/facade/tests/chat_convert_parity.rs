@@ -8,7 +8,7 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-use openai_agents::openai::chat_convert::{
+use opai_agents::openai::chat_convert::{
     chat_message_to_output_items_with, items_to_chat_messages, ChatConvertOptions,
 };
 use serde_json::Value;

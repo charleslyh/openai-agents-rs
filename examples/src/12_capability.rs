@@ -7,15 +7,15 @@
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
-//! cargo run -p openai-agents-examples --example capability
+//! cargo run -p opai-agents-examples --example capability
 //! ```
 
 mod common;
 
 use std::sync::Arc;
 
-use openai_agents::prelude::*;
-use openai_agents::{Capability, CapabilityParts, FunctionTool};
+use opai_agents::prelude::*;
+use opai_agents::{Capability, CapabilityParts, FunctionTool};
 
 /// A named bundle: two tools, a paragraph of instructions and an output guardrail.
 struct MathCapability;

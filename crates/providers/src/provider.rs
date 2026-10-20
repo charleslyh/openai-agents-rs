@@ -6,9 +6,9 @@
 
 use std::sync::Arc;
 
-use openai_agents_core::error::UserError;
-use openai_agents_core::model::provider::ModelProvider;
-use openai_agents_openai::{CompatibleProvider, DefaultOpenAiApi};
+use opai_agents_core::error::UserError;
+use opai_agents_core::model::provider::ModelProvider;
+use opai_agents_openai::{CompatibleProvider, DefaultOpenAiApi};
 
 use super::guard::GuardedProvider;
 use super::spec::{preset, Capabilities, ProviderApi, ProviderSpec, LAST_CHECKED};
@@ -16,11 +16,11 @@ use super::spec::{preset, Capabilities, ProviderApi, ProviderSpec, LAST_CHECKED}
 /// A provider built from a preset or from a URL, ready to be registered under a prefix.
 ///
 /// ```no_run
-/// use openai_agents_providers::Provider;
+/// use opai_agents_providers::Provider;
 ///
 /// // DEEPSEEK_API_KEY in the environment, endpoint and protocol from the preset table.
 /// let provider = Provider::preset("deepseek")?.build()?;
-/// # Ok::<(), openai_agents_core::UserError>(())
+/// # Ok::<(), opai_agents_core::UserError>(())
 /// ```
 pub struct Provider {
     name: String,

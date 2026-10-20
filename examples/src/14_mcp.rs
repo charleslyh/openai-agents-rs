@@ -9,7 +9,7 @@
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
-//! cargo run -p openai-agents-examples --example mcp
+//! cargo run -p opai-agents-examples --example mcp
 //! ```
 
 mod common;
@@ -17,7 +17,7 @@ mod common;
 use std::io::{self, BufRead, Write};
 use std::sync::Arc;
 
-use openai_agents::{Agent, McpClient, McpServer, RunOptions, Runner, StdioParams, ToolFilter};
+use opai_agents::{Agent, McpClient, McpServer, RunOptions, Runner, StdioParams, ToolFilter};
 use serde_json::{json, Value};
 
 const SERVER_FLAG: &str = "--mcp-server";

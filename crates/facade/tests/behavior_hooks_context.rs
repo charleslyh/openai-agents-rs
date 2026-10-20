@@ -3,8 +3,8 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
-use openai_agents::{
+use opai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
+use opai_agents::{
     input_guardrail, output_guardrail, Agent, AgentHooks, AgentsError, FunctionTool,
     GuardrailFunctionOutput, InputGuardrailTripwireTriggered, OutputGuardrailTripwireTriggered,
     RunContextWrapper, RunHooks, RunOptions, Runner, ToolContext,
@@ -212,7 +212,7 @@ impl RunHooks for Recorder {
         &self,
         _context: RunContextWrapper,
         agent: &Agent,
-        _r: &openai_agents::ModelResponse,
+        _r: &opai_agents::ModelResponse,
     ) {
         self.events
             .lock()
@@ -221,7 +221,7 @@ impl RunHooks for Recorder {
     }
     async fn on_tool_start(
         &self,
-        _context: openai_agents::ToolContext,
+        _context: opai_agents::ToolContext,
         _agent: &Agent,
         tool: &FunctionTool,
     ) {
@@ -232,7 +232,7 @@ impl RunHooks for Recorder {
     }
     async fn on_tool_end(
         &self,
-        _context: openai_agents::ToolContext,
+        _context: opai_agents::ToolContext,
         _agent: &Agent,
         tool: &FunctionTool,
         _result: &serde_json::Value,
@@ -404,7 +404,7 @@ async fn run_config_guardrails_apply() {
     assert!(matches!(
         err,
         AgentsError::InputGuardrailTripwire(InputGuardrailTripwireTriggered {
-            result: openai_agents::InputGuardrailResult {
+            result: opai_agents::InputGuardrailResult {
                 guardrail_name,
                 ..
             }

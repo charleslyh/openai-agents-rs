@@ -1,12 +1,12 @@
 //! The behaviour every [`Session`] backend must have, as a test suite any backend can run.
 //!
 //! It lives here, in core, on purpose: an extension crate may not depend on another extension, so
-//! a contract shared by the bundled backends cannot live in `openai-agents-testing`. A backend
+//! a contract shared by the bundled backends cannot live in `opai-agents-testing`. A backend
 //! outside this workspace can run it too, which is the point — the same eight behaviours, whether
 //! the store is a file, Redis, Postgres or something else.
 //!
 //! ```rust,no_run
-//! use openai_agents_core::{session_contract, Session};
+//! use opai_agents_core::{session_contract, Session};
 //!
 //! # async fn check(session: &dyn Session) {
 //! session_contract::assert_session_contract(session).await;

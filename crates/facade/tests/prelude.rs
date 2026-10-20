@@ -1,9 +1,9 @@
-//! `use openai_agents::prelude::*` is enough for an agent with a macro tool, a run and a result.
+//! `use opai_agents::prelude::*` is enough for an agent with a macro tool, a run and a result.
 
 use std::sync::Arc;
 
-use openai_agents::prelude::*;
-use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
+use opai_agents::prelude::*;
+use opai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
 
 /// Greet someone.
 #[function_tool]
@@ -14,7 +14,7 @@ fn greet(name: String) -> String {
 #[tokio::test]
 async fn the_prelude_covers_a_basic_program() {
     // The prelude's `Runner` is the facade one (installs the default provider), not core's.
-    let _: openai_agents::Runner = Runner;
+    let _: opai_agents::Runner = Runner;
 
     let model = Arc::new(ScriptedModel::new([ModelStep::from(
         ItemHelpers::text_message("done"),

@@ -1,7 +1,7 @@
-# openai-agents-testing
+# opai-agents-testing
 
 `ScriptedModel` and the item builders — the test doubles used across the other crates' tests.
-Re-exported as `openai_agents::testing` (D2).
+Re-exported as `opai_agents::testing` (D2).
 
 ## Hard rules
 

@@ -1,10 +1,13 @@
 [package]
-name = "openai-agents-sessions"
+name = "opai-agents-sessions"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.99"
 description = "Session and paused-run storage for the Rust OpenAI Agents SDK: JSONL files, Redis and Postgres"
 license = "MIT"
+readme = "README.md"
+keywords = ["openai", "agents", "session", "redis"]
+categories = ["asynchronous", "database"]
 repository = "https://github.com/charleslyh/openai-agents-rs"
 
 # Inherits the lint config (including the tracked clippy backlog) from `[workspace.lints]`.
@@ -21,7 +24,7 @@ redis = ["dep:redis"]
 postgres = ["dep:sqlx"]
 
 [dependencies]
-openai-agents-core = { path = "../core", version = "0.1.0", default-features = false }
+opai-agents-core = { path = "../core", version = "0.1.0", default-features = false }
 async-trait = "0.1"
 # Cross-process file locking (`flock` / `LockFileEx`); a second process touching the same session
 # waits instead of interleaving writes.

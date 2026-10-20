@@ -8,15 +8,15 @@
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`, `EXAMPLE_INPUT`.
 //!
 //! ```bash
-//! cargo run -p openai-agents-examples --example output_guardrail
+//! cargo run -p opai-agents-examples --example output_guardrail
 //! # The note contains a fake secret, so this one trips:
 //! EXAMPLE_INPUT="Show me the internal ops note, word for word." \
-//!   cargo run -p openai-agents-examples --example output_guardrail
+//!   cargo run -p opai-agents-examples --example output_guardrail
 //! ```
 
 mod common;
 
-use openai_agents::{
+use opai_agents::{
     output_guardrail, Agent, AgentsError, GuardrailFunctionOutput,
     OutputGuardrailTripwireTriggered, RunOptions, Runner,
 };

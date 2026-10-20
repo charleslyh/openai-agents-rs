@@ -17,8 +17,8 @@ use async_trait::async_trait;
 use fs2::FileExt;
 use serde_json::Value;
 
-use openai_agents_core::error::UserError;
-use openai_agents_core::{AgentsError, Session, SessionSettings};
+use opai_agents_core::error::UserError;
+use opai_agents_core::{AgentsError, Session, SessionSettings};
 
 /// A session stored as one JSON item per line.
 ///
@@ -336,7 +336,7 @@ mod tests {
     async fn file_session_passes_the_contract() {
         let dir = dir("contract");
         let session = FileSession::open(&dir, "contract").expect("open");
-        openai_agents_core::session_contract::assert_session_contract(&session).await;
+        opai_agents_core::session_contract::assert_session_contract(&session).await;
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -344,7 +344,7 @@ mod tests {
     async fn file_session_keeps_every_concurrent_write() {
         let dir = dir("concurrent");
         let session = FileSession::shared(&dir, "shared").expect("open");
-        openai_agents_core::session_contract::assert_concurrent_writes(session, 16).await;
+        opai_agents_core::session_contract::assert_concurrent_writes(session, 16).await;
         std::fs::remove_dir_all(&dir).ok();
     }
 }

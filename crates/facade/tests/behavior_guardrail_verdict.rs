@@ -6,8 +6,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
-use openai_agents::{
+use opai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
+use opai_agents::{
     input_guardrail, output_guardrail, Agent, AgentsError, FunctionTool, GuardrailFunctionOutput,
     InMemorySession, InputLike, RunOptions, RunState, Runner, Session, Severity, Verdict,
 };
@@ -23,7 +23,7 @@ fn input_text(input: &InputLike) -> String {
     }
 }
 
-fn redactor() -> openai_agents::InputGuardrail {
+fn redactor() -> opai_agents::InputGuardrail {
     input_guardrail("redact", |_ctx, _agent, input| async move {
         GuardrailFunctionOutput::transform(redact(&input_text(&input)))
     })

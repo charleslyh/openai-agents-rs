@@ -89,7 +89,7 @@ pub(crate) fn resolve_agent_by_name(
 /// Register how to build [`Runtime::global()`]'s default [`ModelProvider`], used when
 /// `RunConfig.model.provider` is not set (Python: the default `MultiProvider` behind `RunConfig`).
 ///
-/// Core knows no concrete provider. A crate that does (the `openai-agents` crate with its
+/// Core knows no concrete provider. A crate that does (the `opai-agents` crate with its
 /// `openai` feature) registers a factory here, and core calls it once, the first time a model
 /// name has to be resolved without an explicit provider. Registering a factory rather than a
 /// provider keeps that moment lazy: configuration such as environment variables is read when it
@@ -174,7 +174,7 @@ pub(crate) async fn resolve_model(
     Err(UserError::new(
         "No model configured. Bind a Model (e.g. ScriptedModel) via `Agent::model`, set \
          `Agent::model_name` / `RunConfig.model` to a name resolvable by a ModelProvider, or \
-         install a default with `set_default_model_provider_factory` (the `openai-agents` crate does so \
+         install a default with `set_default_model_provider_factory` (the `opai-agents` crate does so \
          for OpenAI when its `openai` feature is on and OPENAI_API_KEY is set).",
     )
     .into())

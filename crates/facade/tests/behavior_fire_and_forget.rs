@@ -8,8 +8,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
-use openai_agents::{
+use opai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
+use opai_agents::{
     Agent, FunctionTool, InMemorySession, RunItemStreamName, RunOptions, Runner, Session,
     StreamEvent,
 };

@@ -9,12 +9,12 @@
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
-//! cargo run -p openai-agents-examples --example tool_input_guardrail
+//! cargo run -p opai-agents-examples --example tool_input_guardrail
 //! ```
 
 mod common;
 
-use openai_agents::{
+use opai_agents::{
     Agent, FunctionTool, RunOptions, Runner, ToolGuardrailFunctionOutput, ToolInputGuardrail,
 };
 use serde_json::{json, Value};

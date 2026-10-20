@@ -1,10 +1,13 @@
 [package]
-name = "openai-agents-observability"
+name = "opai-agents-observability"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.99"
 description = "Trace processors for the Rust OpenAI Agents SDK: batched export, console, JSONL files, OpenTelemetry"
 license = "MIT"
+readme = "README.md"
+keywords = ["openai", "agents", "tracing", "opentelemetry"]
+categories = ["development-tools::debugging", "asynchronous"]
 repository = "https://github.com/charleslyh/openai-agents-rs"
 
 # Inherits the lint config (including the tracked clippy backlog) from `[workspace.lints]`.
@@ -19,7 +22,7 @@ default = []
 otel = ["dep:opentelemetry"]
 
 [dependencies]
-openai-agents-core = { path = "../core", version = "0.1.0", default-features = false }
+opai-agents-core = { path = "../core", version = "0.1.0", default-features = false }
 opentelemetry = { version = "0.33", default-features = false, features = ["trace"], optional = true }
 serde_json = { version = "1", features = ["preserve_order"] }
 tracing = "0.1"

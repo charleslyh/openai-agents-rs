@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
-use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
-use openai_agents::{
+use opai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
+use opai_agents::{
     Agent, AgentsError, CapabilityParts, FunctionTool, GuardrailFunctionOutput, ModelError,
     RunOptions, RunState, Runner, LOAD_CAPABILITY_TOOL,
 };
@@ -24,7 +24,7 @@ fn agent(model: Arc<ScriptedModel>) -> Agent {
         .capability(db().named("db"))
 }
 
-fn load(name: &str, call_id: &str) -> openai_agents::ResponseOutputItem {
+fn load(name: &str, call_id: &str) -> opai_agents::ResponseOutputItem {
     ItemHelpers::function_tool_call(
         LOAD_CAPABILITY_TOOL,
         json!({"name": name}).to_string(),
@@ -208,7 +208,7 @@ async fn an_older_state_without_the_field_loads_with_nothing_loaded() {
 
 #[tokio::test]
 async fn guardrails_of_an_unloaded_capability_still_apply() {
-    let blocker = openai_agents::input_guardrail("block", |_ctx, _agent, _input| async {
+    let blocker = opai_agents::input_guardrail("block", |_ctx, _agent, _input| async {
         GuardrailFunctionOutput::trip(json!({"reason": "blocked"}))
     });
     let model = Arc::new(ScriptedModel::new([text("ok")]));

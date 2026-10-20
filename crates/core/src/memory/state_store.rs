@@ -3,7 +3,7 @@
 //! A run that stops for an approval can outlive the process that started it: Python keeps it in a
 //! `RunState` you serialize yourself. [`RunStateStore`] is the storage side of that: save a state
 //! under a key, load it back, delete it when it is done. The file, Redis and Postgres backends
-//! live in `openai-agents-sessions`; this is the contract they implement.
+//! live in `opai-agents-sessions`; this is the contract they implement.
 //!
 //! Two things a store must get right, and this module gives it the vocabulary for both:
 //!

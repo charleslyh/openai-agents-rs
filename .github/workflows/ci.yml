@@ -72,9 +72,9 @@ jobs:
         run: cargo test --all-features
       # The examples are user-facing code: a breaking change to the public API shows up here.
       - name: Examples still compile
-        run: cargo build -p openai-agents-examples --examples
+        run: cargo build -p opai-agents-examples --examples
       - name: Web demo still compiles and its tests pass
-        run: cargo test -p openai-agents-web-demo
+        run: cargo test -p opai-agents-web-demo
 
   parity:
     name: python oracle (parity, MCP interop)

@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use openai_agents::{
+use opai_agents::{
     Agent, CompatibleProvider, DefaultOpenAiApi, MultiProvider, OpenAIProvider, RunOptions, Runner,
 };
 use serde_json::json;
@@ -32,7 +32,7 @@ fn responses_reply(text: &str) -> ResponseTemplate {
     }))
 }
 
-async fn run_with(provider: Arc<dyn openai_agents::ModelProvider>, model: &str) -> String {
+async fn run_with(provider: Arc<dyn opai_agents::ModelProvider>, model: &str) -> String {
     let mut options = RunOptions::default();
     options.run_config.model.provider = Some(provider);
     Runner::run(&Agent::new("a").model_name(model), "go", options)
@@ -108,14 +108,14 @@ async fn compatible_provider_is_routed_by_prefix_and_has_a_default_model() {
         "local",
         Arc::new(CompatibleProvider::new(&base).default_model("qwen")),
     );
-    let router: Arc<dyn openai_agents::ModelProvider> = Arc::new(router);
+    let router: Arc<dyn opai_agents::ModelProvider> = Arc::new(router);
     assert_eq!(run_with(router.clone(), "local/qwen2.5").await, "routed");
     let sent: serde_json::Value =
         serde_json::from_slice(&server.received_requests().await.unwrap()[0].body).unwrap();
     assert_eq!(sent["model"], "qwen2.5", "the prefix is stripped");
 
     let provider = CompatibleProvider::new(&base).default_model("qwen");
-    let model = openai_agents::ModelProvider::get_model(&provider, None)
+    let model = opai_agents::ModelProvider::get_model(&provider, None)
         .await
         .expect("default model");
     drop(model);

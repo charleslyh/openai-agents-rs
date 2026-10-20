@@ -7,9 +7,9 @@
 
 use std::sync::{Arc, Mutex, OnceLock};
 
-use openai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
-use openai_agents::tracing::{self, InMemoryProcessor, SpanData};
-use openai_agents::{Agent, RunOptions, Runner};
+use opai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
+use opai_agents::tracing::{self, InMemoryProcessor, SpanData};
+use opai_agents::{Agent, RunOptions, Runner};
 
 fn tracing_test_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -124,7 +124,7 @@ async fn spawned_input_guardrail_respects_run_tracing_disabled() {
 
     let spanned = |_ctx, _agent, _input| async {
         let _span = tracing::guardrail_span("spanned");
-        openai_agents::GuardrailFunctionOutput::pass(serde_json::json!({}))
+        opai_agents::GuardrailFunctionOutput::pass(serde_json::json!({}))
     };
 
     // Tracing on: the span opened inside the spawned guardrail task is recorded.
@@ -133,7 +133,7 @@ async fn spawned_input_guardrail_respects_run_tracing_disabled() {
     )]));
     let on_agent = Agent::new("guarded")
         .model(on_model)
-        .input_guardrails(vec![openai_agents::input_guardrail("spanned", spanned)]);
+        .input_guardrails(vec![opai_agents::input_guardrail("spanned", spanned)]);
     let _ = Runner::run(&on_agent, "hi", RunOptions::default())
         .await
         .expect("run");
@@ -152,7 +152,7 @@ async fn spawned_input_guardrail_respects_run_tracing_disabled() {
     )]));
     let off_agent = Agent::new("guarded")
         .model(off_model)
-        .input_guardrails(vec![openai_agents::input_guardrail("spanned", spanned)]);
+        .input_guardrails(vec![opai_agents::input_guardrail("spanned", spanned)]);
     let mut opts = RunOptions::default();
     opts.run_config.tracing.disabled = true;
     let before_spans = proc.spans.lock().unwrap().len();
@@ -184,16 +184,16 @@ async fn guardrails_emit_guardrail_spans() {
     )]));
     let agent = Agent::new("guarded")
         .model(model)
-        .input_guardrails(vec![openai_agents::input_guardrail(
+        .input_guardrails(vec![opai_agents::input_guardrail(
             "in-check",
             |_ctx, _agent, _input| async {
-                openai_agents::GuardrailFunctionOutput::pass(serde_json::json!({}))
+                opai_agents::GuardrailFunctionOutput::pass(serde_json::json!({}))
             },
         )])
-        .output_guardrails(vec![openai_agents::output_guardrail(
+        .output_guardrails(vec![opai_agents::output_guardrail(
             "out-check",
             |_ctx, _agent, _out| async {
-                openai_agents::GuardrailFunctionOutput::pass(serde_json::json!({}))
+                opai_agents::GuardrailFunctionOutput::pass(serde_json::json!({}))
             },
         )]);
     let _ = Runner::run(&agent, "hi", RunOptions::default())
@@ -228,14 +228,14 @@ async fn handoff_emits_handoff_span() {
     let specialist = Agent::new("SpanTarget").model(specialist_model);
     let triage_model = Arc::new(ScriptedModel::new([ModelStep::from(
         ItemHelpers::function_tool_call(
-            openai_agents::Handoff::default_tool_name("SpanTarget"),
+            opai_agents::Handoff::default_tool_name("SpanTarget"),
             "{}",
             "h1",
         ),
     )]));
     let triage = Agent::new("SpanSource")
         .model(triage_model)
-        .handoffs(vec![openai_agents::handoff(specialist)]);
+        .handoffs(vec![opai_agents::handoff(specialist)]);
     let _ = Runner::run(&triage, "go", RunOptions::default())
         .await
         .expect("run");
@@ -270,8 +270,8 @@ struct CountingProcessor {
 impl tracing::TracingProcessor for CountingProcessor {
     fn on_trace_start(&self, _trace: &tracing::Trace) {}
     fn on_trace_end(&self, _trace: &tracing::Trace) {}
-    fn on_span_start(&self, _span: &openai_agents::tracing::Span) {}
-    fn on_span_end(&self, _span: &openai_agents::tracing::Span) {}
+    fn on_span_start(&self, _span: &opai_agents::tracing::Span) {}
+    fn on_span_end(&self, _span: &opai_agents::tracing::Span) {}
     fn force_flush(&self) {
         *self.flushes.lock().unwrap() += 1;
     }
@@ -338,7 +338,7 @@ fn span_tree(proc: &InMemoryProcessor) -> Vec<String> {
 /// agent span covers all turns of one agent and is replaced on handoff.
 #[tokio::test]
 async fn task_and_turn_spans_nest_like_python() {
-    use openai_agents::{GuardrailFunctionOutput, InputGuardrail, OutputGuardrail, TracingConfig};
+    use opai_agents::{GuardrailFunctionOutput, InputGuardrail, OutputGuardrail, TracingConfig};
     let _guard = tracing_test_lock().lock().unwrap();
     tracing::set_tracing_disabled(false);
 
@@ -350,15 +350,13 @@ async fn task_and_turn_spans_nest_like_python() {
             .model(Arc::new(ScriptedModel::new([
                 ModelStep::from(ItemHelpers::function_tool_call("echo", "{}", "c1")),
                 ModelStep::from(ItemHelpers::function_tool_call(
-                    openai_agents::Handoff::default_tool_name("B"),
+                    opai_agents::Handoff::default_tool_name("B"),
                     "{}",
                     "h1",
                 )),
             ])))
-            .tools(vec![openai_agents::FunctionTool::constant(
-                "echo", "e", "x",
-            )])
-            .handoffs(vec![openai_agents::handoff(b)])
+            .tools(vec![opai_agents::FunctionTool::constant("echo", "e", "x")])
+            .handoffs(vec![opai_agents::handoff(b)])
     };
 
     let proc = InMemoryProcessor::install();
@@ -453,7 +451,7 @@ async fn task_and_turn_spans_nest_like_python() {
 /// under that run, and its usage is readable from the session.
 #[tokio::test]
 async fn compaction_summary_is_a_span_of_the_run_that_triggered_it() {
-    use openai_agents::{CompactingSession, InMemorySession, ModelSummarizer, Session};
+    use opai_agents::{CompactingSession, InMemorySession, ModelSummarizer, Session};
     let _guard = tracing_test_lock().lock().unwrap();
     tracing::set_tracing_disabled(false);
 
@@ -515,7 +513,7 @@ async fn agent_as_tool_run_nests_under_the_function_span() {
             )),
             ModelStep::from(ItemHelpers::text_message("outer done")),
         ])))
-        .tools(vec![inner.as_tool(openai_agents::AsToolConfig {
+        .tools(vec![inner.as_tool(opai_agents::AsToolConfig {
             name: Some("ask_inner".into()),
             description: Some("d".into()),
             ..Default::default()
@@ -551,7 +549,7 @@ async fn parallel_agent_tools_keep_their_own_parents() {
         )])))
     };
     let tool = |agent: Agent, name: &str| {
-        agent.as_tool(openai_agents::AsToolConfig {
+        agent.as_tool(opai_agents::AsToolConfig {
             name: Some(name.into()),
             description: Some("d".into()),
             ..Default::default()

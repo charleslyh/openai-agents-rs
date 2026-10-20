@@ -8,7 +8,7 @@
 use proptest::prelude::*;
 use serde_json::{json, Map, Value};
 
-use openai_agents::{estimate_item_tokens, ContextWindowTrimmer, ToolOutputTrimmer};
+use opai_agents::{estimate_item_tokens, ContextWindowTrimmer, ToolOutputTrimmer};
 
 /// An arbitrary JSON value with bounded depth and width.
 ///
@@ -82,9 +82,9 @@ proptest! {
     /// already strict, so running it again is a no-op (idempotent).
     #[test]
     fn strict_schema_never_panics_and_is_idempotent(schema in arb_json()) {
-        let first = openai_agents::strict_schema::ensure_strict_json_schema(&schema);
+        let first = opai_agents::strict_schema::ensure_strict_json_schema(&schema);
         if let Ok(strict) = first {
-            let second = openai_agents::strict_schema::ensure_strict_json_schema(&strict);
+            let second = opai_agents::strict_schema::ensure_strict_json_schema(&strict);
             prop_assert!(
                 second.is_ok(),
                 "a strict schema must survive a second pass: {:?}",
@@ -102,7 +102,7 @@ proptest! {
     /// which is what "strict" means to the Responses API.
     #[test]
     fn strict_schema_output_closes_every_object(schema in arb_json()) {
-        if let Ok(strict) = openai_agents::strict_schema::ensure_strict_json_schema(&schema) {
+        if let Ok(strict) = opai_agents::strict_schema::ensure_strict_json_schema(&schema) {
             assert_objects_closed(&strict);
         }
     }

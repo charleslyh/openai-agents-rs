@@ -2,7 +2,7 @@
 
 use serde_json::{json, Value};
 
-use openai_agents_core::model::wire_events::FAKE_RESPONSES_ID;
+use opai_agents_core::model::wire_events::FAKE_RESPONSES_ID;
 
 use super::{str_field, REASONING_FIELD_KEY};
 

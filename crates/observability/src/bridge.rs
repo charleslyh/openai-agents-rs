@@ -1,12 +1,12 @@
 //! Spans as `tracing` events, so an agent run shows up in the application's own logs (Rust-only,
 //! X-018).
 //!
-//! The SDK's trace ([`TracingProcessor`](openai_agents_core::tracing::TracingProcessor)) and the
+//! The SDK's trace ([`TracingProcessor`](opai_agents_core::tracing::TracingProcessor)) and the
 //! Rust `tracing` crate share a name and nothing else: an application that has set up
 //! `tracing-subscriber` — a formatter, `RUST_LOG`, a rolling file, `tokio-console` — would not see
 //! a turn or a tool call unless something carries them across. [`TracingSink`] is that: each event
-//! becomes a `tracing` event with the target `openai_agents`, so
-//! `RUST_LOG=openai_agents=debug` turns it on and the application's subscriber decides where it
+//! becomes a `tracing` event with the target `opai_agents`, so
+//! `RUST_LOG=opai_agents=debug` turns it on and the application's subscriber decides where it
 //! goes.
 //!
 //! | SDK event | Level |
@@ -28,7 +28,7 @@
 //! do not hold any.
 //!
 //! ```rust
-//! use openai_agents_observability::{BatchedProcessor, TracingSink};
+//! use opai_agents_observability::{BatchedProcessor, TracingSink};
 //!
 //! # fn install() -> std::sync::Arc<BatchedProcessor> {
 //! BatchedProcessor::spawn(TracingSink::new(), 1024, std::time::Duration::from_millis(200))
@@ -42,7 +42,7 @@ use super::batched::EventSink;
 use super::export::ExportEvent;
 
 /// The `tracing` target every event is emitted under.
-pub const TARGET: &str = "openai_agents";
+pub const TARGET: &str = "opai_agents";
 
 /// Emits each SDK event as a `tracing` event under [`TARGET`].
 #[derive(Debug, Default)]
@@ -109,7 +109,7 @@ fn emit(event: &ExportEvent) {
     macro_rules! log {
         ($level:expr) => {
             tracing::event!(
-                target: "openai_agents",
+                target: "opai_agents",
                 $level,
                 kind,
                 span_kind = text("span_kind"),

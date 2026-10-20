@@ -15,13 +15,13 @@ planned and how change will be handled afterwards.
 
 | Crate | Level now | Planned at `0.1.0` |
 | --- | --- | --- |
-| `openai-agents-core` | Unstable | Stabilising. Public structs become `#[non_exhaustive]` before release so fields can be added later. |
-| `openai-agents-openai` | Unstable | Stabilising |
-| `openai-agents` (facade) | Unstable | Stabilising |
-| `openai-agents-macros` | Unstable | Stabilising |
-| `openai-agents-mcp` | Unstable | Unstable |
-| `openai-agents-sqlite` | Unstable | Unstable |
-| `openai-agents-testing` | Unstable | Unstable |
+| `opai-agents-core` | Unstable | Stabilising. Public structs become `#[non_exhaustive]` before release so fields can be added later. |
+| `opai-agents-openai` | Unstable | Stabilising |
+| `opai-agents` (facade) | Unstable | Stabilising |
+| `opai-agents-macros` | Unstable | Stabilising |
+| `opai-agents-mcp` | Unstable | Unstable |
+| `opai-agents-sqlite` | Unstable | Unstable |
+| `opai-agents-testing` | Unstable | Unstable |
 
 ## Behaviour versus API
 

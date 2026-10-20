@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use openai_agents::{
+use opai_agents::{
     Agent, AgentsError, InMemorySession, McpCallToolResult, McpServer, McpTool, Model,
     ModelConnectionError, ModelError, ModelRequest, ModelResponse, ModelStatusError,
     ModelSummarizer, RunContextWrapper, Session, Summarizer, Usage,
@@ -444,8 +444,8 @@ impl Model for FaultyModel {
 
     fn get_retry_advice(
         &self,
-        request: &openai_agents::ModelRetryAdviceRequest,
-    ) -> Option<openai_agents::ModelRetryAdvice> {
+        request: &opai_agents::ModelRetryAdviceRequest,
+    ) -> Option<opai_agents::ModelRetryAdvice> {
         self.inner.get_retry_advice(request)
     }
 
@@ -472,7 +472,7 @@ impl Model for FaultyModel {
             Some(kind) => match self.step(kind) {
                 Some(Step::Fail(e)) => Err(e),
                 Some(Step::Respond(r)) => {
-                    openai_agents::model::replay_response(
+                    opai_agents::model::replay_response(
                         &raw_tx,
                         &r,
                         "resp_injected",
@@ -685,7 +685,7 @@ impl McpServer for FaultyMcpServer {
         self.inner.invalidate_tools_cache();
     }
 
-    fn needs_resolution_for(&self, tool: &McpTool) -> openai_agents::NeedsResolution {
+    fn needs_resolution_for(&self, tool: &McpTool) -> opai_agents::NeedsResolution {
         self.inner.needs_resolution_for(tool)
     }
 
@@ -697,8 +697,8 @@ impl McpServer for FaultyMcpServer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use openai_agents::testing::{assistant_message, ModelStep, ScriptedModel};
-    use openai_agents::{
+    use opai_agents::testing::{assistant_message, ModelStep, ScriptedModel};
+    use opai_agents::{
         retry_policies, Agent, ModelRetrySettings, ModelSettings, RunConfig, RunOptions, Runner,
     };
 
@@ -752,7 +752,7 @@ mod tests {
         (agent, rx)
     }
 
-    async fn drain(mut streamed: openai_agents::RunResultStreaming) -> Result<(), AgentsError> {
+    async fn drain(mut streamed: opai_agents::RunResultStreaming) -> Result<(), AgentsError> {
         while let Some(ev) = streamed.next_event().await {
             ev?;
         }

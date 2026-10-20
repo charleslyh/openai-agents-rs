@@ -5,9 +5,9 @@
 //! of a run and its output:
 //!
 //! ```rust
-//! use openai_agents_guardrails::{Guard, MaxLength, PiiRedactor};
+//! use opai_agents_guardrails::{Guard, MaxLength, PiiRedactor};
 //!
-//! # fn build() -> Result<(), openai_agents_guardrails::BuildError> {
+//! # fn build() -> Result<(), opai_agents_guardrails::BuildError> {
 //! let input = MaxLength::chars(4_000)?.input();
 //! let redact = PiiRedactor::new()?.input();
 //! let output = PiiRedactor::new()?.output();
@@ -32,10 +32,10 @@ use std::sync::Arc;
 
 use serde_json::{json, Value};
 
-use openai_agents_core::guardrail::{
+use opai_agents_core::guardrail::{
     GuardrailFunctionOutput, InputGuardrail, OutputGuardrail, Severity,
 };
-use openai_agents_core::items::InputLike;
+use opai_agents_core::items::InputLike;
 
 /// What a guard decided about one piece of text.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -347,7 +347,7 @@ mod tests {
         }
         let out = check_output(&Two, &json!(["a", "b"]));
         match out.verdict {
-            openai_agents_core::guardrail::Verdict::Fail { reason, severity } => {
+            opai_agents_core::guardrail::Verdict::Fail { reason, severity } => {
                 assert_eq!(reason, "critical one");
                 assert_eq!(severity, Severity::Critical);
             }

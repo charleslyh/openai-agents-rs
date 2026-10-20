@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 
 mod scripted;
 
-pub use openai_agents_core::items::ItemHelpers;
+pub use opai_agents_core::items::ItemHelpers;
 pub use scripted::{ModelCall, ModelScriptError, ModelStep, ModelStepReason, ScriptedModel};
 
 /// Build one normalized assistant text output item (Python: `assistant_message`).

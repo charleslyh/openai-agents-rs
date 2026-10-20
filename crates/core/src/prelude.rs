@@ -1,7 +1,7 @@
 //! The types most programs need, for a single glob import.
 //!
 //! ```
-//! use openai_agents_core::prelude::*;
+//! use opai_agents_core::prelude::*;
 //!
 //! let agent = Agent::new("Assistant").instructions("Be brief.");
 //! let options = RunOptions::new().max_turns(3);
@@ -13,7 +13,7 @@
 //! custom tool, model, provider or session implements. Everything else stays at the crate root.
 //! Local items and explicit imports take precedence over a glob, so a name here never shadows yours.
 //!
-//! The `openai-agents` crate has its own `prelude` that adds the `#[function_tool]` macro and
+//! The `opai-agents` crate has its own `prelude` that adds the `#[function_tool]` macro and
 //! uses its `Runner`, which installs the default OpenAI provider.
 
 pub use crate::agent::{Agent, Capability, CapabilityParts};

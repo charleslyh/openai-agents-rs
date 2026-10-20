@@ -1,10 +1,13 @@
 [package]
-name = "openai-agents-core"
+name = "opai-agents-core"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.99"
 description = "Core of the Rust port of the OpenAI Agents Python SDK: agents, tools, handoffs, HITL, guardrails, the run loop"
 license = "MIT"
+readme = "README.md"
+keywords = ["openai", "agents", "llm", "agent-framework"]
+categories = ["api-bindings", "asynchronous"]
 repository = "https://github.com/charleslyh/openai-agents-rs"
 
 # Inherits the lint config (including the tracked clippy backlog) from `[workspace.lints]`.

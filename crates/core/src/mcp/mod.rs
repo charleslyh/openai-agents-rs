@@ -7,8 +7,8 @@
 //! This module holds only what an [`Agent`](crate::Agent) depends on: the [`McpServer`] trait, the
 //! data types it exchanges, and [`mcp_function_tools`], which turns a server's tools into function
 //! tools. The client with its stdio and streamable HTTP transports, tool filters, approval
-//! policies and the server manager live in the `openai-agents-mcp` crate (the `mcp` feature of
-//! `openai-agents`). Anything that implements [`McpServer`] works, including an in-process source.
+//! policies and the server manager live in the `opai-agents-mcp` crate (the `mcp` feature of
+//! `opai-agents`). Anything that implements [`McpServer`] works, including an in-process source.
 
 mod server;
 mod tools;

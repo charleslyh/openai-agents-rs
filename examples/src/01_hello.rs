@@ -5,12 +5,12 @@
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
-//! cargo run -p openai-agents-examples --example hello
+//! cargo run -p opai-agents-examples --example hello
 //! ```
 
 mod common;
 
-use openai_agents::prelude::*;
+use opai_agents::prelude::*;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

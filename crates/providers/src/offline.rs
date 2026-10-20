@@ -7,12 +7,12 @@
 //!
 //! The answer says what it is, so nobody mistakes it for a real one.
 
-use openai_agents_core::error::ModelError;
+use opai_agents_core::error::ModelError;
 use std::sync::Arc;
 
-use openai_agents_core::error::UserError;
-use openai_agents_core::model::{Model, ModelProvider, ModelRequest};
-use openai_agents_core::{ItemHelpers, ModelResponse, Usage};
+use opai_agents_core::error::UserError;
+use opai_agents_core::model::{Model, ModelProvider, ModelRequest};
+use opai_agents_core::{ItemHelpers, ModelResponse, Usage};
 
 /// A model that answers locally with a fixed message.
 #[derive(Debug, Clone, Copy, Default)]
@@ -56,8 +56,8 @@ impl ModelProvider for OfflineProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use openai_agents_core::model::{ModelInput, ModelRequest};
-    use openai_agents_core::{ModelSettings, ModelTracing};
+    use opai_agents_core::model::{ModelInput, ModelRequest};
+    use opai_agents_core::{ModelSettings, ModelTracing};
 
     #[tokio::test]
     async fn the_offline_answer_says_it_is_offline() {

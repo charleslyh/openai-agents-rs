@@ -3,12 +3,12 @@
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
-//! cargo run -p openai-agents-examples --example tools
+//! cargo run -p opai-agents-examples --example tools
 //! ```
 
 mod common;
 
-use openai_agents::{function_tool, Agent, RunOptions, Runner};
+use opai_agents::{function_tool, Agent, RunOptions, Runner};
 
 #[function_tool(description = "Get the current weather for a city")]
 async fn get_weather(city: String) -> String {

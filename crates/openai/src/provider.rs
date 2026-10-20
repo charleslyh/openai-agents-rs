@@ -4,9 +4,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use openai_agents_core::error::UserError;
-use openai_agents_core::model::provider::ModelProvider;
-use openai_agents_core::model::Model;
+use opai_agents_core::error::UserError;
+use opai_agents_core::model::provider::ModelProvider;
+use opai_agents_core::model::Model;
 
 use super::{OpenAIChatCompletionsModel, OpenAIResponsesModel};
 
@@ -101,8 +101,8 @@ impl OpenAIProvider {
 ///
 /// ```no_run
 /// use std::sync::Arc;
-/// use openai_agents_core::MultiProvider;
-/// use openai_agents_openai::{CompatibleProvider, DefaultOpenAiApi};
+/// use opai_agents_core::MultiProvider;
+/// use opai_agents_openai::{CompatibleProvider, DefaultOpenAiApi};
 ///
 /// let router = MultiProvider::new()
 ///     .register("local", Arc::new(CompatibleProvider::new("http://localhost:8000/v1")))

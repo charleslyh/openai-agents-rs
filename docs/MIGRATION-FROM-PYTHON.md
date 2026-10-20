@@ -23,7 +23,7 @@ The full support matrix is [COMPAT.md](./COMPAT.md); the reasoning behind each d
 | `RunConfig(...)` / `RunOptions(...)` | `RunConfig::default()` plus grouped fields or chain methods, see [RunConfig groups](#runconfig-groups). `RunConfig` is `#[non_exhaustive]`, so a struct literal does not compile outside the crate |
 | `ModelSettings(...)` | `ModelSettings { .. }` (22 fields; 3 OpenAI-only ones are not ported, D-017) |
 | `Runner.run(agent, state)` after HITL | `Runner::run_state(&agent, state, opts)` |
-| `ScriptedModel` / `ModelStep` | `ScriptedModel` / `ModelStep` in `openai_agents::testing` |
+| `ScriptedModel` / `ModelStep` | `ScriptedModel` / `ModelStep` in `opai_agents::testing` |
 
 ## 2. Differences you will hit on day one
 

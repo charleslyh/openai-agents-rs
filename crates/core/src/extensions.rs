@@ -5,7 +5,7 @@
 //! dependency (a database handle, a user id) without agreeing on one application-wide struct.
 //!
 //! ```
-//! use openai_agents_core::Extensions;
+//! use opai_agents_core::Extensions;
 //!
 //! struct Db(&'static str);
 //! struct UserId(u64);

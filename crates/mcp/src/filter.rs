@@ -4,11 +4,11 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use openai_agents_core::agent::Agent;
-use openai_agents_core::run_context::RunContextWrapper;
-use openai_agents_core::tool::NeedsResolution;
+use opai_agents_core::agent::Agent;
+use opai_agents_core::run_context::RunContextWrapper;
+use opai_agents_core::tool::NeedsResolution;
 
-use openai_agents_core::McpTool;
+use opai_agents_core::McpTool;
 
 // ---------------------------------------------------------------------------------------------
 // Tool filtering and approval

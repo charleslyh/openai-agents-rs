@@ -20,8 +20,8 @@ use hmac::{Hmac, Mac};
 use serde_json::{json, Value};
 use sha2::Sha256;
 
-use openai_agents_core::error::UserError;
-use openai_agents_core::{
+use opai_agents_core::error::UserError;
+use opai_agents_core::{
     finish_load, AgentsError, RunState, RunStateMigration, RUN_STATE_SCHEMA_VERSION,
 };
 

@@ -7,15 +7,15 @@
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
 //! ```bash
-//! cargo run -p openai-agents-examples --example verdict_transform
+//! cargo run -p opai-agents-examples --example verdict_transform
 //! ```
 
 mod common;
 
 use std::sync::Arc;
 
-use openai_agents::prelude::*;
-use openai_agents::{InMemorySession, Session};
+use opai_agents::prelude::*;
+use opai_agents::{InMemorySession, Session};
 
 /// Replace anything that looks like a payment card number.
 fn redact(text: &str) -> String {

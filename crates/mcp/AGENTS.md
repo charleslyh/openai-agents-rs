@@ -1,4 +1,4 @@
-# openai-agents-mcp
+# opai-agents-mcp
 
 The MCP client (stdio and streamable HTTP transports), tool filters, approval policies and the
 server manager. Optional: reached through the facade's `mcp` feature, which is **off by default**
@@ -21,7 +21,7 @@ runs before the lock. The cost is serialisation, which stays within a few second
 ## Verification
 
 ```
-cargo test -p openai-agents-mcp                     # unit tests
+cargo test -p opai-agents-mcp                     # unit tests
 cargo test --features mcp --test mcp_interop        # Python oracle, skips without the venv
 ```
 

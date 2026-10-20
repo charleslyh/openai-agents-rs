@@ -2,7 +2,7 @@
 
 use regex::{Regex, RegexBuilder};
 
-use openai_agents_core::guardrail::Severity;
+use opai_agents_core::guardrail::Severity;
 
 use crate::error::BuildError;
 use crate::guard::{Decision, Guard};
@@ -26,9 +26,9 @@ const SIZE_LIMIT: usize = 4 * 1024 * 1024;
 /// tells the next attempt what to rephrase.
 ///
 /// ```rust
-/// use openai_agents_guardrails::{BlockedKeywords, Guard};
+/// use opai_agents_guardrails::{BlockedKeywords, Guard};
 ///
-/// # fn build() -> Result<(), openai_agents_guardrails::BuildError> {
+/// # fn build() -> Result<(), opai_agents_guardrails::BuildError> {
 /// let guardrail = BlockedKeywords::new(["project atlas", "internal only"])?.input();
 /// # let _ = guardrail;
 /// # Ok(())
