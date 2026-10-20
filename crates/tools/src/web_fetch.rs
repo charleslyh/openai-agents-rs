@@ -13,7 +13,14 @@
 //!   (public-looking reserved space) and the `100.64.0.0/10` carrier range are refused with them.
 //! * **Redirects are checked hop by hop**, and a redirect to another origin is refused outright
 //!   unless it is asked for: that is where credentials would otherwise be sent somewhere else.
-//! * `http` is allowed only on loopback, or when it is switched on; `https` anywhere.
+//! * `https` is allowed anywhere; `http` only to loopback — which is itself refused unless private
+//!   addresses are allowed — or when [`FetchOptions::allow_insecure_http`] is switched on.
+//! * An address written into the URL (`http://2130706433/`, `http://0x7f.1/`) never reaches the
+//!   resolver, so it is checked as the URL is read, on the first request and on every redirect.
+//! * No system proxy is used: a proxy would be the address the connection goes to, and the check
+//!   would be on the wrong one.
+//! * A response is read in pieces and stops at the limit, so a server that never stops sending
+//!   cannot fill memory.
 //!
 //! [`FetchOptions::allow_private`] opens it up — for a test against a local server, or an agent
 //! whose whole job is a service next to it. It is named "allow" on purpose: saying it is what turns
@@ -97,77 +104,127 @@ pub fn web_fetch_with(options: FetchOptions) -> FunctionTool {
          loopback and link-local addresses are refused, and so is a redirect to another origin.",
         move |_ctx, args: FetchArgs| {
             let options = options.clone();
-            async move {
-                let url = parse_url(&args.url, &options)?;
-                let client = client(&options)?;
-                let response = client
-                    .get(url.clone())
-                    .send()
-                    .await
-                    .map_err(|e| tool_err(format!("cannot fetch {}: {e}", args.url)))?;
-                let status = response.status().as_u16();
-                if !response.status().is_success() {
-                    return Ok(json!({
-                        "url": args.url,
-                        "status": status,
-                        "text": "",
-                        "error": format!("the server answered {status}"),
-                    }));
-                }
-                let content_type = response
-                    .headers()
-                    .get(reqwest::header::CONTENT_TYPE)
-                    .and_then(|v| v.to_str().ok())
-                    .unwrap_or_default()
-                    .to_string();
-                let bytes = response
-                    .bytes()
-                    .await
-                    .map_err(|e| tool_err(format!("cannot read {}: {e}", args.url)))?;
-                if bytes.len() > options.max_bytes {
-                    return Err(tool_err(format!(
-                        "{} answered {} bytes, and the largest response this tool reads is {}",
-                        args.url,
-                        bytes.len(),
-                        options.max_bytes
-                    )));
-                }
-                let body = String::from_utf8_lossy(&bytes).to_string();
-                let text = if args.as_text.unwrap_or(false) {
-                    strip_tags(&body)
-                } else {
-                    body
-                };
-                Ok(json!({
-                    "url": args.url,
-                    "status": status,
-                    "content_type": content_type,
-                    "text": text,
-                }))
-            }
+            async move { fetch(&args.url, args.as_text.unwrap_or(false), &options).await }
         },
     )
 }
 
+/// Fetch `raw_url` under `options`: what the tool does, callable without a model.
+pub async fn fetch(
+    raw_url: &str,
+    as_text: bool,
+    options: &FetchOptions,
+) -> Result<serde_json::Value, AgentsError> {
+    let url = parse_url(raw_url, options)?;
+    let client = client(options)?;
+    let mut response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| tool_err(format!("cannot fetch {raw_url}: {}", describe(&e))))?;
+    let status = response.status().as_u16();
+    if !response.status().is_success() {
+        return Ok(json!({
+            "url": raw_url,
+            "status": status,
+            "text": "",
+            "error": format!("the server answered {status}"),
+        }));
+    }
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    let too_big = || {
+        tool_err(format!(
+            "{raw_url} answers more than {} bytes, the most this tool reads",
+            options.max_bytes
+        ))
+    };
+    if response
+        .content_length()
+        .is_some_and(|length| length > options.max_bytes as u64)
+    {
+        return Err(too_big());
+    }
+    // Read in pieces and stop at the limit: a server that never stops sending must not be able to
+    // fill the process's memory, which reading the whole body first would let it do. (The client
+    // is built without decompression, so the limit is on what crossed the wire as well.)
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|e| tool_err(format!("cannot read {raw_url}: {}", describe(&e))))?
+    {
+        if bytes.len() + chunk.len() > options.max_bytes {
+            return Err(too_big());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    let body = String::from_utf8_lossy(&bytes).to_string();
+    Ok(json!({
+        "url": raw_url,
+        "status": status,
+        "content_type": content_type,
+        "text": if as_text { strip_tags(&body) } else { body },
+    }))
+}
+
+/// An error with the reason behind it: reqwest's own message stops at "error following redirect".
+fn describe(error: &reqwest::Error) -> String {
+    use std::error::Error;
+    let mut message = error.to_string();
+    let mut source = error.source();
+    while let Some(cause) = source {
+        message.push_str(": ");
+        message.push_str(&cause.to_string());
+        source = cause.source();
+    }
+    message
+}
+
 fn client(options: &FetchOptions) -> Result<Client, AgentsError> {
-    let allow_private = options.allow_private;
-    let allow_cross_origin = options.allow_cross_origin_redirects;
+    let policy = options.clone();
     Client::builder()
-        .dns_resolver(Arc::new(GuardedResolver { allow_private }))
-        .redirect(Policy::custom(move |attempt: Attempt| {
-            if !allow_cross_origin && changes_origin(&attempt) {
-                return attempt.stop();
-            }
-            if attempt.previous().len() >= MAX_REDIRECTS {
-                return attempt.stop();
-            }
-            attempt.follow()
+        .dns_resolver(Arc::new(GuardedResolver {
+            allow_private: options.allow_private,
         }))
+        .redirect(Policy::custom(
+            move |attempt: Attempt| match check_redirect(attempt.previous(), attempt.url(), &policy)
+            {
+                Ok(()) => attempt.follow(),
+                Err(reason) => attempt.error(reason),
+            },
+        ))
+        // A proxy would make the connection go to the proxy, and the resolver would be checking
+        // the proxy's address instead of the one the model named.
+        .no_proxy()
         .connect_timeout(CONNECT_TIMEOUT)
         .timeout(options.timeout)
         .user_agent(concat!("openai-agents-rs/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|e| tool_err(format!("cannot build an HTTP client: {e}")))
+}
+
+/// Whether the redirect from `previous` (the chain so far) to `next` may be followed.
+///
+/// Every hop is checked as the first request is: the scheme, an address written into the URL, and
+/// whether the origin changed. A redirect is the usual way to turn a harmless URL into a request
+/// for something else.
+pub fn check_redirect(previous: &[Url], next: &Url, options: &FetchOptions) -> Result<(), String> {
+    if previous.len() >= MAX_REDIRECTS {
+        return Err(format!("more than {MAX_REDIRECTS} redirects"));
+    }
+    check_url(next, options)?;
+    if !options.allow_cross_origin_redirects {
+        let from = previous.last().and_then(origin);
+        if from.is_none() || from != origin(next) {
+            return Err("a redirect to another origin is refused".to_string());
+        }
+    }
+    Ok(())
 }
 
 /// A resolver that answers only with addresses the tool may connect to.
@@ -203,16 +260,6 @@ impl Resolve for GuardedResolver {
     }
 }
 
-fn changes_origin(attempt: &Attempt) -> bool {
-    let (Some(previous), Some(next)) = (
-        attempt.previous().last().and_then(origin),
-        origin(attempt.url()),
-    ) else {
-        return true;
-    };
-    previous != next
-}
-
 fn origin(url: &Url) -> Option<(String, Option<u16>)> {
     Some((
         url.host_str()?.to_ascii_lowercase(),
@@ -222,31 +269,46 @@ fn origin(url: &Url) -> Option<(String, Option<u16>)> {
 
 fn parse_url(raw: &str, options: &FetchOptions) -> Result<Url, AgentsError> {
     let url = Url::parse(raw.trim()).map_err(|e| tool_err(format!("{raw} is not a URL: {e}")))?;
+    check_url(&url, options).map_err(tool_err)?;
+    Ok(url)
+}
+
+/// The checks every URL passes, first request or redirect.
+///
+/// An address written into the URL (`http://169.254.169.254/`, and the forms the URL parser turns
+/// into one: `http://2852039166/`, `http://0xa9.0xfe.0xa9.0xfe/`, `http://[::ffff:10.0.0.1]/`) never
+/// goes through the resolver, so it has to be checked here.
+fn check_url(url: &Url, options: &FetchOptions) -> Result<(), String> {
+    let host = url.host().ok_or("the URL has no host")?;
     match url.scheme() {
         "https" => {}
         "http" => {
-            let loopback = url
-                .host_str()
-                .map(|host| {
-                    matches!(
-                        host.to_ascii_lowercase().as_str(),
-                        "localhost" | "127.0.0.1" | "[::1]" | "::1"
-                    )
-                })
-                .unwrap_or(false);
+            let loopback = match &host {
+                url::Host::Domain(name) => name.eq_ignore_ascii_case("localhost"),
+                url::Host::Ipv4(ip) => ip.is_loopback(),
+                url::Host::Ipv6(ip) => ip.is_loopback(),
+            };
             if !loopback && !options.allow_insecure_http {
-                return Err(tool_err(format!(
-                    "{raw} is http: only https is fetched, except on loopback"
-                )));
+                return Err("only https is fetched, except on loopback".to_string());
             }
         }
         other => {
-            return Err(tool_err(format!(
+            return Err(format!(
                 "{other} is not a scheme this tool fetches: use http or https"
-            )))
+            ))
         }
     }
-    Ok(url)
+    let literal = match host {
+        url::Host::Ipv4(ip) => Some(IpAddr::V4(ip)),
+        url::Host::Ipv6(ip) => Some(IpAddr::V6(ip)),
+        url::Host::Domain(_) => None,
+    };
+    match literal {
+        Some(ip) if !options.allow_private && !is_reachable(ip) => {
+            Err("that address is private, loopback, link-local or reserved".to_string())
+        }
+        _ => Ok(()),
+    }
 }
 
 /// Whether the tool may connect to `ip`: the SSRF check itself.
@@ -413,7 +475,14 @@ mod tests {
     fn only_http_and_https_are_fetched() {
         let options = FetchOptions::default();
         assert!(parse_url("https://example.com", &options).is_ok());
-        assert!(parse_url("http://127.0.0.1:8080/x", &options).is_ok());
+        // Loopback is http-able, but it is still loopback: refused unless private is allowed.
+        assert!(parse_url("http://127.0.0.1:8080/x", &options).is_err());
+        let local = FetchOptions {
+            allow_private: true,
+            ..FetchOptions::default()
+        };
+        assert!(parse_url("http://127.0.0.1:8080/x", &local).is_ok());
+        assert!(parse_url("http://localhost:8080/x", &local).is_ok());
         assert!(parse_url("http://example.com", &options).is_err());
         assert!(parse_url("file:///etc/passwd", &options).is_err());
         assert!(parse_url("gopher://example.com", &options).is_err());

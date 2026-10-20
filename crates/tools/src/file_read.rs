@@ -156,8 +156,16 @@ fn tool_err(message: impl Into<String>) -> AgentsError {
 mod tests {
     use super::*;
 
+    /// A directory of its own per test: tests run in parallel inside one process, so a name made
+    /// from the process id alone would be shared, and one test would delete another's files.
     fn sandbox() -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("agents-files-{}", std::process::id()));
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "agents-files-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("inside")).expect("create");
         std::fs::write(dir.join("inside/notes.txt"), "hello").expect("write");
@@ -185,7 +193,11 @@ mod tests {
     #[test]
     fn a_symlink_that_leaves_is_refused() {
         let dir = sandbox();
-        let outside = std::env::temp_dir().join(format!("agents-outside-{}", std::process::id()));
+        let outside = std::env::temp_dir().join(format!(
+            "agents-outside-{}-{}",
+            std::process::id(),
+            dir.file_name().and_then(|n| n.to_str()).unwrap_or("x")
+        ));
         std::fs::create_dir_all(&outside).expect("create");
         std::fs::write(outside.join("secret.txt"), "secret").expect("write");
         let root = root_of(&dir).expect("root");

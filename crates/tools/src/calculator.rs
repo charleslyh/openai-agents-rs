@@ -253,4 +253,52 @@ mod tests {
             );
         }
     }
+
+    /// Nesting is bounded by the length limit, but a parser that recursed without a limit of its
+    /// own would still be one deep expression from a stack overflow.
+    #[test]
+    fn deeply_nested_input_is_an_error_not_a_crash() {
+        let open = "(".repeat(MAX_EXPRESSION - 2);
+        assert!(evaluate(&format!("{open}1")).is_err());
+        let minus = "-".repeat(MAX_EXPRESSION - 1);
+        // An even number of unary minuses is positive, and must not overflow the stack either.
+        let _ = evaluate(&format!("{minus}1"));
+        let sums = "1+".repeat(MAX_EXPRESSION / 2 - 1) + "1";
+        assert_eq!(evaluate(&sums).unwrap(), (MAX_EXPRESSION / 2) as f64);
+    }
+
+    /// Whatever the text, the answer is a number or an error: never a panic.
+    #[test]
+    fn arbitrary_text_never_panics() {
+        let alphabet: Vec<char> = "0123456789.+-*/() \tx\u{e9}\u{200b}\u{1F600}"
+            .chars()
+            .collect();
+        // A small deterministic generator, so a failure reproduces.
+        let mut state = 0x2545_F491_4F6C_DD1Du64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for _ in 0..20_000 {
+            let length = (next() % 40) as usize;
+            let text: String = (0..length)
+                .map(|_| alphabet[(next() % alphabet.len() as u64) as usize])
+                .collect();
+            let _ = evaluate(&text);
+        }
+    }
+
+    #[test]
+    fn overflow_and_oddities_are_errors() {
+        assert!(evaluate(&format!(
+            "{0}*{0}*{0}*{0}*{0}*{0}*{0}*{0}*{0}*{0}",
+            "9".repeat(30)
+        ))
+        .is_err());
+        assert!(evaluate("0.1.2").is_err());
+        assert!(evaluate(".").is_err());
+        assert!(evaluate("1..2").is_err());
+    }
 }

@@ -14,7 +14,7 @@ workspace = true
 [features]
 default = []
 # Fetch a URL. Added with the tool, so a build that does not fetch compiles no HTTP client.
-webfetch = ["dep:reqwest", "dep:tokio"]
+webfetch = ["dep:reqwest", "dep:tokio", "dep:url"]
 
 [dependencies]
 openai-agents-core = { path = "../core", version = "0.1.0", default-features = false }
@@ -25,6 +25,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 tokio = { version = "1", features = ["net"], optional = true }
 tracing = "0.1"
+url = { version = "2", optional = true }
 
 [dev-dependencies]
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "io-util", "time"] }

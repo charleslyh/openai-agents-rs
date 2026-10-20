@@ -118,6 +118,10 @@ pub(crate) fn to_state(
 
 /// Refuse an id or key that would be more than a name: no separators (they are path or key
 /// separators somewhere), no control characters, no leading dot, and not unbounded.
+///
+/// Only the server-backed stores use it: the file stores have their own, stricter check that also
+/// has to produce a file name.
+#[cfg(any(feature = "redis", feature = "postgres", test))]
 pub(crate) fn validate_id(id: &str, what: &str) -> Result<(), AgentsError> {
     if id.is_empty() {
         return Err(UserError::new(format!("the {what} must not be empty")).into());
