@@ -1,0 +1,11 @@
+[package]
+name = "{{name}}"
+version = "0.1.0"
+edition = "2021"
+description = "An agent built with the OpenAI Agents Rust SDK"
+publish = false
+
+[dependencies]
+openai-agents = { {{dependency}}, features = ["providers"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+serde_json = "1"

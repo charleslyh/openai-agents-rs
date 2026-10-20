@@ -1,0 +1,22 @@
+[package]
+name = "openai-agents-scaffold"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.99"
+publish = false
+description = "`cargo agents new`: create a project that uses the OpenAI Agents Rust SDK"
+license = "MIT"
+repository = "https://github.com/charleslyh/openai-agents-rs"
+
+# `cargo agents new` runs this binary: Cargo looks for `cargo-agents` on PATH.
+[[bin]]
+name = "cargo-agents"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+tempfile = "3"

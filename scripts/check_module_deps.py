@@ -79,6 +79,9 @@ CRATE_DEPS: dict[str, set[str]] = {
     EXAMPLES: {FACADE},
     # The web demo (`demo/web`) follows the same rule as the examples.
     WEB_DEMO: {FACADE},
+    # `cargo agents new`: the templates are text compiled into the binary, so it needs no crate of
+    # the workspace and cannot drift into the SDK's internals.
+    "openai-agents-scaffold": set(),
 }
 
 # Third-party crates core must not depend on, and tokio features it must not enable. They are what
