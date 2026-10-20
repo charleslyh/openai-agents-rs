@@ -10,6 +10,7 @@
 //!   installed.
 //! * [`TracingSink`]: events into the application's own `tracing` subscriber.
 //! * [`metrics`]: turn counts, tool failure rate, token usage and cost, from the same stream.
+//! * [`link`]: send both to a console process (`opai-console`) that draws them live.
 //! * [`conversation`]: the other half a console needs — prompts, replies, tool arguments and
 //!   results — recorded through `RunHooks` and handed to whatever the application attaches.
 //!
@@ -21,6 +22,7 @@ pub mod batched;
 pub mod bridge;
 pub mod conversation;
 pub mod export;
+pub mod link;
 pub mod metrics;
 #[cfg(feature = "otel")]
 pub mod otel;
@@ -34,6 +36,7 @@ pub use conversation::{
     QueuedConversationSink,
 };
 pub use export::{span_to_json, trace_to_json, ExportEvent};
+pub use link::{ConsoleLink, LinkConfig};
 pub use metrics::{Metrics, MetricsSink, Price, PriceTable};
 pub use sinks::{ConsoleSink, JsonlSink};
 
