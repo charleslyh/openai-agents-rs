@@ -197,7 +197,17 @@ pub(crate) async fn plan_tool_calls(
 
     for call in function_calls {
         let (name, arguments, call_id) = required_function_call_parts(call)?;
-        let Some(tool) = tools.iter().find(|t| t.name == name).cloned() else {
+        let found = tools.iter().find(|t| t.name == name).cloned();
+        if found.is_none() && name == crate::agent::LOAD_CAPABILITY_TOOL {
+            // On resume the pending response still holds the `load_capability` call that ran
+            // before the pause, and the tool is no longer offered once everything is loaded.
+            if let Some(existing) = existing_tool_output(generated_items, &call_id) {
+                let placeholder = FunctionTool::constant(TOOL_NOT_FOUND_PLACEHOLDER, "", "");
+                plan.already_done.push((placeholder, existing, call_id));
+                continue;
+            }
+        }
+        let Some(tool) = found else {
             // Python: `ModelBehaviorError("Tool X not found in agent Y")`, unless the run asks
             // for the error to be returned to the model.
             if run_config.tools.not_found_behavior != ToolNotFoundBehavior::ReturnErrorToModel {

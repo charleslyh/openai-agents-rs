@@ -91,6 +91,10 @@ entry will be `0.1.0`.
   installed. Only the OpenTelemetry API is depended on, so the exporter — OTLP or anything else —
   stays the application's choice. The SDK's span and parent ids travel as attributes, because the
   API assigns ids itself.
+- `CapabilityParts::deferred(description)` (X-021): a capability the model loads on demand. Until it
+  calls `load_capability`, the prompt carries one catalog line and none of the capability's tools or
+  instructions; loading is per agent and run, idempotent, and saved in a paused run's `RunState`
+  (`loaded_capabilities`, absent in older states). Guardrails and model settings apply from the start.
 - New crate `openai-agents-guardrails` (X-020): `MaxLength`, `PiiRedactor` (redacts by default;
   emails, Luhn-valid cards, SSNs, phone numbers), `PromptInjection` (a heuristic, documented as
   one), `BlockedKeywords` (whole-word, literal) and `SchemaValidator` (a subset of JSON Schema that

@@ -70,6 +70,8 @@ pub(crate) struct InterruptSnapshot {
     pub session_input_saved: bool,
     /// Input guardrail results gathered before the pause.
     pub input_guardrail_results: Vec<crate::guardrail::InputGuardrailResult>,
+    /// Deferred capabilities loaded before the pause, as `(agent, capability)`.
+    pub loaded_capabilities: Vec<(String, String)>,
 }
 
 impl RunResult {
@@ -155,6 +157,7 @@ impl RunResult {
             nested_agent_runs: snap.nested_agent_runs.clone(),
             session_saved_items: snap.session_saved_items,
             session_input_saved: snap.session_input_saved,
+            loaded_capabilities: snap.loaded_capabilities.clone(),
             input_guardrail_results: self.input_guardrail_results.clone(),
             tool_input_guardrail_results: self.tool_input_guardrail_results.clone(),
             tool_output_guardrail_results: self.tool_output_guardrail_results.clone(),

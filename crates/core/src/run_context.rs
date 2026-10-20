@@ -6,7 +6,8 @@
 //! an actionable error instead of silently returning `None`.
 
 use std::any::Any;
-use std::sync::{Arc, Mutex};
+use std::collections::BTreeSet;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use crate::error::{AgentsError, UserError};
 use crate::extensions::Extensions;
@@ -21,6 +22,8 @@ pub use crate::extensions::ContextValue;
 pub struct RunContextWrapper {
     extensions: Extensions,
     usage: Arc<Mutex<Usage>>,
+    /// Deferred capabilities the model has loaded, as `(agent name, capability name)`.
+    loaded: Arc<Mutex<BTreeSet<(String, String)>>>,
 }
 
 impl std::fmt::Debug for RunContextWrapper {
@@ -47,6 +50,7 @@ impl RunContextWrapper {
         Self {
             extensions,
             usage: Arc::new(Mutex::new(Usage::default())),
+            loaded: Arc::default(),
         }
     }
 
@@ -124,6 +128,34 @@ impl RunContextWrapper {
         if let Ok(mut current) = self.usage.lock() {
             *current = usage;
         }
+    }
+
+    /// The loaded set. A poisoned lock still holds a valid set (every update is one insert), so
+    /// it is used as is rather than panicking.
+    fn loaded_set(&self) -> MutexGuard<'_, BTreeSet<(String, String)>> {
+        self.loaded.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Whether the model has loaded deferred capability `capability` of `agent`.
+    pub(crate) fn is_capability_loaded(&self, agent: &str, capability: &str) -> bool {
+        self.loaded_set()
+            .contains(&(agent.to_owned(), capability.to_owned()))
+    }
+
+    /// Mark a deferred capability loaded; `false` when it already was.
+    pub(crate) fn load_capability(&self, agent: &str, capability: &str) -> bool {
+        self.loaded_set()
+            .insert((agent.to_owned(), capability.to_owned()))
+    }
+
+    /// Every loaded `(agent, capability)` pair, sorted. Saved in a paused run's state.
+    pub(crate) fn loaded_capabilities(&self) -> Vec<(String, String)> {
+        self.loaded_set().iter().cloned().collect()
+    }
+
+    /// Replace the loaded set (used when resuming a run).
+    pub(crate) fn set_loaded_capabilities(&self, loaded: &[(String, String)]) {
+        *self.loaded_set() = loaded.iter().cloned().collect();
     }
 }
 

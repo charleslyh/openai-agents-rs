@@ -93,6 +93,9 @@ pub struct RunState {
     pub session_saved_items: usize,
     /// Whether the run's input was already saved to the session.
     pub session_input_saved: bool,
+    /// Deferred capabilities the model had loaded, as `(agent, capability)` (X-021). A resumed
+    /// run offers their tools again; states written before this field load it empty.
+    pub(crate) loaded_capabilities: Vec<(String, String)>,
     /// Input guardrail results of the run so far.
     pub input_guardrail_results: Vec<InputGuardrailResult>,
     /// Tool input guardrail results of the run so far.
@@ -246,6 +249,7 @@ impl RunState {
             "nested_agent_runs": self.nested_agent_runs.iter().map(|(k, v)| (k.clone(), v.to_json())).collect::<serde_json::Map<_,_>>(),
             "session_saved_items": self.session_saved_items,
             "session_input_saved": self.session_input_saved,
+            "loaded_capabilities": self.loaded_capabilities.iter().map(|(agent, capability)| json!({"agent": agent, "capability": capability})).collect::<Vec<_>>(),
             "input_guardrail_results": self.input_guardrail_results.iter().map(|r| json!({"guardrail_name": r.guardrail_name, "output": codec::serialize_guardrail_output(&r.output)})).collect::<Vec<_>>(),
             "tool_input_guardrail_results": self.tool_input_guardrail_results.iter().map(|r| json!({"guardrail_name": r.guardrail_name, "output": serialize_tool_guardrail_output(&r.output)})).collect::<Vec<_>>(),
             "tool_output_guardrail_results": self.tool_output_guardrail_results.iter().map(|r| json!({"guardrail_name": r.guardrail_name, "output": serialize_tool_guardrail_output(&r.output)})).collect::<Vec<_>>(),
@@ -389,6 +393,21 @@ impl RunState {
                 .get("session_input_saved")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false),
+            loaded_capabilities: value
+                .get("loaded_capabilities")
+                .and_then(Value::as_array)
+                .map(|entries| {
+                    entries
+                        .iter()
+                        .filter_map(|e| {
+                            Some((
+                                e.get("agent")?.as_str()?.to_owned(),
+                                e.get("capability")?.as_str()?.to_owned(),
+                            ))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
             input_guardrail_results: guardrail_results(&value, "input_guardrail_results")
                 .map(|(name, output)| InputGuardrailResult {
                     guardrail_name: name,

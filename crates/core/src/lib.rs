@@ -36,6 +36,7 @@ pub mod tracing;
 pub mod usage;
 pub mod utf8_stream;
 
+pub use agent::LOAD_CAPABILITY_TOOL;
 pub use agent::{
     Agent, FunctionToolResult, ToolUseBehavior, ToolsToFinalOutputFn, ToolsToFinalOutputResult,
 };

@@ -1,12 +1,14 @@
 //! Agent definition (Python: `agents.agent.Agent` subset).
 
 pub mod capability;
+mod deferred;
 
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
 pub use capability::{Capability, CapabilityParts, MountedCapability, NamedCapability};
+pub use deferred::LOAD_CAPABILITY_TOOL;
 
 use crate::agent_output::AgentOutputSchemaBase;
 use crate::error::AgentsError;
@@ -262,8 +264,8 @@ impl Agent {
             Some(Instructions::Dynamic(f)) => Some(f(context.clone(), Arc::clone(self)).await),
             None => None,
         };
-        let mut extra = self.capability_instructions().peekable();
-        if extra.peek().is_none() {
+        let extra = self.capability_instructions(context);
+        if extra.is_empty() {
             return own;
         }
         let mut out = own.unwrap_or_default();
@@ -271,7 +273,7 @@ impl Agent {
             if !out.is_empty() {
                 out.push_str("\n\n");
             }
-            out.push_str(paragraph);
+            out.push_str(&paragraph);
         }
         Some(out)
     }
@@ -348,14 +350,16 @@ impl Agent {
     }
 
     /// Enabled tools for this turn (evaluates each tool's `is_enabled`): the agent's own, then
-    /// those of its capabilities.
+    /// those of its capabilities. A deferred capability's tools count once it is loaded, and
+    /// `load_capability` is offered while any deferred capability is still unloaded.
     pub async fn enabled_tools(self: &Arc<Self>, context: &RunContextWrapper) -> Vec<FunctionTool> {
         let mut out = Vec::new();
-        for tool in self.local_tools() {
+        for tool in self.visible_local_tools(context) {
             if tool.is_enabled.resolve(context, self).await {
                 out.push(tool.clone());
             }
         }
+        out.extend(self.load_capability_tool(context));
         out
     }
 

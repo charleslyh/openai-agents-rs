@@ -14,6 +14,7 @@
 //! | input / output guardrails | after the agent's own | all run |
 //! | model settings | below the agent's settings, which are below the run's | agent and run win |
 //! | requires | checked before the first turn, like `Tool::requires` | — |
+//! | deferred | tools and instructions wait for `load_capability`; see [`CapabilityParts::deferred`] | — |
 //!
 //! ```
 //! use openai_agents_core::{Agent, CapabilityParts, FunctionTool};
@@ -51,6 +52,9 @@ pub struct CapabilityParts {
     pub model_settings: Option<ModelSettings>,
     /// Extension types the capability needs, checked before the first turn.
     pub requires: Vec<TypeRequirement>,
+    /// When set, the capability is loaded on demand: the model sees this one-line description in
+    /// a catalog and its tools and instructions only after it calls `load_capability`.
+    pub deferred: Option<String>,
 }
 
 impl CapabilityParts {
@@ -105,6 +109,22 @@ impl CapabilityParts {
     #[must_use]
     pub fn require<T: std::any::Any>(mut self) -> Self {
         self.requires.push(TypeRequirement::of::<T>());
+        self
+    }
+
+    /// Load the capability on demand instead of up front.
+    ///
+    /// Until the model calls the framework's `load_capability` tool with this capability's name,
+    /// its tools are not offered and its instructions are not in the prompt; the prompt carries
+    /// only `description`, one line in a catalog. Use it when many tools would cost more context
+    /// than they are worth on most turns. Guardrails and model settings apply from the start, so
+    /// leaving a capability unloaded never bypasses a check.
+    ///
+    /// Loading is per agent and per run, idempotent, and kept when a paused run is resumed from
+    /// its [`RunState`](crate::RunState).
+    #[must_use]
+    pub fn deferred(mut self, description: impl Into<String>) -> Self {
+        self.deferred = Some(description.into());
         self
     }
 
@@ -182,6 +202,7 @@ impl std::fmt::Debug for MountedCapability {
                 &p.tools.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(),
             )
             .field("instructions", &p.instructions.is_some())
+            .field("deferred", &p.deferred)
             .field("input_guardrails", &p.input_guardrails.len())
             .field("output_guardrails", &p.output_guardrails.len())
             .field("model_settings", &p.model_settings.is_some())
@@ -248,12 +269,5 @@ impl Agent {
             merged = merged.resolve(Some(layer));
         }
         std::borrow::Cow::Owned(merged.resolve(Some(&self.model_settings)))
-    }
-
-    /// The capabilities' instruction paragraphs, in mounting order.
-    pub(crate) fn capability_instructions(&self) -> impl Iterator<Item = &str> {
-        self.capabilities
-            .iter()
-            .filter_map(|c| c.parts.instructions.as_deref())
     }
 }

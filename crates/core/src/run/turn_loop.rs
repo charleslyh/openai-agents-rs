@@ -190,6 +190,7 @@ impl Progress {
                 // Drop prior ToolInterruption placeholders; resume will re-create if still pending.
                 generated_items.retain(|i| !matches!(i, RunItem::ToolInterruption(_)));
                 context.set_usage(state.usage.clone());
+                context.set_loaded_capabilities(&state.loaded_capabilities);
                 Ok(Self {
                     current_agent,
                     original_input_len: ItemHelpers::input_to_new_input_list(&state.input).len(),
@@ -967,6 +968,7 @@ impl<'a> TurnLoop<'a> {
             session_saved_items: 0,
             session_input_saved: false,
             input_guardrail_results: self.input_guardrail_results.clone(),
+            loaded_capabilities: self.context.loaded_capabilities(),
         };
         let record = self.take_record();
         interrupted_result(
