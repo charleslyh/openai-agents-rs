@@ -45,7 +45,7 @@
 | F11 | 输入/输出护栏结果只有 `pass` / `trip` 两态;工具护栏有 `Allow` / `RejectContent` / `RaiseException` | `error/payload.rs:12-23,64-81` |
 | F12 | `ToolInputGuardrail`/`ToolOutputGuardrail` 没有 `input_guardrail` 风格的便捷函数 | `tool_guardrails.rs:61,100` |
 | F13 | core 无 `[features]` 且无网络/数据库依赖;`check_module_deps.py` 在 CI 强制 crate 级规则 | `core/Cargo.toml`、`scripts/check_module_deps.py:1-24` |
-| F14 | 样板量:`12_hitl` 105 行(手写工具+schema 约 27 行,HITL 循环约 34 行);`24_settings` 41 行(配置约 13 行);`19_run_context` 53 行(手写工具 schema 约 13 行);`25_reasoning` 113 行(按 API 分支 17 行 + 配置 5 行) | `examples/src/`(行数为人工计数,估计值已标注) |
+| F14 | 样板量:`17_hitl` 105 行(手写工具+schema 约 27 行,HITL 循环约 34 行);`32_settings` 41 行(配置约 13 行);`26_run_context` 53 行(手写工具 schema 约 13 行);`33_reasoning` 113 行(按 API 分支 17 行 + 配置 5 行) | `examples/src/`(行数为人工计数,估计值已标注) |
 | F15 | 无 `#[non_exhaustive]`;README 引用不存在的 `docs/READINESS.md`;上游 PyPI 已到 0.24.0,本项目 pin 在 0.23.1 | 前两份文档 |
 
 **对"生态定位"的一个额外观察**:F10 是一个**静默失败**的学习陷阱。用户写 `#[function_tool(timeout = 5)]` 会编译通过、完全不生效。这类问题应作为 P1 的第一批修复项。
@@ -227,7 +227,7 @@ let t = Tool::typed("get_temperature", "...", |ctx, a: TempArgs| async move {
 
 ### 4.5 类型化 Reasoning + 模型名后缀(P2-10、A6)
 
-**现状**:`reasoning: Option<Value>`;Responses 与 Chat Completions 写法不同(`examples/src/25_reasoning.rs` 分支 17 行)。
+**现状**:`reasoning: Option<Value>`;Responses 与 Chat Completions 写法不同(`examples/src/33_reasoning.rs` 分支 17 行)。
 
 ```rust
 #[non_exhaustive]
@@ -243,7 +243,7 @@ agent.run("...").reasoning(Effort::High);          // 或显式设置
 
 ### 4.6 HITL 便捷 API + 审批绑定摘要(P2-12、A13)
 
-**现状**:约 34 行循环(`examples/src/12_hitl.rs:65-98`),且 `RunState::from_json(&agent.name, …)` 按名字匹配。
+**现状**:约 34 行循环(`examples/src/17_hitl.rs:65-98`),且 `RunState::from_json(&agent.name, …)` 按名字匹配。
 
 ```rust
 let out = agent.run("...")
@@ -573,7 +573,7 @@ graph LR
 **A.1 带上下文与审批的工具**
 
 ```rust
-// 现状(examples/12_hitl.rs, 19_run_context.rs):手写 schema + 手动解析
+// 现状(examples/17_hitl.rs, 26_run_context.rs):手写 schema + 手动解析
 FunctionTool::new("get_temperature", "...",
     serde_json::json!({ "type": "object", "properties": { "city": { "type": "string" } },
                         "required": ["city"], "additionalProperties": false }),

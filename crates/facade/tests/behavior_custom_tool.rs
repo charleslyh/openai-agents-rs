@@ -1,6 +1,6 @@
 //! A hand-written `impl Tool` goes through the same machinery as a built-in one.
 //!
-//! This is the contract `examples/src/33_structured_tool.rs` leans on, checked offline: the schema
+//! This is the contract `examples/src/11_structured_tool.rs` leans on, checked offline: the schema
 //! comes from the argument struct, the policy pauses per call from the arguments, a declared
 //! dependency is checked before the first turn, a failure reads as the tool's own text, and
 //! middleware wraps the call.

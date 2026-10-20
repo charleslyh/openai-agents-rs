@@ -20,16 +20,19 @@ workspace = true
 
 # One entry per file in `src/`; `src/common/` is a module, not an example, so it is not listed.
 #
-# The `NN_` prefixes order the directory for a reader working through them in order (hello → tools →
-# streamed → …). They are *not* part of the target name: `name` stays a bare identifier, so the
-# command is `cargo run -p openai-agents-examples --example hello`, not `--example 01_hello`.
-# Adding a file means adding a section here — which is also where a per-example `required-features`
-# would go if one of them ever needs an extra facade feature.
-# One example per knowledge point, ordered like the web demo's capability checklist (see
-# `demo/web/assets/index.html`): conversation and memory, tools, multi-agent,
-# safety and governance,
-# output and observability, run control. Each header names the checklist item it covers;
-# the full web console lives in `demo/web`. Only closely related ideas share a file.
+# The `NN_` prefixes order the directory for a reader working through it top to bottom: first the
+# smallest agent and the zero-configuration one, then one group per web-demo checklist item (see
+# `demo/web/assets/index.html`): conversation and memory, tools, multi-agent, safety and
+# governance, output and observability, run control. The number is the position in this file, so
+# when you add an example put it at the end of its group and renumber the ones after it (`git mv`
+# keeps the history). The prefixes are *not* part of the target name: `name` stays a bare
+# identifier, so the command is `cargo run -p openai-agents-examples --example hello`, not
+# `--example 01_hello`.
+#
+# Adding a file means adding a section here — which is also where a per-example
+# `required-features` would go if one of them ever needs an extra facade feature. One example per
+# knowledge point; only closely related ideas share a file. The full web console lives in
+# `demo/web`.
 #
 # `mcp` needs the facade's `mcp` feature (declared with the dependency below).
 
@@ -37,139 +40,139 @@ workspace = true
 name = "hello"
 path = "src/01_hello.rs"
 
+[[example]]
+name = "zero_config"
+path = "src/02_zero_config.rs"
+
 # Conversation and memory
 [[example]]
 name = "streamed"
-path = "src/02_streamed.rs"
+path = "src/03_streamed.rs"
 
 [[example]]
 name = "memory"
-path = "src/03_memory.rs"
+path = "src/04_memory.rs"
 
 [[example]]
 name = "compaction"
-path = "src/04_compaction.rs"
+path = "src/05_compaction.rs"
+
+[[example]]
+name = "file_session"
+path = "src/06_file_session.rs"
 
 # Tools
 [[example]]
 name = "tools"
-path = "src/05_tools.rs"
+path = "src/07_tools.rs"
 
 [[example]]
 name = "parallel_tools"
-path = "src/06_parallel_tools.rs"
+path = "src/08_parallel_tools.rs"
 
 [[example]]
 name = "tool_timeout"
-path = "src/07_tool_timeout.rs"
+path = "src/09_tool_timeout.rs"
 
 [[example]]
 name = "tool_recovery"
-path = "src/08_tool_recovery.rs"
+path = "src/10_tool_recovery.rs"
+
+[[example]]
+name = "structured_tool"
+path = "src/11_structured_tool.rs"
+
+[[example]]
+name = "capability"
+path = "src/12_capability.rs"
+
+[[example]]
+name = "deferred_capability"
+path = "src/13_deferred_capability.rs"
 
 [[example]]
 name = "mcp"
-path = "src/09_mcp.rs"
+path = "src/14_mcp.rs"
 
 # Multi-agent
 [[example]]
 name = "handoff"
-path = "src/10_handoff.rs"
+path = "src/15_handoff.rs"
 
 [[example]]
 name = "agents_as_tools"
-path = "src/11_agents_as_tools.rs"
+path = "src/16_agents_as_tools.rs"
 
 # Safety and governance
 [[example]]
 name = "hitl"
-path = "src/12_hitl.rs"
+path = "src/17_hitl.rs"
 
 [[example]]
 name = "always_approve"
-path = "src/13_always_approve.rs"
+path = "src/18_always_approve.rs"
 
 [[example]]
 name = "input_guardrail"
-path = "src/14_input_guardrail.rs"
+path = "src/19_input_guardrail.rs"
 
 [[example]]
 name = "output_guardrail"
-path = "src/15_output_guardrail.rs"
+path = "src/20_output_guardrail.rs"
 
 [[example]]
 name = "tool_input_guardrail"
-path = "src/16_tool_input_guardrail.rs"
+path = "src/21_tool_input_guardrail.rs"
 
 [[example]]
 name = "tool_output_guardrail"
-path = "src/17_tool_output_guardrail.rs"
+path = "src/22_tool_output_guardrail.rs"
+
+[[example]]
+name = "verdict_transform"
+path = "src/23_verdict_transform.rs"
+
+[[example]]
+name = "builtin_guardrails"
+path = "src/24_builtin_guardrails.rs"
 
 # Output and observability
 [[example]]
 name = "structured_output"
-path = "src/18_structured_output.rs"
+path = "src/25_structured_output.rs"
 
 [[example]]
 name = "run_context"
-path = "src/19_run_context.rs"
+path = "src/26_run_context.rs"
 
 [[example]]
 name = "hooks"
-path = "src/20_hooks.rs"
+path = "src/27_hooks.rs"
 
 [[example]]
 name = "usage"
-path = "src/21_usage.rs"
+path = "src/28_usage.rs"
 
 [[example]]
 name = "tracing"
-path = "src/22_tracing.rs"
-
-# Run control
-[[example]]
-name = "cancel"
-path = "src/23_cancel.rs"
-
-[[example]]
-name = "settings"
-path = "src/24_settings.rs"
-
-[[example]]
-name = "reasoning"
-path = "src/25_reasoning.rs"
-
-[[example]]
-name = "capability"
-path = "src/26_capability.rs"
-
-[[example]]
-name = "deferred_capability"
-path = "src/32_deferred_capability.rs"
-
-[[example]]
-name = "structured_tool"
-path = "src/33_structured_tool.rs"
-
-[[example]]
-name = "verdict_transform"
-path = "src/27_verdict_transform.rs"
-
-[[example]]
-name = "zero_config"
-path = "src/28_zero_config.rs"
-
-[[example]]
-name = "file_session"
-path = "src/29_file_session.rs"
+path = "src/29_tracing.rs"
 
 [[example]]
 name = "trace_export"
 path = "src/30_trace_export.rs"
 
+# Run control
 [[example]]
-name = "builtin_guardrails"
-path = "src/31_builtin_guardrails.rs"
+name = "cancel"
+path = "src/31_cancel.rs"
+
+[[example]]
+name = "settings"
+path = "src/32_settings.rs"
+
+[[example]]
+name = "reasoning"
+path = "src/33_reasoning.rs"
 
 # The sources are user-facing code, so they live at the repository root rather than inside
 # `crates/facade`. They depend on the facade the way a user's project would.

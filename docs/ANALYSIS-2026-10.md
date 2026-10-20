@@ -134,7 +134,7 @@ pub type ToolInvoker = Arc<
 `Agent.tools: Vec<FunctionTool>` 是**唯一**的工具形态，没有 `Tool` trait。Python 有 `FunctionTool / HostedTool / McpTool / ComputerTool` 的多态层，这里被压平成"具体类型 + 闭包"。后果：
 
 - 用户无法自定义工具类型（OCP 违反）：想给工具加统一鉴权/限流/审计，只能改 SDK 或在每个闭包里手写。
-- `FunctionTool::new` 的备选路径要求**手写 JSON Schema**，且闭包签名是 `(ToolContext, String) -> Result<ToolResult>`——用户自己 `serde_json::from_str` 解析参数（`examples/src/12_hitl.rs` 第 26-39 行就是这个样子）。这与 `#[function_tool]` 的"零样板"体验形成巨大落差，同一个概念两套心智模型。
+- `FunctionTool::new` 的备选路径要求**手写 JSON Schema**，且闭包签名是 `(ToolContext, String) -> Result<ToolResult>`——用户自己 `serde_json::from_str` 解析参数（`examples/src/17_hitl.rs` 第 26-39 行就是这个样子）。这与 `#[function_tool]` 的"零样板"体验形成巨大落差，同一个概念两套心智模型。
 - `ToolResult` 携带 `interruptions` / `nested_state`（`crates/core/src/tool.rs` 第 67-74 行）——**内部调度概念泄漏进了公共返回值类型**，普通工具作者必须面对与他无关的字段。
 
 ### P1-5 热路径上的 `Arc::new(agent.clone())`
@@ -176,7 +176,7 @@ fn install_default_provider() {
 
 ### P1-7 过程式 API 与"半成品"的手工构造
 
-`RunConfig` 只提供了 2 个 `with_*` 构造器（`with_tool_error_formatter`、`with_call_model_input_filter`，第 246-265 行），其余 22 个字段和 `RunOptions` 全部只能靠 `RunOptions { run_config: RunConfig { .., ..Default::default() }, ..Default::default() }` 这种**俄罗斯套娃字面量**（`examples/src/25_reasoning.rs` 第 57-61 行）。这是当前 API 学习成本最高的单点：用户要同时理解 `RunOptions`、`RunConfig`、`ModelSettings` 三层容器才能改一个 `temperature`。
+`RunConfig` 只提供了 2 个 `with_*` 构造器（`with_tool_error_formatter`、`with_call_model_input_filter`，第 246-265 行），其余 22 个字段和 `RunOptions` 全部只能靠 `RunOptions { run_config: RunConfig { .., ..Default::default() }, ..Default::default() }` 这种**俄罗斯套娃字面量**（`examples/src/33_reasoning.rs` 第 57-61 行）。这是当前 API 学习成本最高的单点：用户要同时理解 `RunOptions`、`RunConfig`、`ModelSettings` 三层容器才能改一个 `temperature`。
 
 ### P1-8 命名语义漂移（Python 术语 vs Rust 抽象）
 
@@ -197,7 +197,7 @@ fn install_default_provider() {
     pub include_usage: Option<bool>,
 ```
 
-`tool_choice` / `truncation` / `verbosity` 做了类型化（很好），但 `reasoning`——**当前最常用的推理模型设置**——是 `Option<Value>`，用户必须写 `json!({"effort": effort, "summary": "auto"})`（`examples/src/25_reasoning.rs` 第 39 行）。而且 Responses 与 Chat Completions 两侧的写法还完全不同（`reasoning` vs `extra_args` 里的 `reasoning_effort`），这个 API 差异本应由 SDK 吸收，现在完全转嫁给了用户。`preserve_raw_usage`、`response_include`、`extra_args` 等也仍是 `Option<Map<String, Value>>`（Python 遗留）。
+`tool_choice` / `truncation` / `verbosity` 做了类型化（很好），但 `reasoning`——**当前最常用的推理模型设置**——是 `Option<Value>`，用户必须写 `json!({"effort": effort, "summary": "auto"})`（`examples/src/33_reasoning.rs` 第 39 行）。而且 Responses 与 Chat Completions 两侧的写法还完全不同（`reasoning` vs `extra_args` 里的 `reasoning_effort`），这个 API 差异本应由 SDK 吸收，现在完全转嫁给了用户。`preserve_raw_usage`、`response_include`、`extra_args` 等也仍是 `Option<Map<String, Value>>`（Python 遗留）。
 
 ### P2-11 公共命名空间过宽
 
@@ -210,7 +210,7 @@ fn install_default_provider() {
     pub(crate) interrupt_state: Option<InterruptSnapshot>,
 ```
 
-`pub(crate)` 字段出现在公共 struct 中是必要的妥协，但它说明 `RunResult` 同时承担"结果值对象"和"可续跑状态容器"两个职责。用户可见的后果就是 HITL 流程必须写 while 循环 + `to_state()` + `from_json` + `run_state`（`examples/src/12_hitl.rs` 第 65-98 行，34 行样板），且 `run_state` 还要求 `state.starting_agent_name == agent.name`（字符串匹配，不是类型匹配）。
+`pub(crate)` 字段出现在公共 struct 中是必要的妥协，但它说明 `RunResult` 同时承担"结果值对象"和"可续跑状态容器"两个职责。用户可见的后果就是 HITL 流程必须写 while 循环 + `to_state()` + `from_json` + `run_state`（`examples/src/17_hitl.rs` 第 65-98 行，34 行样板），且 `run_state` 还要求 `state.starting_agent_name == agent.name`（字符串匹配，不是类型匹配）。
 
 ---
 

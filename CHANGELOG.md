@@ -94,7 +94,7 @@ entry will be `0.1.0`.
 - A hand-written `impl Tool` is now buildable outside the SDK: `ToolSpec::new` / `ToolSpec::typed`
   and the `ToolPolicy` builders (`needs_resolution`, `enabled`, `timeout`, `timeout_behavior`,
   `on_failure`, `timeout_message`), plus `NeedsResolution::dynamic`. See
-  `examples/src/33_structured_tool.rs` (X-023).
+  `examples/src/11_structured_tool.rs` (X-023).
 - `#[derive(ToolMeta)]` + `TypedTool` + `FunctionTool::from_typed::<Args>()` (X-024): a tool declared
   by annotations on its argument struct. Field doc comments are the parameter descriptions, the
   struct's doc comment is the tool description, and `#[tool(name, timeout, requires(..),

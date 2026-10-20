@@ -105,43 +105,43 @@ To talk to a server that needs no key, or to route several servers by model pref
 The examples live in [`examples/`](./examples) — a workspace member of their own, so they depend
 on `openai-agents` the way your project would rather than reaching into the SDK's internals.
 
-Ordered like the web demo's capability checklist, one knowledge point per example.
+Ordered like the web demo's capability checklist, one knowledge point per example. The number is the file's prefix in `examples/src/` (`01_hello.rs`); the command takes the bare name.
 
-| Example | Checklist group | What it shows |
-|---------|-----------------|----------------|
-| `hello` | — | Minimal `Agent` + `Runner::run` |
-| `streamed` | Conversation and memory | `Runner::run_streamed` events (streaming output) |
-| `memory` | Conversation and memory | `Session` multi-turn memory |
-| `compaction` | Conversation and memory | `CompactingSession` context compaction |
-| `tools` | Tools | `#[function_tool]` tool loop |
-| `parallel_tools` | Tools | Parallel tool calls |
-| `tool_timeout` | Tools | Tool timeout (`ErrorAsResult` / `RaiseException`) |
-| `tool_recovery` | Tools | Model retries after a tool failure |
-| `mcp` | Tools | Local stdio MCP server with a `ToolFilter` |
-| `handoff` | Multi-agent | Multi-agent handoff |
-| `agents_as_tools` | Multi-agent | `Agent.as_tool` orchestration |
-| `hitl` | Safety and governance | `RunOptions::resolve_with` approvals, or the explicit `RunState` JSON resume |
-| `always_approve` | Safety and governance | Sticky `always_approve` |
-| `input_guardrail` | Safety and governance | Input guardrail tripwire |
-| `output_guardrail` | Safety and governance | Output guardrail tripwire |
-| `tool_input_guardrail` | Safety and governance | Tool input guardrail (reject a call) |
-| `tool_output_guardrail` | Safety and governance | Tool output guardrail (redact a result) |
-| `verdict_transform` | Safety and governance | `Verdict::Transform`: redact the user's input and keep going |
-| `structured_output` | Output and observability | `output_type` + typed `final_output_as::<T>()` |
-| `run_context` | Output and observability | `RunOptions::context` read inside a tool |
-| `hooks` | Output and observability | `RunHooks` / `AgentHooks` |
-| `usage` | Output and observability | `RunResult::usage` |
-| `tracing` | Output and observability | Custom `TracingProcessor` |
-| `cancel` | Run control | `RunResultStreaming::cancel` |
-| `settings` | Run control | `ModelSettings` temperature + retry, `max_turns` |
-| `reasoning` | Run control | Typed `Reasoning` effort/summary for either API |
-| `capability` | Rust-only | A named bundle of tools, instructions and guardrails |
-| `zero_config` | Rust-only | `openai_agents::run`: provider and model from the environment, offline without a key |
-| `structured_tool` | Rust-only | `#[derive(ToolMeta)]` + `TypedTool`: parameters, per-call approval, timeout and dependency as annotations on the argument struct; middleware |
-| `deferred_capability` | Rust-only | `CapabilityParts::deferred`: tools stay out of the prompt until the model loads them |
-| `builtin_guardrails` | Safety and governance | Ready-made guardrails from `openai-agents-guardrails` |
-| `file_session` | Conversation and memory | `FileSession`: a conversation in a JSONL file |
-| `trace_export` | Output and observability | Batched console/JSONL export and metrics |
+| # | Example | Checklist group | What it shows |
+|---|---------|-----------------|----------------|
+| 01 | `hello` | — | Minimal `Agent` + `Runner::run` |
+| 02 | `zero_config` | — | `openai_agents::run`: provider and model from the environment, offline without a key (Rust-only) |
+| 03 | `streamed` | Conversation and memory | `Runner::run_streamed` events (streaming output) |
+| 04 | `memory` | Conversation and memory | `Session` multi-turn memory |
+| 05 | `compaction` | Conversation and memory | `CompactingSession` context compaction |
+| 06 | `file_session` | Conversation and memory | `FileSession`: a conversation in a JSONL file (Rust-only) |
+| 07 | `tools` | Tools | `#[function_tool]` tool loop |
+| 08 | `parallel_tools` | Tools | Parallel tool calls |
+| 09 | `tool_timeout` | Tools | Tool timeout (`ErrorAsResult` / `RaiseException`) |
+| 10 | `tool_recovery` | Tools | Model retries after a tool failure |
+| 11 | `structured_tool` | Tools | `#[derive(ToolMeta)]` + `TypedTool`: parameters, per-call approval, timeout and dependency as annotations on the argument struct; middleware (Rust-only) |
+| 12 | `capability` | Tools | A named bundle of tools, instructions and guardrails (Rust-only) |
+| 13 | `deferred_capability` | Tools | `CapabilityParts::deferred`: tools stay out of the prompt until the model loads them (Rust-only) |
+| 14 | `mcp` | Tools | Local stdio MCP server with a `ToolFilter` |
+| 15 | `handoff` | Multi-agent | Multi-agent handoff |
+| 16 | `agents_as_tools` | Multi-agent | `Agent.as_tool` orchestration |
+| 17 | `hitl` | Safety and governance | `RunOptions::resolve_with` approvals, or the explicit `RunState` JSON resume |
+| 18 | `always_approve` | Safety and governance | Sticky `always_approve` |
+| 19 | `input_guardrail` | Safety and governance | Input guardrail tripwire |
+| 20 | `output_guardrail` | Safety and governance | Output guardrail tripwire |
+| 21 | `tool_input_guardrail` | Safety and governance | Tool input guardrail (reject a call) |
+| 22 | `tool_output_guardrail` | Safety and governance | Tool output guardrail (redact a result) |
+| 23 | `verdict_transform` | Safety and governance | `Verdict::Transform`: redact the user's input and keep going (Rust-only) |
+| 24 | `builtin_guardrails` | Safety and governance | Ready-made guardrails from `openai-agents-guardrails` (Rust-only) |
+| 25 | `structured_output` | Output and observability | `output_type` + typed `final_output_as::<T>()` |
+| 26 | `run_context` | Output and observability | `RunOptions::context` read inside a tool |
+| 27 | `hooks` | Output and observability | `RunHooks` / `AgentHooks` |
+| 28 | `usage` | Output and observability | `RunResult::usage` |
+| 29 | `tracing` | Output and observability | Custom `TracingProcessor` |
+| 30 | `trace_export` | Output and observability | Batched console/JSONL export and metrics (Rust-only) |
+| 31 | `cancel` | Run control | `RunResultStreaming::cancel` |
+| 32 | `settings` | Run control | `ModelSettings` temperature + retry, `max_turns` |
+| 33 | `reasoning` | Run control | Typed `Reasoning` effort/summary for either API |
 
 They need `OPENAI_API_KEY` and `OPENAI_MODEL` in the environment; `OPENAI_BASE_URL` and
 `OPENAI_API` (`chat_completions` | `responses`) are optional.
