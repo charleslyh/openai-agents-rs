@@ -1,0 +1,1140 @@
+# OpenAI Agents SDK for Rust
+
+> A Rust port of the OpenAI Agents Python SDK: agents, a runner with tools, handoffs, guardrails,
+> sessions, tracing and human-in-the-loop, provider-neutral. Behaviours are pinned to the Python
+> implementation v0.23.1 and checked against it by an oracle.
+
+## Install
+
+```toml
+openai-agents = "0.1"                                                  # core + OpenAI
+openai-agents = { version = "0.1", features = ["providers", "tools"] } # presets, offline model, tools
+```
+
+```rust
+use openai_agents::prelude::*;
+
+let agent = Agent::new("Assistant").instructions("Be brief.");
+let result = Runner::run(&agent, "Hello", RunOptions::new()).await?;
+println!("{}", result.final_output_as_str().unwrap_or_default());
+```
+
+`openai_agents::run("instructions", "input")` picks the provider from the environment; with
+`AGENTS_OFFLINE=1` it answers locally and needs no key.
+
+## The shape of the API
+
+- `Agent`: `instructions`, `tools`, `handoffs`, `model` / `model_name`, `model_settings`,
+  `output_type`, `input_guardrails` / `output_guardrails`, `hooks`, `capability`.
+- `Runner::run(agent, input, RunOptions)`, `run_streamed`, `run_blocking`, `run_state`.
+- `RunOptions`: builder. `.temperature(..)`, `.max_turns(..)`, `.reasoning(..)`, `.session(..)`,
+  `.provider(..)`, `.resolve_with(closure)`, `.with(value)` for typed context.
+- Tools: `#[function_tool]` over `async fn`, or `FunctionTool::typed` over a `schemars` struct, or
+  the `Tool` trait for something custom.
+- Pausing: `FunctionTool::with_needs_resolution(true)` + `RunResult::to_state()` + `RunState::approve`
+  / `reject` / `provide_output` + `Runner::run_state`.
+- Guardrails: `input_guardrail` / `output_guardrail` closures returning
+  `GuardrailFunctionOutput`, whose verdict is `Pass`, `Fail { reason, severity }` or `Transform`.
+- Bundles: `CapabilityParts::new().tool(..).instructions(..).named("x")`, then `.capability(..)`.
+  `.deferred("description")` keeps it out of the prompt until the model calls `load_capability`.
+- Contracts to implement: `Tool`, `Model`, `ModelProvider`, `Session`, `TracingProcessor`,
+  `Capability`, `RunStateStore`.
+
+## Crates
+
+`openai-agents` re-exports everything. Under it: `core` (no HTTP), `macros`, `testing`, `openai`,
+`providers`, `mcp`, `sqlite`, `sessions`, `observability`, `tools`, `guardrails`.
+
+## Docs
+
+- [README.md](README.md): quick start, crates and features, examples
+- [docs/COMPAT.md](docs/COMPAT.md): support matrix: what the Python SDK has and what happens here
+- [docs/DEVIATIONS.md](docs/DEVIATIONS.md): every intentional difference, with an id (D-… / X-…)
+- [docs/MIGRATION-FROM-PYTHON.md](docs/MIGRATION-FROM-PYTHON.md): Python API name → Rust API name
+- [docs/COMPARISON.md](docs/COMPARISON.md): how this compares with the Python SDK, Rig and ADK-Rust
+- [STABILITY.md](STABILITY.md): what is stable, and the deprecation policy
+
+## Optional
+
+- `cargo agents new <name> --template <chat|tools|hitl>` scaffolds a project.
+- `conformance/scenarios/` holds the declarative parity scenarios.
+
+---
+
+# Source: README.md
+
+# OpenAI Agents SDK (Rust)
+
+Rust port of the [OpenAI Agents Python SDK](https://github.com/openai/openai-agents-python) **v0.23.1**.
+
+Supported now: **Agent**, **Runner** (`run` / `run_blocking` / `run_streamed`), **FunctionTool** (+ `#[function_tool]` with full `schemars` schemas), **handoffs** (`HandoffCallItem` / `HandoffOutputItem` + `handoff_span`), **structured output** (`output_type`), **run context**, **input/output guardrails**, **lifecycle hooks**, **ModelProvider** name resolution, **extended `ModelSettings`**, **local Tracing**, **Responses + Chat Completions**.
+
+## Positioning
+
+This is a **provider-neutral** agent SDK, not a client for the official OpenAI service. It runs
+the Python SDK's agent loop (tools, handoffs, guardrails, sessions, tracing, HITL) on top of **any
+endpoint that speaks the OpenAI Responses or Chat Completions protocol**: OpenAI itself, but also
+gateways, self-hosted servers and third-party models. Point it at a different provider with a base
+URL and key.
+
+Consequently, features that exist only because OpenAI hosts them are **out of scope**: hosted tools
+(web / file search, code interpreter, image generation, hosted MCP, computer, shell, apply_patch),
+server-side prompts (`Agent.prompt`), the Conversations API and `responses.compact`, and OpenAI
+trace export. Anything that only needs a compatible *protocol* is in scope. See
+[`docs/DEVIATIONS.md`](./docs/DEVIATIONS.md#scope) for the full list.
+
+## Crates and features
+
+Depend on `openai-agents`; it re-exports everything below under the paths the SDK has always had.
+
+| Crate | What it holds | Pulled in by |
+| --- | --- | --- |
+| `openai-agents-core` | agents, tools, handoffs, guardrails, the run loop, sessions, tracing, and the `Model` / `ModelProvider` / `McpServer` contracts. No HTTP client, database or process spawning | always |
+| `openai-agents-macros` | `#[function_tool]` | always |
+| `openai-agents-testing` | `ScriptedModel` and item builders (`openai_agents::testing`) | always |
+| `openai-agents-openai` | Chat Completions and Responses adapters, `OpenAIProvider`, `CompatibleProvider` | feature `openai` (**default**) |
+| `openai-agents-mcp` | MCP client: stdio and streamable HTTP, tool filters, `McpServerManager` | feature `mcp` |
+| `openai-agents-sqlite` | `SqliteSession`, file-compatible with the Python SDK | feature `sqlite` |
+| `openai-agents-providers` | provider presets (DeepSeek, Gemini, Groq, OpenRouter, Anthropic, Ollama), the capability matrix and the offline model | feature `providers` |
+| `openai-agents-sessions` | `FileSession` / `FileRunStateStore`; Redis and Postgres variants | features `sessions`, `redis`, `postgres` |
+| `openai-agents-observability` | console, JSONL and OpenTelemetry export, metrics | features `observability`, `otel` |
+| `openai-agents-tools` | calculator, clock, read-only files, `web_fetch` with private networks refused | features `tools`, `webfetch` |
+| `openai-agents-guardrails` | length, personal data, prompt injection, keywords, JSON Schema | feature `guardrails` |
+
+```toml
+openai-agents = "0.1"                                                        # core + OpenAI
+openai-agents = { version = "0.1", features = ["providers", "tools", "guardrails"] }
+openai-agents = { version = "0.1", features = ["mcp", "sqlite"] }            # plus MCP and SQLite
+openai-agents = { version = "0.1", default-features = false }                # core only, bring your own Model
+```
+
+Features add up; `providers` is what makes `openai_agents::run` and `zero_config_options` work with
+anything but OpenAI.
+
+Contributors: each crate carries an `AGENTS.md` with its boundary rules and the traps worth
+knowing before you change it (`crates/core/AGENTS.md`, `crates/mcp/AGENTS.md`, and so on).
+
+With `default-features = false` the build contains no HTTP client. A model *name* then needs a
+provider you set yourself (`RunConfig.model.provider`, or `set_default_model_provider_factory`).
+With `openai`, `Runner` installs the OpenAI provider on its first call, so `OPENAI_API_KEY`
+(or `OPENAI_BASE_URL`) is enough. See D-047 in [`docs/DEVIATIONS.md`](./docs/DEVIATIONS.md).
+
+## Quick start
+
+```rust
+use openai_agents::prelude::*;
+
+#[tokio::main]
+async fn main() -> Result<(), AgentsError> {
+    let agent = Agent::new("Assistant")
+        .instructions("You only respond in haikus.")
+        .model_name(std::env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-4.1-mini".into()));
+    let result = Runner::run(&agent, "Tell me about recursion.", RunOptions::new()).await?;
+    println!("{}", result.final_output);
+    Ok(())
+}
+```
+
+`openai_agents::prelude` holds the types most programs need; everything else is at the crate root.
+
+### Start a project
+
+```bash
+cargo install openai-agents-scaffold   # installs `cargo-agents`
+cargo agents new my-agent              # templates: chat (default), tools, hitl
+cd my-agent && AGENTS_OFFLINE=1 cargo run   # no key needed; set one to talk to a model
+```
+
+The generated project depends on `openai-agents` with `providers`, so a key in the environment (or
+`AGENTS_OFFLINE=1`) is the whole setup. `--path` points it at a local checkout instead of the
+published version.
+
+## Examples
+
+Numbered from core path → extended usage. Live OpenAI-compatible API (not `ScriptedModel`).
+
+Required env: `OPENAI_API_KEY`, `OPENAI_MODEL`.  
+Optional: `OPENAI_BASE_URL`, `OPENAI_API` (`chat_completions` | `responses`).
+
+Which API a model uses (D-I): `OpenAIProvider::api(..)` / `CompatibleProvider::api(..)` first, then
+`set_default_openai_api()`, then **Chat Completions** (what nearly every compatible server
+implements) for every server, OpenAI included. Choose Responses explicitly with `.api(Responses)`,
+`set_default_openai_api(Responses)` or the `openai_responses/<model>` name prefix.
+Both APIs stream standard Responses wire events such as `response.output_text.delta` (D-011). The
+example harness reads `OPENAI_API` (`chat_completions` | `responses`) to override the choice.
+
+To talk to a server that needs no key, or to route several servers by model prefix, use
+`CompatibleProvider::new(base_url)` (key optional, Chat Completions by default) with
+`MultiProvider`: `"local/qwen2.5"`, `"gateway/my-model"`.
+
+The examples live in [`examples/`](./examples) — a workspace member of their own, so they depend
+on `openai-agents` the way your project would rather than reaching into the SDK's internals.
+
+Ordered like the web demo's capability checklist, one knowledge point per example.
+
+| Example | Checklist group | What it shows |
+|---------|-----------------|----------------|
+| `hello` | — | Minimal `Agent` + `Runner::run` |
+| `streamed` | Conversation and memory | `Runner::run_streamed` events (streaming output) |
+| `memory` | Conversation and memory | `Session` multi-turn memory |
+| `compaction` | Conversation and memory | `CompactingSession` context compaction |
+| `tools` | Tools | `#[function_tool]` tool loop |
+| `parallel_tools` | Tools | Parallel tool calls |
+| `tool_timeout` | Tools | Tool timeout (`ErrorAsResult` / `RaiseException`) |
+| `tool_recovery` | Tools | Model retries after a tool failure |
+| `mcp` | Tools | Local stdio MCP server with a `ToolFilter` |
+| `handoff` | Multi-agent | Multi-agent handoff |
+| `agents_as_tools` | Multi-agent | `Agent.as_tool` orchestration |
+| `hitl` | Safety and governance | `RunOptions::resolve_with` approvals, or the explicit `RunState` JSON resume |
+| `always_approve` | Safety and governance | Sticky `always_approve` |
+| `input_guardrail` | Safety and governance | Input guardrail tripwire |
+| `output_guardrail` | Safety and governance | Output guardrail tripwire |
+| `tool_input_guardrail` | Safety and governance | Tool input guardrail (reject a call) |
+| `tool_output_guardrail` | Safety and governance | Tool output guardrail (redact a result) |
+| `verdict_transform` | Safety and governance | `Verdict::Transform`: redact the user's input and keep going |
+| `structured_output` | Output and observability | `output_type` + typed `final_output_as::<T>()` |
+| `run_context` | Output and observability | `RunOptions::context` read inside a tool |
+| `hooks` | Output and observability | `RunHooks` / `AgentHooks` |
+| `usage` | Output and observability | `RunResult::usage` |
+| `tracing` | Output and observability | Custom `TracingProcessor` |
+| `cancel` | Run control | `RunResultStreaming::cancel` |
+| `settings` | Run control | `ModelSettings` temperature + retry, `max_turns` |
+| `reasoning` | Run control | Typed `Reasoning` effort/summary for either API |
+| `capability` | Rust-only | A named bundle of tools, instructions and guardrails |
+| `zero_config` | Rust-only | `openai_agents::run`: provider and model from the environment, offline without a key |
+| `deferred_capability` | Rust-only | `CapabilityParts::deferred`: tools stay out of the prompt until the model loads them |
+| `builtin_guardrails` | Safety and governance | Ready-made guardrails from `openai-agents-guardrails` |
+| `file_session` | Conversation and memory | `FileSession`: a conversation in a JSONL file |
+| `trace_export` | Output and observability | Batched console/JSONL export and metrics |
+
+They need `OPENAI_API_KEY` and `OPENAI_MODEL` in the environment; `OPENAI_BASE_URL` and
+`OPENAI_API` (`chat_completions` | `responses`) are optional.
+
+```bash
+cargo run -p openai-agents-examples --example hello
+cargo run -p openai-agents-examples --example tools
+
+OPENAI_API=responses cargo run -p openai-agents-examples --example tools
+
+EXAMPLE_INPUT="Translate 'Hello' to French and Spanish." \
+  cargo run -p openai-agents-examples --example agents_as_tools
+HITL_AUTO=approve cargo run -p openai-agents-examples --example hitl
+
+cargo run -p openai-agents-examples --example structured_output
+```
+
+(The `-p openai-agents-examples` is needed because the workspace has more than one default member,
+so a bare `cargo run --example` cannot tell which package you mean.)
+
+### Web demo
+
+A local web console (axum + SSE) in its own package, [`demo/web`](./demo/web): one chat box over a
+multi-agent network, a capability checklist, and a chaos drawer that injects faults. The
+examples above follow its checklist.
+
+```bash
+cargo run -p openai-agents-web-demo
+# then open http://127.0.0.1:3000
+```
+
+Uses a real model, so `OPENAI_API_KEY` and `OPENAI_MODEL` are required (startup fails without
+them). Extra variables:
+
+- `DEMO_ADDR` — listen address, default `127.0.0.1:3000`. A non-loopback address prints a warning:
+  the demo has no authentication.
+- `DEMO_DEBUG` — `1`/`0`. Controls fault injection and `/api/debug/*`. On by default for loopback
+  addresses, off otherwise; when off, injected faults in requests are ignored.
+- `DEMO_HMR` — `1`/`0`. Live reload of `index.html`: the page is read from disk and the browser
+  reloads when the file changes, so front-end edits need no rebuild. On by default in debug builds
+  (plain `cargo run`) while debug features are on; release builds serve the embedded copy.
+
+The page has a capability checklist (22 items, lit up as you trigger them) and a debug drawer with
+fault presets: LLM errors and retry policies, tool delays and failures, summarizer and session
+failures, MCP failures, dropped streams, expired or replayed approvals, and server state reset. The
+MCP demo server is this same executable re-run with `--mcp-server`. The demo package builds the
+facade's `mcp` feature because of it.
+
+## Standard reference
+
+Vendored tree: [`vendor/openai-agents-python`](./vendor/openai-agents-python) pinned by [`vendor/PINNED_VERSION`](./vendor/PINNED_VERSION) (`v0.23.1`).
+
+```bash
+bash scripts/sync_vendor.sh --check
+```
+
+(Network note: preferred `git submodule` may fail behind restricted GitHub access; the sync script can download the release tarball.)
+
+## Verification
+
+| Layer | Command |
+|-------|---------|
+| 0. Format, lints, docs, vendor pin | `cargo fmt --all -- --check` · `cargo clippy --all-features --all-targets -- -D warnings` · `RUSTDOCFLAGS=-D warnings cargo doc --no-deps --all-features` · `bash scripts/sync_vendor.sh --check` |
+| 1. ScriptedModel behavior | `cargo test --no-default-features` |
+| 1.5 Property tests (generated inputs) | `cargo test --test property_core` |
+| 2. OpenAI HTTP contracts (wiremock) | `cargo test` (default features; needs `openai`) |
+| 2.5 Whole request bodies (insta snapshots) | `cargo test --test openai_wiremock` |
+| SQLite sessions | `cargo test --features sqlite` |
+| MCP interoperability (real Python MCP server) | `cargo test --features mcp --test mcp_interop` (needs the venv, skips without it) |
+| 3. Python oracle parity | `.venv/bin/python conformance/run_parity.py --check` then `cargo test --test parity_scenarios` |
+| 4. Live endpoint smoke (nightly, non-blocking) | `.github/workflows/nightly.yml` |
+| 5. Latency benchmarks | `cargo bench` |
+| 6. Line coverage ratchet | `.github/workflows/coverage.yml` |
+
+Shared scenarios live in [`conformance/scenarios/`](./conformance/scenarios/). A scenario only
+needs `expect` to run; the `.golden.json` produced by the Python oracle is optional and compared
+when present. `--check` fails on drift and never overwrites; regenerate deliberately with
+`.venv/bin/python conformance/run_parity.py --write-golden` on a machine that has
+`openai-agents==0.23.1` installed.
+
+CI runs every layer on Linux and macOS — see `.github/workflows/ci.yml` and
+[`docs/CONTRIBUTING.md`](./docs/CONTRIBUTING.md#layers).
+
+## MCP tools
+
+Enable the `mcp` feature. Any [MCP](https://modelcontextprotocol.io) server's tools become tools of
+your agent, whichever model you use:
+
+```rust
+let server = McpClient::stdio(
+    StdioParams::new("npx").args(["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]),
+)
+.tool_filter(ToolFilter::block(["write_file"]))
+.shared();
+let agent = Agent::new("files").mcp_servers(vec![server.clone()]);
+// ... run the agent ...
+server.cleanup().await?;
+```
+
+`McpClient::streamable_http(StreamableHttpParams::new(url).header("Authorization", "Bearer ..."))`
+reaches a remote server. See D-041 in [`docs/DEVIATIONS.md`](./docs/DEVIATIONS.md).
+
+## Other providers
+
+Use any OpenAI-compatible server by passing its base URL and key:
+
+```rust
+let model = Arc::new(OpenAIChatCompletionsModel::new(
+    "deepseek-chat",
+    std::env::var("API_KEY").unwrap(),
+    Some("https://api.deepseek.com/v1"),
+));
+```
+
+The Chat Completions adapter is checked against the Python converter and tolerates common
+deviations (tool calls without ids, list-valued `content`, error chunks in a stream). Things that
+only OpenAI accepts, such as `stream_options`, are sent to other servers only when you ask
+(`ModelSettings.include_usage`). See D-040 in [`docs/DEVIATIONS.md`](./docs/DEVIATIONS.md).
+
+## Keeping context short
+
+Long chats and tool-heavy runs outgrow the model's context. Two provider-neutral tools:
+
+- **Per call (history untouched):** `ToolOutputTrimmer` shortens old tool outputs and
+  `ContextWindowTrimmer` drops the oldest turns; set one as `RunConfig.model.input_filter`
+  (combine with `chain_input_filters`).
+- **Stored history:** wrap a session in `CompactingSession` with a `ModelSummarizer` (any model).
+  Old turns become a short summary once the history passes a token or item trigger.
+
+```rust
+let session = CompactingSession::new(
+    InMemorySession::shared("chat"),
+    Arc::new(ModelSummarizer::new(summary_model)),
+)
+.trigger_tokens(6_000)
+.keep_recent_turns(3)
+.shared();
+```
+
+## Compatibility & deviations
+
+- [`docs/COMPAT.md`](./docs/COMPAT.md) — support matrix
+- [`docs/DEVIATIONS.md`](./docs/DEVIATIONS.md) — intentional differences from Python (must stay current)
+- [`docs/IMPROVEMENT-PLAN.md`](./docs/IMPROVEMENT-PLAN.md) — where the SDK is heading: milestones, design decisions, and the improvement backlog
+- [`STABILITY.md`](./STABILITY.md) — which parts of the API are stable, and the deprecation policy
+- [`CHANGELOG.md`](./CHANGELOG.md) — what changed in each release
+- [`docs/MIGRATION-FROM-PYTHON.md`](./docs/MIGRATION-FROM-PYTHON.md) — Python → Rust API mapping and what to write yourself
+- [`docs/CONTRIBUTING.md`](./docs/CONTRIBUTING.md) — commit message format and verification
+- [`docs/COMPARISON.md`](./docs/COMPARISON.md) — where this SDK differs from the Python one, Rig and ADK-Rust
+- [`llms.txt`](./llms.txt) — the docs as one index for coding assistants ([`llms-full.txt`](./llms-full.txt) is the flat file)
+
+HITL is supported as tool-call *resolution*: a call pauses when `needs_resolution` (Python:
+`needs_approval`; fixed or dynamic) says so, and the host resolves it on the `RunState` — approve /
+reject (with sticky `always_approve` / `always_reject`), or hand back a result produced elsewhere
+with `provide_output` (D-048) — including calls inside `Agent.as_tool` nested runs. The Rust
+`RunState` JSON schema `openai-agents-rs/4` is a process-local snapshot format and is intentionally **not**
+Python 1.18 wire-compatible (D-012) — use one language per durable state store.
+
+## Still out of scope
+
+OpenAI-hosted capabilities (see [Positioning](#positioning)) and the sandbox runtime.
+
+## License
+
+MIT
+
+---
+
+# Source: docs/COMPAT.md
+
+# Compatibility Matrix
+
+## Python module -> Rust crate
+
+The SDK is a Cargo workspace. `openai-agents` (the facade, `crates/facade`) re-exports
+`openai_agents_core::*` plus the optional crates, so every path below is reachable from
+`openai_agents::…` without naming the crate — except where a row says otherwise.
+
+`RunConfig` rows below use Python's flat field names; the Rust fields are grouped by topic
+(`config.model.settings`, `config.tracing.workflow_name`, ...). See the table in
+[MIGRATION-FROM-PYTHON.md](./MIGRATION-FROM-PYTHON.md#runconfig-groups).
+
+| Python (`agents.*`) | Rust crate | Where |
+| --- | --- | --- |
+| `agent`, `agent_output`, `result`, `run`, `run_config`, `run_state`, `run_context` | `openai-agents-core` | `crates/core/src/{agent,agent_output,result,run_context}` 与 `crates/core/src/run/{mod,config}.rs`、`crates/core/src/run_state/` |
+| `tool`, `tool_context`, `tool_guardrails`, `function_schema`, `strict_schema` | `openai-agents-core` | `crates/core/src/{tool,tool_guardrails,strict_schema}` |
+| `items`, `handoffs`, `guardrail`, `lifecycle`, `usage`, `stream_events` | `openai-agents-core` | `crates/core/src/…` |
+| `model_settings`, `models` (the `Model` / `ModelProvider` contracts) | `openai-agents-core` | `crates/core/src/model` (contract only, no HTTP) |
+| `context` (trimmers), `memory` (`CompactingSession`) | `openai-agents-core` | `crates/core/src/{context,memory}`; see D13 for why this is not its own crate |
+| `tracing` | `openai-agents-core` | `crates/core/src/tracing`; D3 (allowed to depend only on `usage`) |
+| `retry` | `openai-agents-core` | `crates/core/src/retry`; `openai_retry_advice` moved to `crates/openai/src/retry_advice.rs` (D7) |
+| `models` (OpenAI provider, Responses / Chat Completions) | `openai-agents-openai` | `crates/openai`; facade feature **`openai`** (on by default) |
+| `mcp` | `openai-agents-mcp` | `crates/mcp`; the `McpServer` contract stays in core, facade feature **`mcp`** (**off** by default, D6) |
+| `extensions` (`sqlite`) / `SqliteSession` | `openai-agents-sqlite` | `crates/sqlite`; facade feature `sqlite` |
+| — (Rust-only) `FileSession`, `FileRunStateStore` | `openai-agents-sessions` | `crates/sessions`; facade feature `sessions` (**off** by default, X-016 / X-017) |
+| — (Rust-only) batched trace export, sinks, metrics | `openai-agents-observability` | `crates/observability`; facade feature `observability` (**off** by default, X-018) |
+| `testing` | `openai-agents-testing` | `crates/testing`; re-exported as `openai_agents::testing` (D2) |
+| `decorators` (`@function_tool`) | `openai-agents-macros` | `crates/macros`; `#[function_tool]` |
+| `realtime`, `voice`, `prompts`, `computer`, `editor`, `repl` | — | Not ported |
+
+
+Standard reference: `vendor/openai-agents-python` @ **v0.23.1** (`openai-agents==0.23.1`).
+Re-sync the vendored tree with `bash scripts/sync_vendor.sh`.
+
+Scope: provider-neutral. The SDK targets any OpenAI Responses / Chat Completions compatible endpoint, so OpenAI-hosted features are not planned (see [DEVIATIONS.md#scope](./DEVIATIONS.md#scope)); they appear below as **X**.
+
+Legend: **X** = out of scope (OpenAI-hosted) · **S** = supported · **P** = partial · **N** = not supported · **D** = intentional deviation (see [DEVIATIONS.md](./DEVIATIONS.md))
+
+## Core
+
+| Capability | Status | Notes |
+|------------|--------|-------|
+| `Agent` (name, instructions, tools, model, model_settings, tool_use_behavior, reset_tool_choice) | S | `instructions` may be static or a dynamic closure of `(context, agent)` |
+| `Agent.model_name` + provider resolution | S | Resolved via `RunConfig.model_provider` (D-013) |
+| `Agent.output_type` / `AgentOutputSchema` | S | `schemars` + `ensure_strict_json_schema`; non-object types wrapped under `response` |
+| `Agent.clone` | N | Use `Clone` on the struct (Rust idiom) |
+| `Runner::run` / `run_blocking` / `run_state` | S | D-001 naming for the sync entry |
+| `RunResultStreaming.cancel(mode)` | S | `CancelMode::Immediate` / `AfterTurn` (D-031) |
+| `RunOptions.max_turns = None` (unbounded run) | S | `None` disables the limit; `RunOptions::default()` keeps `Some(10)` (D-042) |
+| `Agent.as_tool` keywords beyond `name` / `description` / `needs_approval` (`needs_resolution`) / `max_turns` | N | No `run_config` / `hooks` / `session` / `custom_output_extractor` / `on_stream` / structured `parameters` (D-043) |
+| Tool output parts (`ToolOutputText` / `ToolOutputImage` / `ToolOutputFileContent`) | N | A tool result is one JSON value rendered as text (D-044) |
+| `RunOptions.auto_previous_response_id` | N | No server conversation tracker (D-045) |
+| `error_handlers={"max_turns": ...}` | S | `RunOptions.error_handlers` (D-033); other kinds N |
+| `Runner::run_streamed` / `RunResultStreaming` | S | Item + agent events plus raw Responses wire events on both OpenAI APIs (D-011) |
+| `FunctionTool` | S | Manual schema or `#[function_tool]` |
+| `@function_tool` / proc-macro | S | Full `schemars` schema; `Vec<T>`, nested structs, enums and `Option<T>` supported |
+| Tool context injection | S | Optional first `ToolContext` / `RunContextWrapper` parameter |
+| Parallel function tools | S | `join_all`; results ordered by model tool-call order |
+| `ToolExecutionConfig.max_function_tool_concurrency` | S | `RunConfig.tool_execution`; slots free on completion, results keep call order (D-029) |
+| `FunctionTool` `timeout_seconds` / `timeout_behavior` / `timeout_error_function` | S | `ToolTimeoutError` for `RaiseException`; parity-tested message (D-029) |
+| `failure_error_function` | P | Sync formatter or `raise_on_error`; default message sent to the model (B7) |
+| `tool_use_behavior` callable | P | Sync `ToolUseBehavior::Custom` |
+| `RunConfig.tool_not_found_behavior` | S | B10 |
+| `RunConfig.tool_name_collision_policy` | S | D-032 |
+| `RunConfig.reasoning_item_id_policy` | S | Checked against Python (D-035) |
+| `run_error_handlers` (`max_turns`, `model_refusal`, `invalid_final_output`), `ModelRefusalError` | S | D-033 |
+| `RunConfig.output_guardrail_blocked_message` | S | Tool-derived final outputs only; checked against Python (D-036) |
+| `RunConfig.tool_error_formatter` | S | Rejection and not-found messages (D-009) |
+| `RunConfig.call_model_input_filter` | S | D-M |
+
+## Model layer
+
+| Capability | Status | Notes |
+|------------|--------|-------|
+| `Model` trait (`get_response` / `stream_response`) | S | `stream_response` emits Responses wire events (D-011) |
+| OpenAI Responses API model | S | via `async-openai` config + raw HTTP; real SSE, events forwarded verbatim (D-011) |
+| OpenAI Chat Completions model | S | real SSE; chunks are synthesized into Responses wire events (D-011); converters checked against Python, tolerant of non-conforming servers (D-040) |
+| Third-party servers (base URL + key) | S | `stream_options` opt-in, DeepSeek reasoning replay, generated tool call ids, `finish_reason` handling (D-040) |
+| Default API = Responses | S | `set_default_openai_api` |
+| `ModelProvider` / `MultiProvider` | S | `prefix/model` routing, default prefix `openai`; `get_model` is async (X-008) |
+| `OpenAIProvider` | S | Reads `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL` (the key is optional with a base URL); caches per name; API per provider, global or by host (D-I) |
+| `CompatibleProvider` | S | Provider-neutral entry: base URL, optional key, Chat Completions by default (D-013) |
+| Model retry (`ModelSettings.retry`, `retry_policies`) | S | Checked against Python scenario by scenario; typed `ModelError::Status` / `Connection` (D-034) |
+| Per-attempt `ModelSettings.timeout` | S | `ModelError::Timeout`; retryable (D-034) |
+| Litellm / other providers | N | Register a custom `ModelProvider`; the `openai-agents-providers` crate ships presets (DeepSeek, Gemini, Groq, OpenRouter, Anthropic, Ollama) and a capability matrix (X-013) |
+
+## Streaming wire events
+
+`StreamEvent::RawResponse.data` is one Responses API wire event on every backend
+(see [DEVIATIONS.md D-011](./DEVIATIONS.md#streaming-wire-contract)). **F** = forwarded verbatim
+from the provider, **S** = synthesized by the adapter, **N** = not emitted.
+
+| Event | Responses | Chat Completions | `ScriptedModel` |
+|-------|-----------|------------------|-----------------|
+| `response.created` | F | S | S |
+| `response.output_item.added` / `.done` | F | S | S |
+| `response.content_part.added` / `.done` | F | S | S |
+| `response.output_text.delta` | F | S | S |
+| `response.output_text.done` | F | N (Python's chat handler does not emit it) | S |
+| `response.reasoning_summary_part.added` / `.done` | F | S (from `reasoning_content`) | S |
+| `response.reasoning_summary_text.delta` / `.done` | F | S (from `reasoning_content`) | S |
+| `response.reasoning_text.delta` / `.done` | F | S (from `reasoning`) | S |
+| `response.function_call_arguments.delta` | F | S | S |
+| `response.function_call_arguments.done` | F | N | S |
+| `response.completed` | F | S | S |
+| `response.refusal.delta` / `.done` | F | S (from `delta.refusal`) | N |
+| `response.output_text.annotation.added` | F | N | N |
+| MCP / hosted-tool events | F | N | N (hosted tools not planned, D-006) |
+| `sequence_number` | forwarded as-is | synthesized, 0-based | synthesized, 0-based |
+| `logprobs` payloads | forwarded as-is | `[]` | `[]` |
+| `usage` token details | forwarded as-is | cached / reasoning tokens (D-016) | totals only |
+
+No emitter synthesizes `response.in_progress` / `response.queued`; the Responses adapter forwards
+them like any other provider event, and it reads the response id out of them when the terminal
+`response.completed` never arrives.
+
+## Model settings
+
+`ModelSettings` covers 22 fields: `temperature`, `top_p`, `frequency_penalty`,
+`presence_penalty`, `tool_choice` (typed enum), `parallel_tool_calls`, `truncation`, `max_tokens`,
+`reasoning`, `verbosity`, `metadata`, `store`, `top_logprobs`, `include_usage`,
+`response_include`, `extra_body`, `extra_headers`, `extra_query`, `preserve_raw_usage`,
+`extra_args`, `timeout`, `retry`. `resolve()` overlays non-`None` values and merges dictionaries,
+matching Python; `retry` is merged field by field (D-034).
+
+`reasoning` is a typed `Reasoning { effort, summary, extra }` (Python: `openai.types.shared.Reasoning`;
+unknown effort/summary strings and untyped fields such as `mode` round-trip). Responses sends it as
+the `reasoning` object; Chat Completions sends `effort` as `reasoning_effort` and warns about the
+untyped fields, like Python. A `:<effort>` suffix on a model name resolved through a provider
+(`"o4-mini:high"`) is Rust-only (X-006).
+
+Not ported: `prompt_cache_retention`, `context_management`, `prompt_cache_options` — three
+OpenAI-hosted server features (D-017); reach them with `extra_body` / `extra_args` when a server
+does support them.
+
+Request-body precedence, highest first (matching Python):
+
+1. `extra_body` — Python hands it to the OpenAI SDK as a nested argument that is merged over the
+   body, so it overrides both mapped settings and `extra_args`.
+2. mapped settings — `temperature`, `max_output_tokens`, `metadata`, `include`, …
+3. `extra_args` — fills only keys nothing else set; a key that collides with a mapped setting or
+   a request field such as `model` is an error (D-024), not a silent drop. Python additionally
+   requires these keys to be *typed* SDK parameters; arbitrary fields belong in `extra_body`
+   (D-025).
+
+`resolve()` replaces every mapping when the override is not `None`, except `extra_args`, whose
+dictionaries are merged (`model_settings.py:273`).
+
+## Run items
+
+| Item | Status |
+|------|--------|
+| `MessageOutputItem`, `ToolCallItem`, `ToolCallOutputItem`, `ToolApprovalItem` (named `ToolInterruptionItem`, D-048) | S |
+| `HandoffCallItem`, `HandoffOutputItem` | S |
+| `ReasoningItem` | S |
+| `CompactionItem` | N |
+| Hosted-MCP / tool-search items | X |
+
+## Handoffs
+
+| Capability | Status | Notes |
+|------------|--------|-------|
+| Basic handoff (tool + agent switch) | S | Sibling tools run first; extra handoffs ignored with Python's message (B8) |
+| `HandoffCallItem` / `HandoffOutputItem` | S | |
+| `handoff_span` | S | |
+| `input_filter` / `RunConfig.handoff_input_filter` | S | D-003 |
+| `nest_handoff_history`, `handoff_history_mapper` | S | Opt-in, parity-tested against Python (D-003) |
+| `on_handoff` callback / `input_type` | P | Schema supplied explicitly, arguments parsed but not schema-validated (D-003) |
+
+## HITL
+
+| Capability | Status | Notes |
+|------------|--------|-------|
+| `needs_approval` (fixed or dynamic) | S | Named `needs_resolution`; the Python names are aliases (D-048) |
+| `interruptions`, `RunState` approve/reject | S | Plus `RunState::provide_output`, which Python lacks (D-048) |
+| Sticky `always_approve` / `always_reject` | S | |
+| `to_json` / `from_json` | S | Schema `openai-agents-rs/3` (D-012); `openai-agents-rs/2`, `openai-agents-rust/1` and `openai-agents-rust/2` payloads still load |
+| `Agent.as_tool` nested approvals | S | Bubbles to the outer `RunState` |
+| `Agent.as_tool` config beyond `needs_approval` / `max_turns` | N | No `run_config`, `hooks`, `session`, `failure_error_function`, `is_enabled`, `parameters` / `input_builder` (D-043) |
+| Custom output extractor / `on_stream` | N | D-043 |
+
+## MCP
+
+| Capability | Status | Notes |
+|------------|--------|-------|
+| `MCPServerStdio` | S | `McpClient::stdio`; restricted environment, child killed on drop (D-041) |
+| `MCPServerStreamableHttp` | S | `McpClient::streamable_http`; SSE and JSON replies, session id (D-041) |
+| `MCPServerSse` (legacy SSE transport) | N | Superseded by streamable HTTP |
+| `Agent.mcp_servers`, `Agent.mcp_config.convert_schemas_to_strict` | S | Tools listed every turn |
+| `tool_filter` (static, dynamic), `cache_tools_list`, `require_approval`, `use_structured_content` | S | |
+| `include_server_in_tool_names`, `tool_meta_resolver`, retries, prompts, resources, `mcp_tools_span` | N | D-041 |
+| `HostedMCPTool` | X | OpenAI-hosted |
+
+## Sessions
+
+| Capability | Status | Notes |
+|------------|--------|-------|
+| `Session` trait, `InMemorySession` | S | `RunOptions.session` (D-027) |
+| `RunConfig.session_input_callback`, `SessionSettings.limit` | S | Checked against Python (D-027) |
+| `SqliteSession` (feature `sqlite`) | S | Python-compatible schema; files interchangeable (D-038) |
+| `FileSession` (feature `sessions`) | S | Rust-only: JSONL, locked across processes; passes the shared `Session` contract (X-017) |
+| `RedisSession` (feature `redis`) | S | Rust-only: a list, `replace_items` in one MULTI, optional TTL; same contract (X-017) |
+| `PostgresSession` (feature `postgres`) | S | Rust-only: rows, values bound, table name validated; same contract (X-017) |
+| Shared `Session` contract (`core::session_contract`) | S | Rust-only: the suite every backend runs (X-017) |
+| `RunStateStore`: file, Redis, Postgres | S | Rust-only: a run that paused for an approval, stored and reloaded (X-016) |
+| OpenAI-conversations session, `responses.compact` compaction | X | OpenAI-hosted |
+| `ToolOutputTrimmer` | P | Checked against Python; string outputs only (D-039) |
+| `ContextWindowTrimmer`, `chain_input_filters` | S | New, provider-neutral (D-039) |
+| `CompactingSession`, `Summarizer`, `ModelSummarizer`, `Session::replace_items` | S | New, replaces the OpenAI-only compaction (D-039) |
+
+## Context, guardrails, hooks
+
+| Capability | Status | Notes |
+|------------|--------|-------|
+| `RunContextWrapper` (type-erased) | S | `context::<T>()` / `try_context::<T>()`; D-014 |
+| `RunOptions.context` | S | |
+| Input / output guardrails | S | `run_in_parallel` honoured; parallel tripwire cancels the model call (B9); verdicts add a reason, a severity and `Transform` (X-012) |
+| Guardrail results on `RunResult` | S | |
+| `RunHooks` / `AgentHooks` | S | All methods default to no-op |
+| Tool input/output guardrails | S | Parity-checked; not persisted in `RunState` (D-029) |
+| Dynamic `is_enabled` (tools, handoffs) / `needs_approval` closures | S | `ToolEnabled::dynamic`; `NeedsResolution::Dynamic` |
+
+## Tracing
+
+| Capability | Status | Notes |
+|------------|--------|-------|
+| `trace`, `agent_span`, `function_span`, `generation_span`, `custom_span` | S | |
+| `handoff_span`, `response_span`, `guardrail_span` | S | |
+| Per-run `tracing_disabled` | S | Takes precedence over the global switch |
+| `trace_id` / `group_id` / `trace_metadata` injection | S | |
+| `trace_include_sensitive_data` | S | Maps to `ModelTracing::EnabledWithoutData` |
+| Processor start events | S | `InMemoryProcessor::started_spans` / `started_traces` |
+| `flush_traces` | S | Calls `TracingProcessor::force_flush` |
+| `task_span` / `turn_span`, `RunConfig.tracing` (`TracingConfig`) | S | Span tree checked against Python (D-037); no `api_key` (cloud export is out of scope) |
+| `Span.started_at` / `ended_at` / `SpanError` | S | Set on drop; a failing tool and an exhausted turn budget record an error |
+| speech / transcription spans | N | |
+| OpenAI cloud export | N | D-004, not planned |
+| `SpanData` payloads (`input` / `output` / `tools`) | N | Only names and usage are recorded |
+| `BatchedProcessor`, `ConsoleSink`, `JsonlSink`, `Metrics` (feature `observability`) | S | Rust-only: batched export that never blocks the run, and counters over the same stream (X-018) |
+| `OtelSink` (feature `otel`) | S | Rust-only: spans into whatever OpenTelemetry pipeline the application installed — OTLP included — through the API only, so no exporter is pulled in (X-018) |
+| `TracingSink` (feature `observability`) | S | Rust-only: SDK events as `tracing` events under the target `openai_agents`, so the application's own subscriber and `RUST_LOG` see a run (X-018) |
+| `calculator`, `clock`, `file_read`, `file_list` (feature `tools`) | S | Rust-only: local tools with their limits built in — a parser instead of `eval`, one RFC 3339 shape, one directory and nothing outside it (X-019) |
+| `web_fetch` (feature `webfetch`) | S | Rust-only: private, loopback, link-local and reserved addresses refused at connect time and on every redirect hop; no proxy; 1 MiB streamed cap (X-019) |
+| `MaxLength`, `PiiRedactor`, `PromptInjection`, `BlockedKeywords`, `SchemaValidator` (feature `guardrails`) | S | Rust-only: input and output guardrails that pass, fail or rewrite; a bad configuration fails at construction (X-020) |
+
+## Testing
+
+The `testing` module mirrors `agents.testing`; HTTP-level assertions live in the crate's own
+tests, which drive `wiremock` directly rather than through a shipped mock layer.
+
+| Capability | Status | Notes |
+|------------|--------|-------|
+| `ScriptedModel` (`new`, `enqueue`, `extend`, `calls`, `assert_complete`) | S | |
+| `ModelStep` (`output`, `raise_error`, `raise_model_error`, `with_retry_advice`) | S | `responder` / `stream_events` not ported (D-020) |
+| `ModelCall` (incl. `streamed`, `output_schema_name`) | S | `output_schema` / `handoffs` / `prompt` recorded only by name, if at all |
+| `remaining_steps`, `first_call`, `last_call` | S | |
+| `set_default_usage` | S | |
+| `ModelScriptError`, `InvalidModelStep`, `UnexpectedModelCall`, `UnconsumedModelSteps` | S | |
+| `assistant_message`, `function_call` | S | |
+| `ScriptedModel` streaming | S | Replays a step as standard Responses wire events (D-011) |
+| `ModelStepSpec` (dict form) | N | Rust steps are typed; no dict form |
+| `ScriptedSandboxSession` | N | |
+
+## Verification layers
+
+0. `cargo fmt --all -- --check`, `cargo clippy --all-features --all-targets -- -D warnings`,
+   `RUSTDOCFLAGS=-D warnings cargo doc --no-deps --all-features`, `scripts/sync_vendor.sh --check`
+1. `cargo test --no-default-features` — ScriptedModel behavior
+2. `cargo test --all-features` — OpenAI HTTP contracts via wiremock, SQLite sessions
+2.5 `cargo test --test property_core` — invariants over generated inputs (proptest);
+   `cargo test --test openai_wiremock` — whole request bodies (insta snapshots)
+3. `.venv/bin/python conformance/run_parity.py --check` then `cargo test --test parity_scenarios`;
+   `cargo test --features mcp --test mcp_interop` and `--test chat_convert_parity` need the venv
+4. `.github/workflows/nightly.yml` — the examples against a live endpoint, both APIs
+5. `cargo bench` — per-turn latency
+6. `.github/workflows/coverage.yml` — line coverage ratchet
+
+---
+
+# Source: docs/DEVIATIONS.md
+
+# Deviations from openai-agents-python (v0.23.1)
+
+Record every intentional or temporary divergence from the standard Python SDK.
+Silent behavioral forks are bugs.
+
+Status values: **Aligned** (resolved, kept for history) · **Accepted** (intentional, often a
+Rust language difference) · **Gap** (known missing capability, tracked by COMPAT.md).
+
+## Scope
+
+This SDK is **provider-neutral**: it targets any endpoint that implements the OpenAI Responses or
+Chat Completions protocol, including third-party models and gateways. It is not a client for the
+official OpenAI service. Rule of thumb: a Python feature is in scope when it needs only a
+compatible *protocol* (or runs locally in the SDK); it is out of scope when it needs a capability
+that OpenAI hosts. Out-of-scope features are **not planned** and are not tracked as gaps.
+
+| Out of scope (not planned) | Why |
+|----------------------------|-----|
+| Hosted tools: `WebSearchTool`, `FileSearchTool`, `CodeInterpreterTool`, `ImageGenerationTool`, `HostedMCPTool`, computer / shell / `apply_patch` tool types, tool search, `custom` tools | Run on OpenAI's servers or need Responses-only tool types; reimplement them as function tools or local MCP |
+| `Agent.prompt` / `Prompt` | References a prompt stored on the OpenAI platform |
+| `OpenAIConversationsSession`, `OpenAIResponsesCompactionSession` (`responses.compact`) | Use OpenAI's Conversations / compaction endpoints. The provider-neutral replacement is `CompactingSession` and the trimming filters (D-039) |
+| Cloud trace export, `TracingConfig.api_key` (the field does not exist) | OpenAI traces backend (D-004); bring your own `TracingProcessor` |
+| Realtime / voice | OpenAI-specific APIs |
+| `RunConfig.sandbox` and `agents.sandbox` | Not tied to OpenAI, but a container / workspace runtime the size of a separate product. Not planned in this crate; a sandboxed tool can be written as a function tool or an MCP server |
+
+Server-side state (`conversation_id`, `previous_response_id`) stays because it is part of the
+Responses protocol, but it works only if the provider implements it; Chat Completions rejects it
+(D-K).
+
+## Resolved in Phase-2
+
+| ID | Standard location | Rust behavior | Status |
+|----|-------------------|---------------|--------|
+| B1 | `RunResult.last_agent` | Previously returned the *starting* agent. Now carries the agent that actually finished. | Aligned |
+| B4 | `maybe_reset_tool_choice` | Reset now happens at turn start, driven by a tool-use tracker, so it also applies after a turn that ended early via `stop_on_first_tool` / `StopAtTools`. | Aligned |
+| B5 | `_build_tool_result_items` | A `stop_on_first_tool` run now records a `ToolCallOutputItem` for *every* tool in the batch, not only the first. | Aligned |
+| B6 | `ResponseFunctionToolCall.call_id` | A `function_call` without `call_id` raises `ModelError::Behavior` instead of falling back to `"call"`. | Aligned |
+| D-A | `HandoffCallItem` / `HandoffOutputItem` / `ReasoningItem` | Implemented; handoffs and reasoning now produce their own run items. | Aligned |
+| D-B | `tracing.handoff_span` | Emitted for every handoff with `from_agent` / `to_agent`. | Aligned |
+| D-C | Mixed approval batches | Verified against v0.23.1: Python also executes the calls that do not need approval before pausing, so the Rust behaviour matches. | Aligned |
+| D-D | Non-stream `RawResponse` emit | Dead code removed; only the streaming path emits raw events. | Aligned |
+| D-E | `flush_traces` | Now calls `TracingProcessor::force_flush` on all installed processors. | Aligned |
+| D-F | `RunConfig.tracing_disabled` | Per-run setting is now authoritative for spans as well as the root trace (previously only the global switch was honoured). | Aligned |
+| D-G | `TracingProcessor.on_span_start` / `on_trace_start` | `InMemoryProcessor` now records start events. | Aligned |
+| D-H | `RunConfig.trace_id` / `group_id` / `trace_metadata` | Supported and forwarded to `Trace`. | Aligned |
+| D-I | Default OpenAI API | The crate-wide default is **Chat Completions** (Python: Responses), whatever the base URL, including `api.openai.com`. Order: the provider's own `.api(..)` (`OpenAIProvider`, `CompatibleProvider`), an explicit `set_default_openai_api(..)`, then Chat Completions. `MultiProvider` has `openai_chat_completions/...` and `openai_responses/...` prefixes to pick per model. Reason: this SDK targets any server that speaks the OpenAI protocol, and nearly all implement Chat Completions while few implement Responses; a wrong guess in the other direction fails on the first request. Consequence: Responses-only features (`previous_response_id`, `conversation_id`, server-side state) need `.api(Responses)` or `set_default_openai_api(Responses)`. The example harness's `OPENAI_API` still overrides | Accepted |
+| D-J | `ModelTracing.ENABLED_WITHOUT_DATA` | Driven by `RunConfig.trace_include_sensitive_data` (env `OPENAI_AGENTS_TRACE_INCLUDE_SENSITIVE_DATA`). | Aligned |
+| D-K | Chat Completions + `conversation_id` | Returns `ModelError::Unsupported` instead of silently dropping it. | Aligned |
+| B7 | `default_tool_error_function` / `failure_error_function` | A tool that returns `Err` no longer aborts the run: the model receives `DEFAULT_TOOL_ERROR_MESSAGE` (the error text is not exposed). `FunctionTool::with_failure_error_function` formats it, `raise_on_error()` restores abort (Python: `failure_error_function=None`). The formatter is synchronous | Aligned |
+| B8 | `turn_resolution.py` handoff execution | A turn with a handoff now runs its sibling function tools first, then the first handoff; later handoffs get a `ToolCallOutputItem` with `"Multiple handoffs detected, ignoring this one."`. Every call id has an output. Handoffs take precedence over `tool_use_behavior` stops, as in Python | Aligned |
+| B9 | `InputGuardrail.run_in_parallel` | `run_in_parallel(false)` guardrails finish before the first model call and trip without calling the model. Parallel guardrails race the model call: a tripwire drops the in-flight call instead of waiting for it | Aligned |
+| B10 | `RunConfig.tool_not_found_behavior` | Unknown tool raises `ModelError::Behavior("Tool X not found in agent Y")`; `ToolNotFoundBehavior::ReturnErrorToModel` answers `"Tool 'X' not found."` and continues | Aligned |
+| D-M | `RunConfig.call_model_input_filter` | Ported as an async closure over `CallModelData { model_data, agent, context }` returning `Result<ModelInputData, AgentsError>`; applied before the LLM hooks, for one call only. Python passes the raw context value; Rust passes the `RunContextWrapper`. Python also deduplicates input items afterwards; Rust does not | Aligned |
+| D-N | Chat Completions without `usage` | The request still counts (`Usage.requests = 1`, zero tokens), as in Python; a Responses reply without `usage` stays at 0 requests, also as in Python. Previously both reported 0 | Aligned |
+| B11 | `Handoff.get_transfer_message` | The handoff output text was `{"assistant":"B"}`; Python's `json.dumps` gives `{"assistant": "B"}`. The model reads this text, so it is now rendered with Python's separators | Aligned |
+| D-035 | `RunConfig.reasoning_item_id_policy` | `Option<ReasoningItemIdPolicy>` (`Preserve` / `Omit`). `Omit` strips the `id` of reasoning items in the next turn's input, in `RunResult::to_input_list`, in session saves and in `RunErrorData`; checked against Python. The policy is not stored in `RunState`, so a resumed run uses the policy of the `RunOptions` it is resumed with. Python also drops a `status: null` key from items; Rust keeps items as the provider returned them | Aligned |
+| D-036 | `RunConfig.output_guardrail_blocked_message` | `OutputGuardrailBlockedMessage::{Text, Formatter}`; an empty `Text` is a `UserError` when the run starts. When an output guardrail rejects a final output that came from a tool (`stop_on_first_tool`, `StopAtTools`, a custom `ToolUseBehavior`), the `OutputGuardrailTripwireTriggered` result carries the placeholder as `agent_output` and a null `output_info`; a formatter returning `None` / an empty string or panicking falls back to `OUTPUT_GUARDRAIL_BLOCKED_TOOL_OUTPUT`. Model-authored text is never withheld. Checked against Python. The session gets the same data-free record (checked against Python on six scenarios): the withheld turn's tool calls are saved, every tool output of that turn is saved as the placeholder, the model's own messages in that turn are not saved, and a turn that holds a reasoning item is not saved at all; earlier turns keep their real outputs. Not ported: Python also rewrites `new_items`, raw responses and tool guardrail results of the failed run; the Rust error carries only the guardrail result, so there is no other copy to scrub. The formatter is synchronous, as in Python | Aligned |
+| D-037 | `task_span` / `turn_span` / `RunConfig.tracing` | `TaskSpanData` / `TurnSpanData` are `SpanData::Task` / `SpanData::Turn`, and `Span.parent_id` is new. The runner builds the same tree as Python (checked on three scenarios: tools plus handoff, `include_task_and_turn_spans: false`, input and output guardrails): task, then one agent span per agent (replaced on handoff), then a turn span per turn; function, handoff, generation and input-guardrail spans sit under the turn, output guardrails under the agent. Task and turn spans export `usage` like Python (`requests` / `total_tokens` on the task only; omitted when all zero). `TracingConfig { include_task_and_turn_spans }`; Python's `api_key` is left out because cloud export is out of scope (D-004). An agent used as a tool (`Agent::as_tool`) starts a run whose task, agent and turn spans nest under the calling tool's function span, as in Python (checked on the same tree; parallel agent tools each keep their own parent, because the current span is scoped to the tool call's future rather than set globally). Differences: spans a user creates outside a run have no parent; the agent span has no `handoffs` / `tools` / `output_type` fields; input guardrails now start inside the first turn, blocking ones before the parallel ones are spawned, as Python does | Aligned (except as listed) |
+| D-038 | `SQLiteSession` | `SqliteSession` behind the `sqlite` cargo feature (`rusqlite`, bundled SQLite): `in_memory(id)`, `open(id, path)`, `open_with_tables(...)`. Uses Python's schema (`agent_sessions`, `agent_messages(message_data JSON)`, the `(session_id, id)` index, WAL for files), and a database file written by either SDK is read by the other (tested against the Python oracle). `get_items` limit, unreadable-row skipping and `pop_item` follow Python. One shared connection behind a mutex, each call on the blocking pool; table names are restricted to plain identifiers (`UserError` otherwise; Python splices them unchecked). Not ported: `SessionSettings` stored on the session (use `RunConfig.session_settings`), `close()` (the connection closes when the last clone drops), cross-process write-lock tuning, compaction snapshots. Extension point: implement the `Session` trait for any other store | Aligned (except as listed) |
+| D-039 | Context trimming and compaction (`agents.extensions.ToolOutputTrimmer`; replaces the OpenAI-only `OpenAIResponsesCompactionSession`) | New provider-neutral module `context` plus `CompactingSession`. **Trimming** (per model call, history untouched, usable as `RunConfig.call_model_input_filter`): `ToolOutputTrimmer` is a port checked against Python on three configurations (Unicode, unknown call ids, `trimmable_tools`); not ported are structured-output and `tool_search_output` trimming, which only exist for OpenAI-hosted flows. `ContextWindowTrimmer` (new) drops whole oldest turns to fit `max_tokens` and/or `max_turns`; system / developer messages, a summary and the latest turn always stay. `chain_input_filters` composes them. **Compaction** (rewrites the stored history): `CompactingSession` wraps any `Session`; when the history passes `trigger_tokens` (default 8000 estimated) or `trigger_items`, turns older than `keep_recent_turns` (default 2) are replaced by one summary written by a `Summarizer` (`ModelSummarizer` asks any `Model`), merged with earlier notes. A turn starts at a user message, so a tool call is never separated from its output. The summary is a plain `user` message wrapped in `<conversation_summary>` tags, accepted by every provider. Needs `Session::replace_items` (atomic for `InMemorySession` and `SqliteSession`; the default clears then appends). Differences from Python: it does not call `responses.compact` and has no `compaction_mode`; a failed compaction logs a warning and keeps the history; summarizer calls are not part of the run's `Usage` (read `Summarizer::usage()` / `CompactingSession::summarizer_usage()`, which `ModelSummarizer` fills); each one is a `conversation_summary` custom span under the turn of the run whose save triggered it, except the summary caused by a run's last save, which happens after the trace has ended and emits no span; token counts are an estimate (about 4 ASCII chars or 1 other char per token) unless a counter is supplied; writes are serialized per `CompactingSession`, not across processes | Aligned (new feature) |
+| D-040 | Third-party compatibility of the Chat Completions and Responses adapters | The adapters must work with any server that speaks the protocol, so this audit compared them with Python's `chatcmpl_converter` and fixed what broke. Conversion lives in `model::openai::chat_convert` (`items_to_chat_messages`, `chat_message_to_output_items`; public, pure JSON) and is checked against Python on 41 shared cases (`conformance/chat_convert_cases.json`, run through `conformance/chat_convert_oracle.py`). **Fixed**: consecutive function calls and the assistant text around them are one assistant message (they were one message per call, which strict servers reject); typed user messages (`input_text` parts) kept no text; image / file / audio parts, refusals and non-string tool outputs; unknown items are an error instead of silently dropped; `json_schema.name` is `final_output` for both APIs (it was the Rust type path, which OpenAI rejects); `stream_options.include_usage` is only sent by default to `api.openai.com`, so third-party servers that reject it work (set `ModelSettings.include_usage` to force it); a reply `refusal` is kept; `finish_reason` `content_filter` with an empty message becomes a refusal and `length` a `ModelBehaviorError`, in both modes; streamed `delta.refusal`; a `data: {error}` chunk is an error; `reasoning_content` of a tool-calling turn is replayed for DeepSeek models (`OpenAIChatCompletionsModel::should_replay_reasoning_content` overrides the rule). **Beyond Python** (for non-conforming servers): reply `content` may be a list of parts, tool call `arguments` may be a JSON object, and a tool call without an `id` (streamed or not) gets a generated `call_...` id because the runner pairs results by id; an assistant message without an `id` and with `output_text` parts is accepted. **Provider data** (checked against Python on 16 more shared cases, 38 + 19 in all): items a Chat Completions reply produces record `provider_data` (`model`, `response_id`), so reasoning is only sent back to the model that wrote it (the DeepSeek rule now also checks the origin, as Python's does); the `reasoning` field is kept on the item and replayed to the same model; a Gemini `thought_signature` (`tool_calls[].extra_content.google`, plain and streamed, also `provider_specific_fields` for Gemini models) is kept on the function call and restored for Gemini models; Claude `thinking_blocks` are kept on the reasoning item and sent back with `OpenAIChatCompletionsModel::preserve_thinking_blocks(true)` (off by default, like Python's OpenAI adapter, which only its LiteLLM adapter turns on). The Responses adapter removes the placeholder id, `provider_data` and other providers' reasoning from its input, so a run that moves between a Chat Completions and a Responses model (a handoff, say) stays valid. **Not ported**: streamed `thinking_blocks` deltas (LiteLLM-style Claude streaming; plain replies are handled), `item_reference`, `file_search_call`, audio / video parts. Python errors surface as `ModelError::Unsupported`. Pinned by `tests/third_party_compat.rs` (11 wiremock scenarios, all failing on the previous code) | Aligned (except as listed) |
+| D-041 | `agents.mcp` (`MCPServerStdio`, `MCPServerStreamableHttp`, `MCPUtil`, `Agent.mcp_servers`, `Agent.mcp_config`) | New `mcp` support: the `McpServer` trait, `McpTool` / `McpCallToolResult`, `McpConfig` and the tool conversion live in `openai-agents-core` and are always available; the client, transports, `ToolFilter`, `RequireApproval` and `McpServerManager` are in the `openai-agents-mcp` crate, behind the `mcp` cargo feature of `openai-agents` (**off by default**, so a build that never talks to an MCP server compiles no process or HTTP code for it). `McpClient::stdio(StdioParams)` and `McpClient::streamable_http(StreamableHttpParams)` implement `McpServer`; `Agent::mcp_servers` lists their tools again every turn and turns them into function tools, so they work with any model. Tested against the official Python `mcp` package (`conformance/mcp_server.py`, 10 interoperability tests over stdio and over HTTP with both SSE and plain-JSON replies) and against the Python SDK's own conversion (`conformance/mcp_oracle.py`: names, descriptions and parameter schemas are identical). Ported: tool listing with pagination, `cache_tools_list` / `invalidate_tools_cache`, static and dynamic `ToolFilter`, `RequireApproval::{Never, Always, PerTool}` mapped to `needs_approval`, `use_structured_content`, `convert_schemas_to_strict` (a schema that cannot be made strict is used as is), required-argument check before the call, duplicate tool names across servers are a `UserError`, a result flagged `isError` is shown to the model like any other. **Differences**: a server connects on first use (`connect()` is optional; Python needs `connect()` / `async with`); a dead connection is replaced on the next call; the default request timeout is 30 s (Python: `client_session_timeout_seconds` = 5 s) because it also covers the first request, which for a stdio server includes process start-up and for a remote server a cold connection, and a tool call that legitimately runs longer than 5 s should not fail by default (`McpClient::request_timeout` sets any value); a stdio server inherits only a safe subset of this process's environment, like Python's `get_default_environment`, and the child is killed when the client is dropped; a tool result becomes one string (text blocks joined by newlines, an image as `[image: <mime type>]`, other blocks as JSON) instead of Python's list of tool output parts, because Chat Completions tool messages carry text only; tool failures reach the model through the usual tool-error path (B7), so an exception inside a server tool does not abort the run. **Also ported**: `max_retry_attempts` / `retry_backoff` (`McpClient`; every request is retried with `base * 2^(n-1)` backoff, `-1` retries forever, default none, as Python), and `McpServerManager` (connect a group up front with a timeout, keep the working servers, `failed_servers` / `errors` / `reconnect(failed_only)` / `cleanup_all`, `strict`, `drop_failed_servers`, optional parallel connect; Python's async context manager becomes explicit `connect_all()` / `cleanup_all()` calls, and it does not run each server in its own task). **Not ported**: the legacy SSE transport, prompts and resources, `include_server_in_tool_names`, `tool_meta_resolver` / custom data, tool guardrails on a server, the `mcp_tools_span` trace span, OAuth. `HostedMCPTool` is out of scope (D-006) | Aligned (except as listed) |
+| D-L | Error source chain | `AgentsError::Tool` / `Internal` carry an optional `#[source]`; helpers `tool_with_source` / `internal_with_source` exist. | Aligned |
+
+## Accepted deviations
+
+| ID | Standard location | Rust behavior | Reason | Plan to align |
+|----|-------------------|---------------|--------|---------------|
+| D-001 | `Runner.run_sync` | `Runner::run_blocking` works from any thread: with no runtime it uses a shared lazily started multi-thread runtime (no runtime per call, connection pools survive); inside a multi-thread runtime it uses that runtime through `block_in_place`; inside a current-thread runtime it runs on the shared runtime from a helper thread. `Runner::run_blocking_on(&Handle, ...)` picks the runtime (multi-thread handles only, `UserError` otherwise). A panic in the run reaches the caller. Pinned by `tests/behavior_blocking.rs` (plain threads, multi-thread and current-thread runtimes, a custom handle). Differences: from a current-thread runtime the caller's runtime is stalled while it waits, and a run that depends on that stalled runtime (a client bound to it) would not finish; Python's `run_sync` refuses to run inside a running loop instead | Rust has no ambient asyncio loop, and a per-call runtime panics when nested and breaks pooled connections when dropped | Aligned (except as listed) |
+| D-002 | `@function_tool` docstring → JSON schema | `#[function_tool]` derives the schema from Rust types via `schemars`; the function doc comment becomes the tool description and `///` docs on fields become property descriptions | Rust has no runtime docstrings/annotations | Accepted |
+| D-003 | `Agent.handoffs` / `handoff()` | Supported: `input_filter` (per handoff, or `RunConfig.handoff_input_filter`; the handoff's own wins), `on_handoff` (`with_on_handoff`, or `with_on_handoff_input(schema, f)` which replaces `input_type`: the schema is made strict and advertised, the arguments only have to parse as JSON and are not validated against it), and `nest_handoff_history` (`RunConfig.nest_handoff_history`, off by default like Python, per-handoff override `with_nest_handoff_history`, `RunConfig.handoff_history_mapper`, `nest_handoff_history()` / `default_handoff_history_mapper()` / `*_conversation_history_wrappers()` helpers). Verified against Python by the `handoff_nested_history` / `handoff_raw_history` parity scenarios, which compare the exact input the target agent's model receives. Differences: `HandoffInputData` is flattened to Responses input items (`input_history` / `pre_handoff_items` / `new_items`) and has no `input_items` / `NestedHistoryOwnedItem` provenance, so a filter changes only the next agent's input and `RunResult.new_items` stays unfiltered. Python's result is not simply filtered either: with `remove_all_tools` its `new_items` lost the handoff call and output items but kept the earlier tool call items, and `to_input_list()` ended up without the handoff items, so the model input is the contract and the full record stays on `RunResult`; `nest_handoff_history()` returns empty `pre_handoff_items` and `new_items` (the nested `input_history` is the whole input); the history mapper is synchronous (as in Python) and the filter is async; summary JSON follows pydantic field order only for the common Responses item types (`message`, `output_text`, `function_call`, `function_call_output`, `reasoning`, summary / reasoning text), other item types keep the provider's key order; a filter with `conversation_id` / `previous_response_id` raises `UserError`, and nesting there is disabled with a warning, as in Python | Aligned (provenance not ported) |
+| D-004 | OpenAI `BackendSpanExporter` / `set_tracing_export_api_key` (cloud trace export) | Not implemented and not planned: spans go to local / in-memory processors, and users who want a backend implement `TracingProcessor` (OTLP, Langfuse, ...). Decision recorded 2026-10 | The Traces dashboard is the only loss; no model behavior depends on it | Accepted (won't do) |
+| D-005 | `Runner.run_streamed` | `Runner::run_streamed` + `RunResultStreaming` | Naming only; the raw event vocabulary matches Python (D-011) | Aligned |
+| D-006 | MCP / hosted tools / sandbox | Not exported. **Hosted tools** (`WebSearchTool`, `FileSearchTool`, `CodeInterpreterTool`, `ImageGenerationTool`, `HostedMCPTool`) are executed by OpenAI's servers on the Responses API; supporting them needs a tool enum, new serialized tool types and new output items, and is **not planned** (decision 2026-10). Local MCP servers are supported (D-041); the sandbox is not planned (Scope table). Sessions are covered by D-027 | Function tools cover local execution; hosted capabilities must be reimplemented as function tools | Accepted (hosted tools out of scope, see Scope) |
+| D-007 | Package layout | Cargo workspace of seven crates: `openai-agents-core` (agents, tools, handoffs, HITL, guardrails, the run loop), `openai-agents-openai` (Responses and Chat Completions adapters), `openai-agents-mcp`, `openai-agents-sqlite`, `openai-agents-testing`, `openai-agents-macros`, and the `openai-agents` facade that re-exports them behind Cargo features. `core` has no network, database or subprocess dependency (`scripts/check_module_deps.py` enforces it). The runner is a module directory under `crates/core/src/run/` (`agent_loop` validates options and opens the trace, `turn_loop` holds the per-turn phases, `finalize`, `turn/`, `tools/`) | The split keeps the no-HTTP build (`cargo test --no-default-features`) a real check. Python keeps one package and splits the same code across `run.py` and `run_internal/` | N/A (aligned intent) |
+| D-008 | Default max turns `10` | Same default (`DEFAULT_MAX_TURNS = 10`) | — | Aligned |
+| D-009 | `function_tool` `failure_error_function`, `RunConfig.tool_error_formatter` | Per-tool `failure_error_function` is ported (B7), synchronous only. `RunConfig.tool_error_formatter` is ported for `approval_rejected` and `tool_not_found` (async closure returning `Option<String>`; `None` keeps the default). `ToolErrorFormatterArgs` has no `tool_type` (all Rust tools are function tools). The default rejection message is stored when `RunState::reject` is called, so an explicit message equal to the default text is formatted too | Accepted |
+| D-010 | Prefer git submodule for vendor | Vendored via release tarball + `vendor/PINNED_VERSION`, refreshed by `scripts/sync_vendor.sh` | The vendored tree is the parity oracle (`conformance/setup_venv.sh`); a tarball pins the exact release without a submodule checkout step and works without access to the upstream git remote | Prefer submodule when accessible |
+| D-011 | Token-level `RawResponsesStreamEvent` from `Model.stream_response` | `StreamEvent::RawResponse.data` is a standard Responses wire event, matching Python's `RawResponsesStreamEvent.data`. Responses forwards provider events verbatim (`openai_responses.py:781`); Chat Completions synthesizes them the way `chatcmpl_stream_handler.py` does; `ScriptedModel` replays a step the way `testing/model.py` does. See [Streaming wire contract](#streaming-wire-contract) | Not ported: `response.output_text.annotation.added` and logprob payloads (emitted empty); `response.refusal.delta` / `.done` are synthesized (D-040); usage token details are emitted (D-016) | Aligned |
+| D-012 | Python `RunState` schema 1.18 wire format | Rust schema `openai-agents-rs/4` via `to_json`/`from_json` (`/3`, `/2` and the pre-rename ids still load); sticky `always_approve`/`always_reject`; `Agent.as_tool` nested HITL | Not byte-compatible with Python snapshots. A paused run is resumed by the Rust SDK that paused it; only a deployment where a Rust and a Python process hand a paused run to each other would need the Python format, and none is known. The pre-rename ids `openai-agents-rust/1` and `openai-agents-rust/2` are still accepted on load. `/3` made `max_turns` an `Option<usize>` so an unlimited run can pause and resume (D-042); a `/2` payload carries a number, which loads as `Some(n)`, and only `/3` and later may carry `null`. `/4` is the current id: call resolutions moved from `approvals` to `resolutions` and an entry may carry an `output`, and paused-call items are tagged `tool_interruption` (was `tool_approval`); `/3` payloads load unchanged (D-048) | Accepted (revisit only if cross-SDK resume is needed) |
+| D-013 | `MultiProvider` provider registry | Only `openai` and `openai_chat_completions` prefixes are built in; others are registered explicitly. `CompatibleProvider::new(base_url)` is the provider-neutral way to add one: optional key (no `Authorization` header without it), Chat Completions by default, `.api(..)`, `.default_model(..)`. `OpenAIProvider::from_env` accepts a missing key when `OPENAI_BASE_URL` is set. Pinned by `tests/compatible_provider.rs` | No dynamic entry-point discovery in Rust; a registry of named endpoints covers the same need explicitly | Aligned (except as listed) |
+| D-022 | `ScriptedModel.set_default_usage` | Applies to steps whose usage is empty, matching Python | — | Aligned |
+| D-014 | `RunContextWrapper[TContext]` | Context is type-erased (`Arc<dyn Any + Send + Sync>`) with `context::<T>()` / `try_context::<T>()` | Avoids threading a generic parameter through `Agent` / `Runner`; type errors surface at runtime, mitigated by an explicit error message | Accepted |
+| D-015 | `Agent.hooks` / `RunHooks` default implementations | Provided as `async_trait` methods with empty bodies, so implementors override only what they need | Same shape as Python base classes | Accepted |
+| D-016 | `Usage` token details | `Usage` carries `input_tokens_details` (`cached_tokens`, `cache_write_tokens`), `output_tokens_details` (`reasoning_tokens`) and `request_usage_entries`, aggregated by `add` like Python. Both OpenAI adapters fill them (Responses `*_tokens_details`; Chat `prompt_tokens_details` / `completion_tokens_details`), `total_tokens` is the provider's value, and `response.completed` carries the details. Not ported: `preserve_raw_usage` (D-017), per-request details from adapter-private attributes. Loading an older `RunState` without details defaults them to 0 | Aligned |
+| D-017 | `ModelSettings` non-portable fields | `extra_query` and `preserve_raw_usage` are ported: `extra_query` is appended to the request URL of both APIs (scalars as text, arrays repeat the key, `null` skipped), `preserve_raw_usage` keeps the provider's `usage` object on `ModelResponse.raw_usage` (also in `RunState` JSON) for plain and streamed Chat Completions and for Responses, and is empty when the provider sends no usage object. Pinned by `tests/third_party_compat.rs`. Not exposed, and not planned: `prompt_cache_retention`, `context_management` and `prompt_cache_options` configure OpenAI-hosted server features that other servers ignore or reject; `extra_body` / `extra_args` reach any such parameter when a server does support it | Gateways use query strings for API versions and return non-standard usage fields (cost, cache hits), so those two are useful everywhere; the other three are OpenAI-specific | Aligned (except as listed) |
+| D-024 | `extra_args` collision error type | A colliding `extra_args` key returns `ModelError::Behavior` (surfacing as `AgentsError::Model`) | Python raises a bare `TypeError` from the client call; Rust has no kwargs layer to raise from, so the message mirrors Python's (`… got multiple values for keyword argument 'x'`) and the failure travels through the typed error channel | Accepted |
+| D-025 | `extra_args` accepts arbitrary keys | Any key is written straight into the request body | The openai SDK's `create()` has no `**kwargs`: `extra_args` keys must be *typed* SDK parameters (`service_tier`, `prompt_cache_key`, `logprobs`, …) and an unknown key raises `TypeError: … got an unexpected keyword argument`. Arbitrary body fields belong in `extra_body` ("Add additional JSON properties to the request"). Rust has no typed SDK surface to validate against, and an OpenAI-specific allowlist would reject legitimate OpenAI-compatible gateway parameters, so it stays permissive | Accepted — prefer `extra_body` for arbitrary fields |
+| D-019 | `agents.testing` has no HTTP mocks | `ScriptedModel` is the only shipped test double. HTTP contract tests live in `tests/openai_wiremock.rs` and drive `wiremock` directly, so no mock layer is part of the public API | Aligns the `testing` surface with Python; the old `MockResponses` / `MockCompletions` wrappers were removed | Accepted |
+| D-020 | `ModelStep.responder` / `stream_events` | Not ported; steps are a plain output/error pair. `retry_advice` is ported (`ModelStep::with_retry_advice`, and `raise_model_error` for typed errors) | Test-double features only: they let a test script a step from the request or script raw stream events, and nothing in the runner depends on them | Later phase (low priority) |
+| D-021 | `ModelCall` recorded fields | Records `streamed` and `output_schema_name`, but not `output_schema`, `handoffs` or `prompt` objects | Test-assertion detail only; `ModelRequest` does not carry handoffs, and Python exposes the live objects | Later phase (low priority) |
+| D-018 | `function_tool` variadic / `Annotated` parameters | Not supported; the macro accepts plain owned-typed identifiers and an optional leading context parameter | Rust signatures cannot express `*args` / `**kwargs` with types | Accepted |
+| D-023 | Chat Completions synthesized response id | The synthesized `response` object and `ModelResponse.response_id` carry the provider's `id` (e.g. `chatcmpl-…`) when the gateway sends one; `FAKE_RESPONSES_ID` only when it does not | Python always uses `FAKE_RESPONSES_ID` for Chat Completions. The id is only fed back as `previous_response_id`, which the Chat Completions adapter ignores | Accepted |
+
+## Component deviations (audit 2026-10)
+
+The Plan column is the status here (`None` = nothing left to do). Entries were collected by an
+audit, so they mix finished work with remaining gaps; the Rust behavior column says which.
+
+| ID | Standard location | Rust behavior | Plan |
+|----|-------------------|---------------|------|
+| D-026 | `RunConfig` | Ported: `tracing` (D-037), `output_guardrail_blocked_message` (D-036), `reasoning_item_id_policy` (D-035), `session_input_callback` / `session_settings` (D-027), `tool_execution.max_function_tool_concurrency` (D-029), `nest_handoff_history` / `handoff_history_mapper` (D-003), `tool_name_collision_policy` (D-032), `tool_error_formatter` (D-009), `handoff_input_filter` (D-003), `tool_not_found_behavior` (B10), `model`, `model_provider`, `model_settings`, `input_guardrails`, `output_guardrails`, `tracing_disabled`, `workflow_name`, `trace_id`, `group_id`, `trace_metadata`, `trace_include_sensitive_data`. Missing: `sandbox` (not planned, Scope table) | None |
+| D-027 | `Runner.run(session=…)` / `agents.memory` | `Session` trait + `InMemorySession`, passed as `RunOptions.session`, with `RunConfig.session_settings` (`limit`; a session can supply defaults via `Session::session_settings`) and `RunConfig.session_input_callback` (async closure over `(history, new_items)`). History precedes the new input; on completion the run's input and model-visible new items are appended (also for `run_streamed`). Checked against Python's `SQLiteSession` for the limit and callback cases. Saving follows Python (checked on the same scenarios): the input is saved before the first model call and each turn's items when the turn ends, so a run that fails or hits `max_turns` keeps the turns it completed. A run paused for approval has saved the turns before the paused one (`RunState.session_saved_items` / `session_input_saved`, in the JSON too); resuming with the same session saves the rest exactly once, so the final history equals Python's. Python also stores the pending tool call while paused; this SDK keeps the paused turn out of the session until it ends, which avoids a stored call without an output. The model input read from a session is cleaned as in Python: stored function calls without an output are dropped together with the reasoning items that led to them, history outputs whose call a `limit` cut off are dropped, and duplicate items are merged (latest content; calls and reasoning keep their first slot). With a `session_input_callback`, items are attributed to history or to the new input by origin, even when the callback edited them: each item handed to the callback carries a hidden `_agents_session_origin` key that is removed from everything it returns (Python tracks object identity; an item the callback rebuilds loses the key and is matched by content, as in Python). Differences: a callback can see that key in the items it receives; the cleaning covers function calls only (Python also handles OpenAI-hosted call types); provider-neutral compaction is `CompactingSession` (D-039); the OpenAI-hosted sessions are out of scope; `SqliteSession` is available behind the `sqlite` feature (D-038); `RunResult.input` stays the caller's input without history | Other backends: implement `Session` |
+| D-028 | `Agent` fields | Missing: async `tool_use_behavior` functions (`ToolsToFinalOutputFunction`; the sync `ToolUseBehavior::Custom` is ported and sees tool name / call id / output only, not the run item), `Agent.clone(**overrides)` (use struct `Clone` + builder), `get_all_tools` | Async custom behavior can follow; `prompt` is out of scope (Scope table) |
+| D-029 | `FunctionTool` / `tool_guardrails.py` | Only `FunctionTool` exists (no hosted, computer, shell, apply-patch or custom tools; MCP tools are converted to function tools, D-041). `is_enabled` is `ToolEnabled` (fixed bool or an async closure over `(RunContextWrapper, Arc<Agent>)`; re-evaluated every turn). `timeout_seconds` / `timeout_behavior` / `timeout_error_function` are ported (`with_timeout`, `with_timeout_behavior`, `with_timeout_error_function`; the formatter is synchronous and returns text; the default message formats the number with Rust's `{}`, so very small or large values print as `0.00001` where Python's `:g` prints `1e-05`), as is `RunConfig.tool_execution.max_function_tool_concurrency` (validated when the run starts and reported as `UserError`, where Python raises `ValueError` at construction). Tool input / output guardrails are ported (`FunctionTool::with_tool_input_guardrails` / `with_tool_output_guardrails`, `ToolGuardrailBehavior::{Allow, RejectContent, RaiseException}`, results on `RunResult.tool_input_guardrail_results` / `tool_output_guardrail_results`; behavior checked against Python: a rejection replaces the call, so the start hook, the body and the output guardrails are skipped; output guardrails also see timeout / failure messages; they are skipped while a nested agent tool waits for approval). Differences: results hold the guardrail's name instead of the guardrail object; guardrail data holds the `ToolContext` and `Arc<Agent>`. Input, tool input and tool output guardrail results gathered before a pause are kept in `RunState` (also in its JSON) and appear on the resumed run's result, and a resumed run no longer runs the input guardrails again (it did before; Python runs them once, checked: one call, one result after resume). Not ported: `pre_approval_tool_input_guardrails`, `defer_loading` / namespaces | Rest as listed |
+| D-030 | `Handoff` | `Agent.handoffs` takes `Handoff` only (Python also accepts a bare `Agent`). `is_enabled` is supported like tools; no `on_invoke_handoff` override (D-003 covers `input_filter` / `on_handoff`). The target of `handoff(agent)` is owned (`Arc<Agent>` by value), so it cannot point back up the graph; cycles (A to B to A) are built with `handoff_to_name("A")`, a late-bound handoff the runner resolves by name among the agents reachable from the starting agent and every agent it has switched to (`UserError` when none matches; the stand-in has no `handoff_description`, so use `with_tool_description`). Checked against a Python cycle (same final output, last agent and call counts). Python expresses the loop by mutating `handoffs` after construction, which Rust's owned graph cannot do | Python shares agents by reference; an owned graph is what keeps `Agent` a plain cloneable value | Aligned (except as listed) |
+| D-031 | `RunResultStreaming.cancel(mode)` | `cancel(CancelMode::Immediate / AfterTurn)` and `is_cancelled()`. Immediate aborts the run task, which also aborts the child tasks it spawned (parallel input guardrails, the raw-event forwarder; they are held in an abort-on-drop wrapper) and closes the queue; AfterTurn stops before the next turn. A cancelled run has no `final_output`. Dropping the stream does **not** cancel the run, as in Python (the task keeps running); `RunResultStreaming::cancel_on_drop(true)` opts in to cancelling when the handle is dropped, for consumers such as a disconnected SSE client. The event queue holds 64 events and is bounded: a consumer slower than the model makes the run wait (Python's queue is unbounded). Pinned by `immediate_cancel_aborts_parallel_input_guardrails` and `cancel_on_drop_is_opt_in` | Python's `cancel()` cancels the whole asyncio task tree; tokio tasks are detached from their parent, so the wrapper reproduces that. `cancel_on_drop` is an addition: the default stays Python's | Aligned (except as listed) |
+| D-032 | `RunConfig.tool_name_collision_policy` | `ToolNameCollisionPolicy::Warn` (default) / `Error`, evaluated every turn before the model call. Warn logs through the `tracing` crate and keeps one winner per name: the last handoff if any, else the last tool. Messages are shorter than Python's (no per-agent derived-name hint). Python's namespace and deferred-tool checks are not applicable | Aligned |
+| D-033 | `run_error_handlers` | `RunOptions.error_handlers` has `max_turns`, `model_refusal` and `invalid_final_output` (`on_*` builders; async closures returning `Result<Option<RunErrorHandlerResult>>`; `None` raises the original error). `RunErrorHandlerInput.error` is `RunHandledError::{MaxTurns, ModelRefusal, InvalidFinalOutput}`. The output is validated against a structured `output_type` (`UserError` if invalid), recorded as an assistant message unless `include_in_history` is false, then the end hooks and output guardrails run. New `AgentsError::ModelRefusal(ModelRefusalError)`: a refusal in the turn's last message ends the run with it, **also for plain-text agents** (Python does the same), unless a handler supplies the output. As in Python, `model_refusal` / `invalid_final_output` handlers see only the current response in `run_data.raw_responses`. An empty structured answer with no handler asks the model again (Python `NextStepRunAgain`; this replaces the earlier Rust behavior error), an unparsable one raises `ModelBehaviorError`. Checked against Python by the `max_turns_handler` and `refusal_raises` parity scenarios and by direct runs. Differences: the handler must return `RunErrorHandlerResult` (no bare-value / dict forms); Python's data-redaction mode for these errors is not ported; refusals are recognized in the `refusal` content part of Responses messages and, for Chat Completions, in `message.refusal` and `finish_reason: content_filter` (D-040) | Aligned (except as listed) |
+| D-042 | `RunOptions.max_turns = None` | Python documents `max_turns` as "Set to `None` to disable the limit" (`run_config.py:591-592`) and only compares when it is not `None` (`run.py:1507`). Rust resolved `options.max_turns.unwrap_or(DEFAULT_MAX_TURNS)`, so `None` silently became 10. **Fixed**: `max_turns` stays `Option<usize>` through the loop, the comparison is skipped when it is `None`, and `RunState.max_turns` became `Option<usize>` so a paused unlimited run resumes unlimited (schema `openai-agents-rs/3`; a `/2` number loads as `Some(n)`). `RunOptions::default()` still sets `Some(10)` (D-008). Pinned by `max_turns_none_disables_the_limit` and `unlimited_run_state_round_trip_keeps_max_turns_null` | Aligned |
+| D-043 | `Agent.as_tool(...)` keyword surface | `AsToolConfig` carries `name` / `description` / `needs_resolution` (Python: `needs_approval`, D-048) / `max_turns` only (`run/as_tool.rs`, struct `AsToolConfig`). Not ported: `custom_output_extractor`, `is_enabled`, `on_stream` (+ `on_stream_max_pending_events`), `run_config`, `hooks`, `previous_response_id`, `conversation_id`, `session`, `failure_error_function`, and the structured-input trio `parameters` / `input_builder` / `include_input_schema`. The nested run therefore always uses `RunOptions::default()` (its own 10-turn budget, no context, no session) and the tool's output is the nested `final_output` verbatim | Later phase. `run_config` / `hooks` / `session` / `failure_error_function` are mechanical; `on_stream` needs a bounded event channel (Python's `_AgentToolStreamOverflow`); `parameters` needs a typed-input builder |
+| D-044 | Function tool output parts (`ToolOutputText` / `ToolOutputImage` / `ToolOutputFileContent`) | Python converts a structured tool return into `input_text` / `input_image` / `input_file` content parts (`items.py:946-1031`). Rust has one JSON value per tool result and renders it with `value_to_tool_string` (`run.rs:2977`), so a tool cannot hand an image or a file to the model. MCP results are flattened to one string for the same reason (D-041) | Later phase: needs a richer `ToolResult.output` and a per-API content-part writer. Chat Completions tool messages carry text only, so the value is limited to the Responses path |
+| D-045 | `RunOptions.auto_previous_response_id` | Not ported. Python's `OpenAIServerConversationTracker` derives `previous_response_id` from the last response the server accepted and repairs a broken chain when resuming (`oai_conversation.py:225-246`). Rust stores whatever `response.response_id` the last call returned (`run.rs:1622-1624`) and has no tracker, so `previous_response_id` must be threaded by hand and a reply without an id breaks the chain | Later phase, tied to the missing server-conversation tracker (which D-034 also names as the reason `rewind` is not ported) |
+| D-046 | `RunResult` / exception surface | Not ported: `RunResult.context_wrapper` (the run's `RunContextWrapper` is not exposed on the result), Python's `AgentToolInvocation` metadata on a nested `as_tool` result (`result.py`), and `AgentsException.run_data = RunErrorDetails(...)` (`run.py:2186-2196`), which Python attaches to any exception that escapes a run. Rust passes `RunErrorData` to an `error_handlers` closure but never attaches it to the error itself | Later phase (low priority): `run_data` matters only for callers that catch the error without installing a handler |
+| D-047 | Crate layout and the default model provider | The SDK is a Cargo workspace: `openai-agents-core` (agents, tools, handoffs, guardrails, run loop, sessions, tracing, the `Model` / `ModelProvider` / `McpServer` contracts), `openai-agents-openai`, `openai-agents-mcp`, `openai-agents-sqlite`, `openai-agents-testing`, `openai-agents-macros`, and `openai-agents`, the facade users depend on, which re-exports them under the paths the SDK has always had. Core has no HTTP client, database or child-process dependency, and every extension crate depends only on core. **Differences users can observe**: (1) core knows no model provider, so a model *name* resolves through a default that the facade installs: the facade `Runner` (same five methods as the core one, kept in step by `scripts/check_runner_api.py`) registers the OpenAI provider on its first call, so `OPENAI_API_KEY` / `OPENAI_BASE_URL` still suffice, including for agents run through `Agent::as_tool`; a program that uses `openai_agents_core::Runner` directly, or builds without the `openai` feature, gets a `MissingProvider` error telling it to set `RunConfig.model_provider` or call `set_default_model_provider_factory`; (2) `default_model_provider()` is now `openai_agents::default_model_provider()` and exists only with the `openai` feature; (3) the OpenAI adapters are `openai_agents::openai::*` (was `openai_agents::model::openai::*`; the root re-exports `OpenAIProvider`, `CompatibleProvider`, `OpenAIChatCompletionsModel`, `OpenAIResponsesModel`, `DefaultOpenAiApi` and `get/set_default_openai_api` are unchanged); (4) `mcp` is no longer a default feature (`default = ["openai"]`), so `McpClient` and its transports need `features = ["mcp"]`, while the `McpServer` trait, `McpTool` and `mcp_function_tools` stay in core and always work with `Agent::mcp_servers`; (5) `openai_agents::testing` is a separate crate, always available; (6) `wire_events` (the Responses event emitter) and `replay_response` are public in core, for model implementors. Nothing about run behavior changed: the parity goldens, the request snapshots and the test counts are the same | Accepted |
+| D-048 | `FunctionTool.needs_approval`, `ToolApprovalItem`, `RunState.approve` / `reject` | Approval is generalized into *resolution*, and the generic names are the primary ones. A tool call pauses before it runs when `FunctionTool.needs_resolution: NeedsResolution` says so (fixed, or per call from the arguments: `with_needs_resolution` / `with_needs_resolution_fn`), and is reported as a `ToolInterruptionItem` (`RunItem::ToolInterruption`). The host resolves it on the `RunState` with `resolve(item, ToolResolution)`: `Run` (Python: approve), `Reject { message }` (Python: reject), or `Output { output }`, which Python does not have: the tool is not run and the model receives `output` as the call's result, for work the host carried out elsewhere (e.g. a job that outlives the process; `provide_output(item, output)` is the shorthand). An output resolution goes through the same path as a rejection (no tool hooks, guardrails or timeout, since nothing runs), survives the JSON round trip, and reaches nested `Agent::as_tool` runs like an approval. Only the resolution names exist (the Python-name aliases `NeedsApproval`, `ToolApprovalItem`, `ApprovalDecision`, `ApprovalStore`, `with_needs_approval*` and `RunState::approval_status` were removed); the human-approval verbs `RunState::approve` / `reject` stay, and `#[function_tool(needs_approval)]` is still accepted next to `needs_resolution`. `McpServer::needs_resolution_for` returns the `NeedsResolution` of an MCP tool. **Breaking for Rust callers**: the fields `FunctionTool.needs_approval` and `AsToolConfig.needs_approval` are now `needs_resolution`, the enum variant `RunItem::ToolApproval` is `RunItem::ToolInterruption`, and `ToolResolution` has variants `Run` / `Reject` / `Output` instead of `Approved` / `Rejected`. Human-approval features built on top keep approval names: MCP `RequireApproval`, sticky `always_approve` / `always_reject` (`StickyDecision`), `DEFAULT_APPROVAL_REJECTION_MESSAGE`, `ToolErrorKind::ApprovalRejected`. RunState schema `/4` (D-012) | Accepted |
+| D-049 | Responses stream that ends without a terminal event (`openai_responses.py` stream, `run_loop.py:2371`) | Python's adapter forwards the events it gets and does not synthesize anything; the Runner then raises `ModelBehaviorError("Model did not produce a final response!")` when no final response arrived. Rust (`crates/openai/src/responses.rs`, the `None` arm after the read loop) **tolerates** it: it builds the output from the `response.output_item.done` events seen, emits a synthesized `response.completed` continuing the sequence numbers, with zero usage, and logs a `warn!` (the reply may be truncated; a dropped connection looks the same). `response.failed` / `error` events still raise `ModelError::Behavior`. Reason: some OpenAI-compatible gateways never send `response.completed`; failing would make them unusable. Observable: a truncated reply is treated as a successful one and its usage reads 0 | Accepted. A strict switch (error instead of synthesize) may follow with the M2 capability matrix |
+
+Verified to **match** Python in this audit: `AgentHooks.on_handoff(context, agent=new, source=old)`
+is invoked on the *source* agent's hooks; output guardrails combine `RunConfig` + agent guardrails
+and trip as `OutputGuardrailTripwireTriggered`; `tool_choice` reset; `HandoffCallItem` /
+`HandoffOutputItem` payload (`{"assistant": name}`); input guardrails run only on the first agent.
+
+## Model retries (D-034)
+
+`ModelSettings.retry` ports Python's runner-managed retries (`retry.py`, `run_internal/model_retry.py`),
+and the Python behavior was checked against the vendored SDK scenario by scenario (backoff waits,
+`Retry-After` precedence, exhausted budgets, stateful and replay-unsafe vetoes, `provider_suggested`,
+`all` / `any`, the `conversation_locked` compatibility replay, usage accounting).
+
+Ported: `ModelRetrySettings` (`max_retries`, `backoff`, `policy`; merged field by field in
+`ModelSettings::resolve`, serialized without the policy), `ModelRetryBackoffSettings`, `RetryDecision`
+(`approve_unsafe_replay`, delay, reason), `RetryPolicyContext`, `ModelRetryAdvice` /
+`ModelRetryNormalizedError` / `ModelRetryAdviceRequest`, `retry_policies` (`never`, `provider_suggested`,
+`network_error`, `retry_after`, `http_status`, `all`, `any`), per-attempt `ModelSettings.timeout`
+(`ModelError::Timeout`, enforced by the runner for every `Model`, streamed or not), failed attempts
+counted in `Usage` (zero-token `request_usage_entries`), the `conversation_locked` replay (3 times, 1s / 2s /
+4s, disabled by `max_retries = 0`), and OpenAI advice (`x-should-retry`, 408 / 409 / 429 / 5xx, network
+failures, `retry-after-ms` / `retry-after`).
+
+Differences, all intentional:
+
+| Area | Rust behavior | Reason |
+|------|---------------|--------|
+| Error type | HTTP failures are `ModelError::Status(ModelStatusError)` (status, headers, body), connection / timeout / body-read failures are `ModelError::Connection`; `Transport(String)` remains for undecodable bodies. The message text is unchanged. `ModelError` is now `Clone` | Retry policies need the status, headers and error code, which a string loses. Code that matched `ModelError::Transport` for an HTTP failure must match `Status` |
+| Policies | Async closures returning `bool` or `RetryDecision` (`RetryPolicy::new`); built-ins are functions in `retry_policies` taking `Vec<RetryPolicy>` for `all` / `any` | No variadic arguments |
+| Hidden client retries | None exist, so nothing is disabled between attempts | Python's OpenAI client retries by itself and the runner has to switch that off |
+| Not ported | `replay_unsafe_request` (programmatic tool calling), `rewind` (no server conversation tracker), websocket retries, abort detection (cancelling a run drops the future, so there is no error to classify), `RetryPolicyContext.response_started` and the policy capability markers | No Rust counterpart |
+| Streaming | A replay is blocked once an event other than `response.created` / `response.in_progress` reached the consumer, as in Python. The timeout covers a whole attempt (Python's covers waiting for each event) | The Rust adapters return the assembled response, so there is no per-event wait to time |
+| `Retry-After` | Seconds, milliseconds (`retry-after-ms`) and the IMF-fixdate HTTP date; other date forms are ignored | No date parser dependency |
+| Jitter | +-12.5% from a v4 UUID's random bits | No `rand` dependency |
+
+## Streaming wire contract
+
+`StreamEvent::RawResponse { data }` carries **one Responses API wire event** (Python:
+`RawResponsesStreamEvent.data`, `stream_events.py:11-20`). Both OpenAI adapters and
+`ScriptedModel` emit the same vocabulary, so a consumer never branches on the backend.
+
+Which emitter does what:
+
+| Emitter | Source | Python reference |
+|---------|--------|------------------|
+| `OpenAIResponsesModel` | provider SSE events, forwarded verbatim | `openai_responses.py:781` (`yield chunk`) |
+| `OpenAIChatCompletionsModel` | synthesized from chat chunks | `chatcmpl_stream_handler.py` (15 event types) |
+| `ScriptedModel` / default `Model::stream_response` | a finished response replayed | `testing/model.py` step expansion |
+
+Rules the three share:
+
+- **Vocabulary**: only `response.*` wire type names. No dialect names (the pre-D-011
+  `output_text.delta` / `reasoning_text.delta` are gone).
+- **Shape**: `item_id` / `output_index` / `content_index` / `summary_index` / `delta` /
+  `logprobs` / `sequence_number`, matching the Python event objects. `item_id` is the item's own
+  `id` (or `call_id`), falling back to `FAKE_RESPONSES_ID` (`"__fake_id__"`) when absent — which
+  is the case for everything the Chat Completions adapter synthesizes, matching Python.
+- **Ordering**: `response.created` → `output_item.added` → `content_part.added` → deltas →
+  `*_done` → `output_item.done` → `response.completed`.
+- **Numbering**: `sequence_number` is 0-based and monotonic (`chatcmpl_stream_handler.py:184`).
+  Forwarded events keep the provider's number and are never renumbered; a synthesized terminal
+  event continues from the last number seen.
+- **`output_index`**: the reasoning item occupies 0, function calls take the next slots in
+  arrival order, and the assistant message is assigned lazily right after the calls known when
+  its first delta arrives (`_StreamOutputLayout`).
+- **Terminal event**: `{"type":"response.completed","response":{…}}` with the full `response`
+  object (`id`, `object`, `created_at`, `model`, `status`, `output`, `usage`, `tools`,
+  `tool_choice`, `parallel_tool_calls`, `top_p`, `temperature`).
+
+Deliberately not ported (see D-011): `response.output_text.annotation.added` is not synthesized
+(`response.refusal.delta` / `.done` are, from Chat Completions `delta.refusal`, D-040), `logprobs` payloads are emitted as
+`[]`. The per-event status per emitter is tabulated
+in [COMPAT.md](./COMPAT.md#streaming-wire-events).
+
+## Rust-only extensions
+
+Capabilities Python does not have. They are not part of the parity comparison; the behavior they
+extend still matches Python.
+
+| ID | Addition | Behavior | Notes |
+|----|----------|----------|-------|
+| X-002 | `Runtime` (`crates/core/src/runtime.rs`) | The default model provider and the Tokio runtime behind blocking calls are owned by a `Runtime` value instead of process-wide statics: `Runtime::builder().provider(..).build()`, `runtime.set_model_provider(..)` / `set_model_provider_factory(..)`, and `Runtime::global()` for the old "one process-wide default" behavior. `set_default_model_provider_factory` stays as a thin wrapper over `Runtime::global()`, so existing callers and the facade `Runner`'s OpenAI installation are unchanged; the facade's extra `Once` guard is gone. Observable: two `Runtime`s can hold different providers in one process (mainly useful in tests, which previously had to serialize on a global) | Tracing's global switch/processor and the handoff history markers are still process-wide (`tracing`, `handoffs::history`); `Runtime::tracing_disabled` / `set_tracing_disabled` forward to them. Threading them through every `agent_span()` call site is a follow-up |
+| X-001 | `Extensions` (D-014 follow-up, `docs/refactor/09-d1-context-generics.md`) | A run carries a type-keyed map of shared values next to Python's single `context`. `RunOptions::with(value)` adds one, `ctx.get::<T>()` / `ctx.require::<T>()` read it (`ToolContext::require` names the tool in its error). `RunOptions::context(value)` and `context::<T>()` / `try_context::<T>()` keep working and use the same map: the value is stored under its own concrete type. A second value of the same type replaces the first (a `warn!` in debug builds). Still not generic: type mistakes surface at run time | Declared requirements checked before the first turn: see X-004 |
+| X-003 | `Tool` trait, `Tool::typed`, `ToolOutput` (`crates/core/src/tool.rs`) | Python only has the `FunctionTool` dataclass. Here `Tool` (`spec`/`policy`/`requires`/`call`) is a trait; `FunctionTool` is its concrete, SDK-owned implementation (`impl Tool for FunctionTool`). `FunctionTool::from_tool` adapts any `impl Tool` into one, so a hand-written tool runs through the exact same execution path as a built-in one — not a parallel code path. `FunctionTool::typed`/`typed_with_result` build the JSON Schema from a `Deserialize + JsonSchema` struct (what `#[function_tool]` generates for a function), for callers who want that without the macro. `ToolResult` is renamed `ToolOutput`; `interruptions`/`nested_state` are `pub(crate)` (not part of the public shape) — build one with `ToolOutput::output`/`::interrupted`, read it with `is_interrupted()`/`value()` | None |
+| X-004 | `Tool::requires`, `TypeRequirement` (`crates/core/src/extensions.rs`, `run/agent_loop.rs`) | A tool declares the `Extensions` types it needs (`FunctionTool::require::<T>()`); `validate_tool_requirements` walks every agent reachable from the one the run starts with (including handoff targets) before the first model turn and fails with the agent, tool and type name when one is missing. Python has no such declaration — a missing value only ever surfaces as a `KeyError` inside the tool call. Calling `ctx.require::<T>()` without declaring it is still checked only at call time, same as today | `#[function_tool]` generating the declaration for a typed parameter is tracked for a later pass, not part of this change |
+| X-005 | `ToolMiddleware`, `ModelMiddleware` (`crates/core/src/tool_middleware.rs`, `model_middleware.rs`) | Python has no equivalent; the closest are `tool_input_guardrails`/`tool_output_guardrails` (replace-or-reject only) and the single `call_model_input_filter`. `FunctionTool::with_middleware` wraps a tool's invocation onion-style (auth, rate limiting, audit, cache; can skip the call and return a cached `ToolOutput`). `ModelOptions::middleware` runs a list of `ModelMiddleware` after `call_model_input_filter`, in the order added, rewriting the request | Only request rewriting is covered; wrapping the model response/stream (metrics, caching) would reach into the retry/streaming call path and is not implemented yet |
+| X-006 | Model-name effort suffix (`ReasoningEffort::split_model_name`, `run/resolve.rs`) | A model name resolved through a provider may end in `:<effort>` (`none`/`minimal`/`low`/`medium`/`high`/`xhigh`): `"o4-mini:high"` asks the provider for `o4-mini` and fills `reasoning.effort = high` unless the run or agent settings already choose an effort. Only those words are recognized, so tags like `llama3:8b` or `:free` pass through unchanged. Model *instances* are not affected | A real model whose name ends in `:high` etc. cannot be addressed by name; bind it as an instance instead |
+| X-007 | `Capability`, `CapabilityParts` (`crates/core/src/agent/capability.rs`) | A named bundle of agent parts: tools, an instruction paragraph, input/output guardrails, default model settings and required extension types. `Agent::capability(..)` mounts it; the parts stay apart from the agent's own fields and are merged where they are read (tools after the agent's own and before MCP tools; instructions appended after a blank line; guardrails after the agent's own; model settings below the agent's, which are below the run's; requirements checked before the first turn), so builder order does not matter and mounting equals handing over the same parts by hand. An agent without capabilities behaves exactly as before | Hooks are not a part yet (an agent has one `hooks` slot; composing several needs a combinator). The built-in bundles (calculator, web fetch, file system, safe input/output, memory) arrive with the `tools` / `guardrails` / `sessions` crates |
+| X-008 | `ModelProvider::get_model` is `async` (`crates/core/src/model/provider.rs`) | Python's `get_model` is synchronous. Here it is an `async fn` (via `async_trait`, re-exported as `openai_agents::async_trait`), so a provider can fetch credentials, refresh a token or look a deployment up without blocking the runtime. The runner awaits it once per turn that resolves a name, at the same point Python calls it. `CachedProvider` does not hold its lock across the await; concurrent misses may build twice but every caller gets the one instance stored first | Breaking for Rust implementors: add `#[async_trait]` and `async` to `get_model`, and `.await` direct calls |
+| X-009 | `RunOptions::resolve_with`, `ToolResolver` (`crates/core/src/run/hitl.rs`) | Python returns every pause to the caller, who builds a `RunState`, approves or rejects and calls `Runner.run` again. With a resolver set, `Runner::run` / `run_state` / `run_blocking` ask the callback about each paused call (`ToolInterruptionItem` in, `ToolResolution` out: `Run`, `reject(msg)`, `output(value)`) and resume until the run finishes, using the same `RunState` resolution path, so nested `as_tool` pauses, `max_turns` and sessions behave exactly as in the explicit loop. Streamed runs fail with a `UserError` when a resolver is set rather than ignore it | In-process only: a run that must survive a restart still uses the explicit `RunState` JSON flow. Sticky `always_*` decisions are not available from the callback |
+| X-010 | Resolution bound to its call (`ResolutionStore`, `run_state/resolutions.rs`) | Python keys an approval by call id only. Here `RunState::resolve` / `approve` / `reject` / `provide_output` also record the agent, tool and exact arguments of the paused call (`"bound"` in the state JSON), and the decision applies only to a call that matches all three; a call that does not match is treated as unresolved, so it pauses again (or follows a sticky decision) and logs a warning. Guarantees that what was approved is what runs, even if a stored state's arguments are edited. States without `bound` (written before this change) are applied by call id as before; a `bound` missing a field fails to load. `ResolutionStore::resolve(call_id, ..)` stays unbound | Editing arguments in a stored state is detected, but anyone who can edit the state can also edit `bound`; integrity of stored states (HMAC) comes with `RunStateStore` |
+| X-011 | Agent-graph fingerprint in `RunState` (`agent_graph`, `RunState::allow_agent_graph_change`) | Python matches a resumed state to the agent by name only. A paused run here also records a fingerprint of the starting agent's graph (agent names, each agent's own and capability tool names, handoff tool names; sorted, so build order does not matter; MCP tools and `is_enabled` are left out), and `Runner::run_state` / `run_state_streamed` refuse a state whose fingerprint differs from the agent passed in, with a `UserError` that says how to proceed. `allow_agent_graph_change()` drops the check for a deliberate upgrade. States without `agent_graph` resume as before | A deploy that adds a tool to a paused agent needs `allow_agent_graph_change()` (or finishing old runs first) to resume them |
+| X-012 | Guardrail [`Verdict`](crate::guardrail::Verdict) with severity (`error/payload.rs`, `guardrail.rs`) | Python's guardrail result is a single tripwire flag: a guardrail either lets the run continue or stops it. Here `GuardrailFunctionOutput` carries a `Verdict`: `Pass`, `Fail { reason, severity }` (stop; `Severity::High` and `Critical` also cancel the others still running in the same group, as Python cancels them on any tripwire) or `Transform(content)` (continue with rewritten content, e.g. redacted). `pass(..)` / `trip(..)` stay as the Python shapes. Only guardrails built with `run_in_parallel(false)` may transform the input (the model has already received it otherwise, and a parallel transform fails the run); two transforms of the same content fail the run instead of picking one. An input transform also replaces what the session stores, and the first turn's session flush waits for the blocking guardrails; an output transform replaces `final_output` only (the model's own message in `new_items` is left as written). Verdicts round-trip in a `RunState` (`verdict` next to `tripwire_triggered`) | The built-in guardrails (max length, PII, injection, keywords, schema) arrive with the `guardrails` crate |
+| X-013 | Provider presets and a capability matrix (`openai-agents-providers`) | Python has no table of third-party servers: you build a `ModelProvider` yourself and register it. This crate ships one: base URL, key variable, protocol, capabilities and model prefixes for `openai`, `deepseek`, `gemini`, `groq`, `openrouter`, `anthropic` and `ollama`, plus endpoints declared with `AGENTS_PROVIDER_{N}_ENDPOINT` / `_API_KEY` / `_NAME` / `_DEFAULT_MODEL`. `ProviderRegistry::from_env()` registers every preset whose key is set; the router resolves `prefix/model` and infers an unprefixed name only when one brand owns it (`claude-*`, `deepseek-*`, `gemini-*`), never `llama3`/`qwen2.5`. `Capabilities` says what a provider supports and `UnsupportedCapability` names provider and capability instead of dropping a field. Endpoints must be `https` unless they are loopback or `AGENTS_PROVIDER_INSECURE_HTTP=1`; keys never appear in `Debug`, errors or traces | The table goes stale; `LAST_CHECKED` says when it was reviewed. Unknown model ids are always allowed through (private deployments). The guard checks what a request needs (reasoning, a JSON schema, tool calls, parallel calls, `store`, images, PDFs) and refuses what the provider lacks, as `ModelError::Unsupported`, and `Provider::build()` wraps every model it hands out so a single provider and one reached through the registry behave the same; it does not stream-check (`Streaming`, `StreamUsage`, `ResponsesApi` are properties of how the provider was built, and every adapter can stream or fall back), and there is no Anthropic native adapter |
+| X-014 | Model catalogue and advice (`catalog.rs` of `openai-agents-providers`) | Python never looks at a model id: it sends what it is given. This crate keeps a small catalogue (only models whose history is settled) and says something when a request names one: `Retired` says it was retired and what to use instead, `Legacy` names the current one, and an id that is a near miss for a known one gets a "did you mean" suggestion. It is a hint, never a gate — an unknown id is always allowed through, because private deployments and gateways serve models no catalogue knows — and it reaches you as a `tracing::warn!` from the router | A catalogue is only as good as its last update; a missing model says nothing, and a model retired after `LAST_CHECKED` is not flagged |
+| X-015 | Zero-configuration entry point (`openai_agents::run`, `AGENTS_OFFLINE`, the `providers` feature) | Python's quickstart still needs an `Agent` with a model and a configured client. Here `openai_agents::run(instructions, input)` builds the agent, discovers the provider from the environment (a preset whose key is set, `AGENTS_PROVIDER_{N}_ENDPOINT`, or the offline model when `AGENTS_OFFLINE=1`) and picks a model name (`AGENTS_MODEL` / `OPENAI_MODEL` / the provider's suggestion / `gpt-4o-mini`), so the same one line works before a key exists and after. `AGENTS_OFFLINE` wins over a key that is set, and its answer says it is offline. A local preset (Ollama) is registered only when its own variable (`OLLAMA_HOST`) says where it is, so a run with nothing configured fails with advice instead of guessing at localhost | Discovery happens per call, so a long-lived process that changes its environment needs to call `zero_config_options()` again; the offline model answers the same line whatever the input, which is not a simulation of a model |
+| X-016 | `RunStateStore` (`core::memory::state_store`) | Python has no store for a paused run: you serialize the `RunState` yourself and decide where it lives. The trait (save / load / delete, with a TTL) is the contract the file, Redis and Postgres backends implement, plus `RunStateMigration` so a deployment can adapt states written by an older version, and `is_supported_schema` / `finish_load` so every backend migrates and version-checks the same way. A state that is present but unusable (unreadable schema, signature mismatch) is an error, never `None` | Only the trait is here; the backends come with `openai-agents-sessions`: `FileRunStateStore` (one state per file, atomic rewrite, cross-process lock), `RedisRunStateStore` (one key, TTL) and `PostgresRunStateStore` (one row, upsert). All three store the same envelope — signed with HMAC-SHA256 when `AGENTS_STATE_KEY` is set, compared in constant time, with the TTL and the migration hook — so integrity and expiry are decided once rather than per backend. Core ships no store of its own. Without a key the store still works but says so once per open | A signature only proves the state was written by someone with the key: whoever can write the file can also rewrite it together with its signature, so this is tamper detection, not tamper proofing |
+
+| X-017 | `core::session_contract`, the shared `Session` contract, and `openai-agents-sessions` (`FileSession`) | Python has no shared test suite for session backends. This one runs the eight behaviours a backend must have — empty, order, `limit` takes the newest, `pop_item`, `replace_items`, a reader never sees a half-written history, `clear_session`, a 1 MiB item round trip — plus `assert_concurrent_writes` for the no-lost-update property. It is in core, not in `openai-agents-testing`, because an extension may not depend on another extension, which also means a backend outside this workspace can run it. Three backends ship with it and pass it: `FileSession` (JSONL, one item per line, locked across processes, rewritten atomically, session id validated: no separators, no leading dot, no symlink to follow), `RedisSession` (a list, `replace_items` in one MULTI, optional TTL) and `PostgresSession` (rows, `replace_items` in one transaction, every value bound and the table name checked before it reaches SQL). The two that talk to a server sit behind features and skip their tests when no server is configured | Concurrency is checked with 16 spawned writers, which is a property test and not a proof. `FileSession`'s file IO is blocking, as SQLite's is |
+
+| X-018 | `openai-agents-observability`: batched export, sinks and metrics | Python's `add_trace_processor` takes any processor, and the ones people write (`BatchTraceProcessor` with a `TracingExporter`) do their file or HTTP IO on a task of their own; the SDK offers no queue, no bound and no drop policy, so a slow backend slows the run and a stuck one stops it. Here `BatchedProcessor` is the way to install an exporter: the callback — which runs inside the run loop — turns the span into JSON and `try_send`s it into a bounded `std::sync::mpsc` channel, and a thread of its own does the writing. A full queue drops the event and counts it (`dropped()`, warned on the first and every hundredth), because a run must never wait on its own telemetry; `force_flush` waits at most `FLUSH_TIMEOUT` (2 s) and warns instead of blocking. The writer is a thread and not a spawned task because writing is blocking IO and `force_flush` is synchronous: a task on a single-threaded runtime could not make progress while the caller parked. `ExportEvent` is a flat JSON shape (kind, `span_kind`, ids, name, timestamps, error, usage) that carries no request body, tool argument or model output, since the SDK's spans do not hold them. `ConsoleSink` and `JsonlSink` write it out today; `OtelSink` (`otel` feature) turns each ended span into an OpenTelemetry span through the tracer the application installed — OTLP included — depending on the API only, so no exporter, gRPC stack or runtime is pulled into a build that does not use it, and losing the SDK's ids on the way (the OTel API assigns its own), which is why `agents.span_id` / `agents.parent_id` carry them as attributes; `TracingSink` emits each event into the application's `tracing` subscriber under the target `openai_agents` (`DEBUG`; `WARN` for a failed span; `TRACE` for starts and trace events) — as events and not `tracing` spans, because the export runs on a writer thread where no span is entered, so the SDK's `span_id` / `parent_id` are fields; `Metrics` / `MetricsSink` count turns, tool failures, tokens and cost from the same stream, pricing usage with a `PriceTable` that leaves an unpriced model at zero rather than guessing | Telemetry that fails is lost: errors are logged and counted, never raised into the run, so only `dropped()` says they happened. Metrics are per process, not per trace, and a model missing from the price table contributes nothing to the cost |
+
+| X-019 | Ready-made tools (`openai-agents-tools`) | Python ships hosted tools (web search, file search, computer use) that call OpenAI, and no local ones; a Python project writes its own tools, SSRF checks included, every time. This crate ships four local ones: `calculator` (a recursive-descent parser over numbers, `+ - * /`, parentheses and a unary minus — never an `eval`, so there is no way to reach a variable, a function or a file whatever the model writes), `clock` (the system time as one RFC 3339 string, with a fixed `+HH:MM` offset and never a zone database), `file_read` / `file_list` (one canonicalised root directory; `..`, absolute paths and symlinks that resolve outside it are refused, and a file over 1 MiB is refused rather than read) and `web_fetch` (`webfetch` feature), whose SSRF rule is checked in three places: an address written into the URL (decimal, hex, octal and short forms, IPv6, IPv4-mapped) is checked as the URL is read, on the first request and on every redirect hop; a name goes through a DNS resolver of its own, so every address a connection is about to use is checked; so loopback, link-local, private, multicast, reserved and unspecified ranges — the `9.`/`11.`/`21.`/`30.` blocks and carrier-grade `100.64/10` with them, in IPv6 and in IPv4-mapped form — are refused at connect time rather than before it, a redirect to another origin or down to `http` is refused unless asked for and a chain is capped at five hops; no system proxy is used (the check would be on the proxy's address, not the model's); and a response is read in pieces and cut off at 1 MiB, so a server that never stops sending cannot fill memory. Tests run a local server that counts connections and assert that a refused request made none | `web_fetch`'s check runs on the addresses its own resolver returns; a DNS server that lies for one lookup and tells the truth for the next is not covered, which is why `allow_private` is a deliberate switch and not a fallback. The tests cover the behaviour on a real socket; DNS rebinding between the resolver's answer and the connect is closed by the connection using the resolver's answer, not by a second lookup. `strip_tags` is a tag stripper, not an HTML parser: it removes `<...>` and collapses whitespace and does not decode entities |
+| X-020 | Ready-made guardrails (`openai-agents-guardrails`) | Python has no built-in guardrails: each project writes its own, and the only answer a Python guardrail can give is "trip the run". Here a `Guard` is a check over text that says pass, fail or *rewrite*, and becomes an input or an output guardrail in one call (`.input()` is built `run_in_parallel(false)`, because a rewrite is only worth anything if the model never saw the original). Five ship: `MaxLength` (characters or bytes, per piece of text; a limit of zero is refused), `PiiRedactor` (emails, Luhn-valid card numbers, assignable-range SSNs and phone numbers → `[EMAIL]`/`[CARD]`/`[SSN]`/`[PHONE]`, redacting by default and refusing on request), `PromptInjection` (bounded phrase patterns for the usual instruction-override wordings, blind to zero-width characters and odd spacing), `BlockedKeywords` (literal, case-insensitive, whole-word by default so `skill` is not `kill`) and `SchemaValidator` (a subset of JSON Schema). A misconfiguration — an empty keyword list, a limit of zero, an unsupported schema keyword, a kind list with nothing in it — is a `BuildError` at construction, never a filter that silently does nothing. The matching is the `regex` crate's, linear in the text, and the tests feed it adversarial input. A failure says which rule and never quotes the text; the trace gets the guard's name and counts of strings checked and rewritten | `PiiRedactor` is pattern matching: it does not find names, addresses or numbers written out in words, and a bare ten-digit number is left alone because it is as likely an id; it is the second line, not the first. `PromptInjection` is a heuristic, not a boundary — an attack worded differently or in another language passes, and an article quoting an attack fails; the tests state both limits. `SchemaValidator` supports `type`, `enum`, `const`, `properties`, `required`, `additionalProperties` (true/false), `items`, the length/size bounds and `minimum`/`maximum`; `$ref`, `oneOf`/`anyOf`/`allOf`, `pattern`, `not` and `if` are refused at construction because skipping one would accept what the schema means to refuse. Only one input guardrail may rewrite a given input (core's rule, X-012), so redaction and any other rewriter must be combined |
+| X-021 | `CapabilityParts::deferred(description)`, tool `load_capability` (`crates/core/src/agent/deferred.rs`) | A capability marked deferred stays out of the prompt: the model sees one catalog line per unloaded capability (appended to the instructions) and a framework tool, `load_capability`, whose `name` argument is an enum of the unloaded names. Calling it makes the capability's tools and instructions visible from the next step; the tool disappears once nothing is left to load. Loading is per agent and per run, idempotent (a second load answers "already loaded"), and a name that is not a deferred capability of the agent loads nothing and is answered with the loadable names. Until loaded, the capability's tools are not offered and a call to one is an unknown-tool error like any other. Guardrails, model settings and `requires` apply from the start, so leaving a capability unloaded never bypasses a check. The loaded set lives in the run context and is saved in `RunState` (`loaded_capabilities`; states without it load with nothing loaded); on resume, the `load_capability` call that ran before the pause is matched to its saved output instead of being re-planned | Python has no on-demand tool loading. Loading takes effect on the next model step, not the current one. The `load_capability` name is reserved: a tool of the same name on the agent shadows it for the call lookup. Not part of the agent-graph fingerprint, since which capabilities are loaded is run state, not graph shape |
+
+## How to add an entry
+
+1. Assign the next `D-NNN` ID. Older `B*` / `D-A..D-N` IDs are kept as they are because code,
+   tests and commits refer to them; they are not renumbered.
+2. Cite the Python path (file + symbol) under `vendor/openai-agents-python` @ `v0.23.1`.
+3. State the Rust behavior and whether callers can observe the difference.
+4. Mark the align plan: `Document only` / `Accepted` / `Gap` / `Later phase` / `Bug (fix)`.
+
+---
+
+# Source: docs/MIGRATION-FROM-PYTHON.md
+
+# Migrating from openai-agents-python
+
+For someone who knows the Python SDK (@ `v0.23.1`) and wants the same thing in Rust. It lists
+what maps directly, what changes shape, and — the part that actually costs time — **what you have
+to write yourself**.
+
+The full support matrix is [COMPAT.md](./COMPAT.md); the reasoning behind each difference is
+[DEVIATIONS.md](./DEVIATIONS.md).
+
+## 1. What maps almost one-to-one
+
+| Python | Rust |
+|--------|------|
+| `Agent(name=..., instructions=..., tools=..., handoffs=..., model=..., model_settings=..., output_type=..., hooks=...)` | `Agent::new(name).instructions(..).tools(..).handoffs(..).model(..).model_settings(..).output_type(..).hooks(..)` |
+| `Runner.run(agent, input)` | `Runner::run(&agent, input, RunOptions::default()).await` |
+| `Runner.run_sync(...)` | `Runner::run_blocking(&agent, input, RunOptions::default())` (D-001) |
+| `Runner.run_streamed(...)` + `async for` | `Runner::run_streamed(agent, input, opts)` + `next_event().await` |
+| `@function_tool` | `#[function_tool]` (schema from Rust types, doc comment = description; D-002) |
+| `handoff(agent)` / `handoff(agent, tool_name_override=...)` | `handoff(agent)` / `handoff_with(agent, name, description)` |
+| `input_guardrails` / `output_guardrails` | `input_guardrail(name, fn)` / `output_guardrail(name, fn)`, returning a `GuardrailFunctionOutput` (`Verdict`: pass, fail, transform) |
+| `RunHooks` / `AgentHooks` subclasses | `impl RunHooks` / `impl AgentHooks` (every method has a no-op default) |
+| `SQLiteSession` | `SqliteSession` (feature `sqlite`; **the same database file works in both SDKs**, D-038) |
+| `RunConfig(...)` / `RunOptions(...)` | `RunConfig::default()` plus grouped fields or chain methods, see [RunConfig groups](#runconfig-groups). `RunConfig` is `#[non_exhaustive]`, so a struct literal does not compile outside the crate |
+| `ModelSettings(...)` | `ModelSettings { .. }` (22 fields; 3 OpenAI-only ones are not ported, D-017) |
+| `Runner.run(agent, state)` after HITL | `Runner::run_state(&agent, state, opts)` |
+| `ScriptedModel` / `ModelStep` | `ScriptedModel` / `ModelStep` in `openai_agents::testing` |
+
+## 2. Differences you will hit on day one
+
+| Python | Rust | Why |
+|--------|------|-----|
+| `RunContextWrapper[TContext]`, generic over the context | `RunContextWrapper` carrying `Arc<dyn Any>`; `context::<T>()` / `try_context::<T>()` | No generic parameter threaded through `Agent` / `Runner` (D-014). Type errors surface at runtime with an explicit message |
+| `Agent` is mutable, `agent.tools.append(t)` | `Agent` is a plain cloneable value; `Agent::new(..).tools(vec![..])` | Owned graph (D-030) |
+| Cyclic handoffs: build, then mutate `handoffs` | `handoff_to_name("A")` — a late-bound handoff resolved by name at run time | Rust cannot build a cyclic owned graph (D-030) |
+| `max_turns=10` default; `None` disables | same: `RunOptions::default()` is `Some(10)`, `None` disables the limit | D-042 |
+| Exceptions (`MaxTurnsExceeded`, `ModelBehaviorError`, …) | `AgentsError` enum (`AgentsError::MaxTurns(..)`, `AgentsError::Model(ModelError::Behavior(..))`) | Rust has no exception hierarchy |
+| `failure_error_function=None` raises | `FunctionTool::raise_on_error()` | B7 |
+| Default API is Responses | Default is **Chat Completions**; opt into Responses with `set_default_openai_api(Responses)` or the `openai_responses/<model>` prefix | D-I: nearly every compatible server speaks Chat Completions |
+| `AsyncOpenAI` client passed around | `OpenAIProvider::from_env()` / `CompatibleProvider::new(base_url)`; `MultiProvider` for `prefix/model` routing | D-013 |
+| Tool returns `str` or a structured output part | Tool returns one `serde_json::Value`, rendered as text | D-044: images / files cannot be handed back to the model |
+| `Agent.as_tool(...)` with ~18 keywords | `AsToolConfig { name, description, needs_resolution, max_turns }` | D-043 |
+| `enable_verbose_stdout_logging()` | the `tracing` crate | — |
+
+## 3. What you must write yourself
+
+This is the real cost of migrating, and it is why the README's positioning section exists.
+
+| You want | Python gives you | In Rust you write |
+|----------|------------------|-------------------|
+| Web search, file search, code interpreter, image generation | `WebSearchTool`, `FileSearchTool`, `CodeInterpreterTool`, `ImageGenerationTool` | A `FunctionTool` (or an MCP server) that calls the API you want |
+| Remote MCP through OpenAI | `HostedMCPTool` | `McpClient::streamable_http(..)` — your SDK talks to the server instead of OpenAI |
+| Shell commands | `ShellTool` / `LocalShellTool` | A `FunctionTool` that runs `tokio::process::Command`. **Do your own sandboxing** |
+| File edits | `ApplyPatchTool` + `apply_diff` | A `FunctionTool` over your own patch application |
+| Computer use | `ComputerTool` + `Computer` | A `FunctionTool` driving your own automation |
+| Trace export to a backend | `add_trace_processor(BatchTraceProcessor(...))`, `set_tracing_export_api_key` | `impl TracingProcessor` for OTLP / Langfuse / whatever you use. Cloud export is not planned (D-004) |
+| Long-context handling via the API | `OpenAIResponsesCompactionSession` (`responses.compact`) | `CompactingSession` + `ModelSummarizer` (any model), or `ContextWindowTrimmer` / `ToolOutputTrimmer` as a `call_model_input_filter`. Provider-neutral, and not OpenAI-only (D-039) |
+| Redis / MongoDB / SQLAlchemy session storage | `agents.extensions.memory.*` | `impl Session` |
+| Realtime / voice | `agents.realtime`, `agents.voice` | Not available |
+| A sandboxed execution runtime | `agents.sandbox` | Not available; isolate at the process/container level |
+
+## 4. Things that are better here
+
+Not a migration aid, but worth knowing before you decide it is a downgrade:
+
+- `run_blocking` / `run_blocking_on` work from any thread, with or without a runtime (D-001).
+- `CancelMode::{Immediate, AfterTurn}` and `cancel_on_drop(true)` — Python's `cancel()` has no
+  "let the turn finish" mode (D-031).
+- `CompatibleProvider`: a base URL with an optional key, for vLLM / Ollama / LiteLLM / gateways.
+- The Chat Completions adapter tolerates non-conforming servers (missing tool-call ids, list
+  `content`, error chunks) and replays DeepSeek reasoning / Gemini thought signatures /
+  Claude thinking blocks (D-040).
+- `ensure_strict_json_schema` has depth and node budgets, so a hostile or pathological schema
+  cannot blow up the process.
+- The stdio MCP client clears the child's environment down to a safe allow-list instead of
+  inheriting your API keys (D-041).
+- `RunOptions::resolve_with(|call| async { .. })`: Python returns every pause to you; here a
+  callback resolves the paused calls and the run resumes by itself, and the explicit `RunState`
+  flow is still there when the run has to outlive the process (X-009).
+- A resolution given through `RunState` is bound to the agent, tool and arguments of the call it
+  answered: an approval cannot be carried to a call whose arguments changed, even in a stored
+  state (X-010). Resuming also checks a fingerprint of the agent graph (X-011).
+- A guardrail returns a `Verdict`: pass, fail (with a reason and a severity) or
+  `Transform(content)`, so it can redact and let the run continue instead of only stopping it
+  (X-012).
+- `FunctionTool::typed`: one `#[derive(Deserialize, JsonSchema)]` struct gives you the tool's
+  schema and its parsed arguments, so a tool needs no hand-written JSON.
+- `Capability`: a named bundle of tools, instructions, guardrails and model settings you mount on
+  an agent, equal to handing over its parts by hand (X-007).
+- `ModelProvider::get_model` is `async`, so a provider can fetch credentials or look a deployment
+  up before it builds the model (X-008).
+
+## RunConfig groups
+
+Python's `RunConfig` is one flat dataclass; here its fields are grouped by topic. Each group is a
+`#[non_exhaustive]` struct with chain methods, and `RunConfig` has `with_model` / `with_tracing` /
+`with_session` / `with_handoff` / `with_tools`. In practice you rarely touch `RunConfig` at all:
+`RunOptions` chains the common ones (`model`, `temperature`, `max_turns`, `reasoning`, `session`,
+`hooks`, `workflow_name`, `context`, `resolve_with`, `with`) and hands you a closure for each group
+(`.tracing(..)`, `.tools(..)`, `.session_opts(..)`, `.config(..)`).
+
+| Python `RunConfig` field | Rust |
+| --- | --- |
+| `model` | `config.model.model_ref` (chain: `ModelOptions::model(..)`) |
+| `model_provider` | `config.model.provider` |
+| `model_settings` | `config.model.settings` |
+| `reasoning_item_id_policy` | `config.model.reasoning_item_id_policy` |
+| `call_model_input_filter` | `config.model.input_filter` (chain: `ModelOptions::input_filter(..)`) |
+| `tracing_disabled` | `config.tracing.disabled` |
+| `workflow_name`, `trace_id`, `group_id` | `config.tracing.workflow_name`, `.trace_id`, `.group_id` |
+| `trace_metadata` | `config.tracing.metadata` |
+| `trace_include_sensitive_data` | `config.tracing.include_sensitive_data` |
+| `tracing` | `config.tracing.config` |
+| `session_input_callback`, `session_settings` | `config.session.input_callback`, `.settings` |
+| `nest_handoff_history`, `handoff_history_mapper`, `handoff_input_filter` | `config.handoff.nest_history`, `.history_mapper`, `.input_filter` |
+| `tool_not_found_behavior`, `tool_execution`, `tool_name_collision_policy` | `config.tools.not_found_behavior`, `.execution`, `.name_collision_policy` |
+| `tool_error_formatter`, `output_guardrail_blocked_message` | `config.tools.error_formatter`, `.guardrail_blocked_message` |
+| `input_guardrails`, `output_guardrails` | `config.input_guardrails`, `config.output_guardrails` |
+
+```rust
+let options = RunOptions::new()
+    .with(tenant)
+    .temperature(0.2)
+    .workflow_name("support")
+    .tools(|t| *t = t.clone().not_found_behavior(ToolNotFoundBehavior::ReturnErrorToModel));
+```
+
+---
+
+# Source: docs/COMPARISON.md
+
+# How this SDK compares
+
+Two Rust neighbours: [Rig](https://github.com/0xPlaygrounds/rig) and
+[ADK-Rust](https://github.com/zavora-ai/adk-rust). And the Python SDK this one ports.
+
+The rows about this SDK come from this repository's code and tests. The rows about the other two come
+from their public documentation at the time of writing and are deliberately coarse — both move fast,
+so check their docs before relying on a cell.
+
+| | This SDK | [openai-agents-python](https://github.com/openai/openai-agents-python) | Rig | ADK-Rust |
+| --- | --- | --- | --- | --- |
+| Starting point | port of v0.23.1, pinned in `vendor/PINNED_VERSION` | the reference implementation | independent framework | a Rust agent development kit in the style of Google's ADK |
+| Behaviour checked against a reference implementation | yes: 13 declarative scenarios run through both implementations (`conformance/`) | — | no shared oracle | follows ADK's model, no shared oracle |
+| Scope | the Python SDK's agent loop, provider-neutral | hosted OpenAI features included | provider abstraction, agents, RAG with 10+ vector stores, WASM | agents, workflow and graph agents, realtime voice, RAG, A2A servers |
+| Extensibility | one trait each: `Tool`, `Model`, `ModelProvider`, `Session`, `TracingProcessor`, `Capability` | same set, Python protocols | `Tool` trait, provider traits, hooks | `Agent` trait, `#[tool]` macro, callbacks |
+| Tool arguments | `#[function_tool]` or `FunctionTool::typed` from one `schemars` struct | `@function_tool` from type hints | `Tool` trait with JSON Schema | `#[tool]` macro with `schemars` |
+| Business context | typed values in an `Extensions` map, a missing one reported with its type name | `RunContext` with any user object | agent state | session state |
+| Pausing for approval | `needs_resolution` + `RunState` JSON + `resolve_with` closure | `needs_approval` + `RunState` | own state machine | graph interrupts, HITL |
+| Guardrail verdicts | `Pass`, `Fail`, **`Transform`** (a rewrite is a result, not a refusal) | tripwire only | — | callbacks and guardrails |
+| Provider presets | a table with a capability matrix that refuses rather than degrades silently | OpenAI plus compatible endpoints | 20+ providers, feature-gated | 14+ providers, feature-gated |
+| On-demand tool loading | `CapabilityParts::deferred` | — | — | — |
+| Scaffolding | `cargo agents new`, 3 templates | — | examples, no scaffolding CLI | `cargo adk new`, 13 templates, 9 addons, 5 enterprise patterns |
+| Offline development | `AGENTS_OFFLINE=1` | `ScriptedModel` in tests | cassette record/replay | provider-dependent |
+
+## Where this SDK is weaker, on purpose
+
+Being honest about the trade: Rig has a far wider integration surface (20+ providers, 10+ vector
+stores as companion crates, an onchain kit, `wasm32-unknown-unknown` support). ADK-Rust has a much
+larger feature set (realtime voice, graph workflows with checkpointing and human-in-the-loop
+interrupts, RAG with six vector-store backends, A2A servers, declarative tool scopes, a runtime UI)
+and a far more developed scaffolding CLI.
+
+This SDK deliberately skipped all of that. `docs/IMPROVEMENT-PLAN.md` lists the non-goals: hosted
+OpenAI tools, real-time voice, RAG and vector stores, a visual studio. What it spends its complexity
+on instead is *behavioural fidelity* — a Python oracle it can be diffed against — plus the parts a
+Rust SDK can do better than a Python one: construction-time validation, `#[non_exhaustive]` everywhere
+before the first release, and a `Transform` verdict that redacts instead of refusing.
+
+## What is different from Python on purpose
+
+`docs/DEVIATIONS.md` is the authoritative list, with an id per row (`D-…` for behaviour differences,
+`X-…` for Rust-only additions). The ones worth knowing before choosing this SDK:
+
+- **No hosted OpenAI tools.** Web search, file search, code interpreter, image generation, hosted
+  MCP, computer use, `Agent.prompt` and the Conversations API are out of scope: they exist only
+  because OpenAI hosts them. Anything that needs only a compatible *protocol* is in scope.
+- **`RunState` is not Python's wire format.** The JSON schema is `openai-agents-rs/4`; use one
+  language per durable state store.
+- **Additions with no Python counterpart**: `Capability` bundles and `deferred` loading,
+  `Verdict::Transform`, the provider presets, the ready-made tools and guardrails, `openai_agents::run`.
+  They are registered under "extensions" in `docs/DEVIATIONS.md` and kept out of the parity
+  comparison, so the behaviour alignment stays a clean check.
+
+## Choosing
+
+- Coming from the Python SDK, or depending on its exact behaviour: this SDK — then read
+  `docs/MIGRATION-FROM-PYTHON.md`.
+- Wanting the widest provider and vector-store coverage, or WASM: Rig.
+- Wanting voice, graph workflows, A2A, a runtime UI, and a template for each: ADK-Rust.
+- Wanting an agent loop whose behaviour you can diff against a reference implementation: this is the
+  only one of the three that can do that.
+
+---
+
+# Source: STABILITY.md
+
+# Stability
+
+The SDK has not been released. Until `0.1.0`, any public item can change; this file says what is
+planned and how change will be handled afterwards.
+
+## Levels
+
+| Level | Meaning |
+| --- | --- |
+| **Unstable** | May change or disappear in any release. Behind a Cargo feature or documented as experimental. |
+| **Stabilising** | The shape is settled and being reviewed. A change needs a changelog entry and a migration note. |
+| **Stable** | Changes only in a major version (or a minor one while the version is `0.x`), with at least one release of deprecation first. |
+
+## Crates
+
+| Crate | Level now | Planned at `0.1.0` |
+| --- | --- | --- |
+| `openai-agents-core` | Unstable | Stabilising. Public structs become `#[non_exhaustive]` before release so fields can be added later. |
+| `openai-agents-openai` | Unstable | Stabilising |
+| `openai-agents` (facade) | Unstable | Stabilising |
+| `openai-agents-macros` | Unstable | Stabilising |
+| `openai-agents-mcp` | Unstable | Unstable |
+| `openai-agents-sqlite` | Unstable | Unstable |
+| `openai-agents-testing` | Unstable | Unstable |
+
+## Behaviour versus API
+
+Run semantics follow the pinned Python SDK (`vendor/PINNED_VERSION`) and are checked by the
+conformance scenarios. The Rust API shape is allowed to differ from Python's; every difference is
+listed in `docs/DEVIATIONS.md`.
+
+## Serialized data
+
+`RunState` carries a schema id (`openai-agents-rs/4` today). Older ids keep loading; a new id is
+introduced only with a changelog entry. A paused run is resumed by the SDK version that wrote it or a
+newer one, never an older one.
+
+## Deprecation
+
+Once a crate is Stabilising or Stable, an item is marked `#[deprecated(note = "use X")]` for at
+least one release before removal, and the changelog lists it under **Deprecated** and later
+**Removed**.
+
+## Minimum Rust version
+
+`rust-version` is `1.99`, the version the project is built and tested with (`rust-toolchain.toml`).
+It has not been tested against older compilers; lowering it needs a verified build first.
+
+---
+

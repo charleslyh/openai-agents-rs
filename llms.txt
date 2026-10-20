@@ -1,0 +1,60 @@
+# OpenAI Agents SDK for Rust
+
+> A Rust port of the OpenAI Agents Python SDK: agents, a runner with tools, handoffs, guardrails,
+> sessions, tracing and human-in-the-loop, provider-neutral. Behaviours are pinned to the Python
+> implementation v0.23.1 and checked against it by an oracle.
+
+## Install
+
+```toml
+openai-agents = "0.1"                                                  # core + OpenAI
+openai-agents = { version = "0.1", features = ["providers", "tools"] } # presets, offline model, tools
+```
+
+```rust
+use openai_agents::prelude::*;
+
+let agent = Agent::new("Assistant").instructions("Be brief.");
+let result = Runner::run(&agent, "Hello", RunOptions::new()).await?;
+println!("{}", result.final_output_as_str().unwrap_or_default());
+```
+
+`openai_agents::run("instructions", "input")` picks the provider from the environment; with
+`AGENTS_OFFLINE=1` it answers locally and needs no key.
+
+## The shape of the API
+
+- `Agent`: `instructions`, `tools`, `handoffs`, `model` / `model_name`, `model_settings`,
+  `output_type`, `input_guardrails` / `output_guardrails`, `hooks`, `capability`.
+- `Runner::run(agent, input, RunOptions)`, `run_streamed`, `run_blocking`, `run_state`.
+- `RunOptions`: builder. `.temperature(..)`, `.max_turns(..)`, `.reasoning(..)`, `.session(..)`,
+  `.provider(..)`, `.resolve_with(closure)`, `.with(value)` for typed context.
+- Tools: `#[function_tool]` over `async fn`, or `FunctionTool::typed` over a `schemars` struct, or
+  the `Tool` trait for something custom.
+- Pausing: `FunctionTool::with_needs_resolution(true)` + `RunResult::to_state()` + `RunState::approve`
+  / `reject` / `provide_output` + `Runner::run_state`.
+- Guardrails: `input_guardrail` / `output_guardrail` closures returning
+  `GuardrailFunctionOutput`, whose verdict is `Pass`, `Fail { reason, severity }` or `Transform`.
+- Bundles: `CapabilityParts::new().tool(..).instructions(..).named("x")`, then `.capability(..)`.
+  `.deferred("description")` keeps it out of the prompt until the model calls `load_capability`.
+- Contracts to implement: `Tool`, `Model`, `ModelProvider`, `Session`, `TracingProcessor`,
+  `Capability`, `RunStateStore`.
+
+## Crates
+
+`openai-agents` re-exports everything. Under it: `core` (no HTTP), `macros`, `testing`, `openai`,
+`providers`, `mcp`, `sqlite`, `sessions`, `observability`, `tools`, `guardrails`.
+
+## Docs
+
+- [README.md](README.md): quick start, crates and features, examples
+- [docs/COMPAT.md](docs/COMPAT.md): support matrix: what the Python SDK has and what happens here
+- [docs/DEVIATIONS.md](docs/DEVIATIONS.md): every intentional difference, with an id (D-… / X-…)
+- [docs/MIGRATION-FROM-PYTHON.md](docs/MIGRATION-FROM-PYTHON.md): Python API name → Rust API name
+- [docs/COMPARISON.md](docs/COMPARISON.md): how this compares with the Python SDK, Rig and ADK-Rust
+- [STABILITY.md](STABILITY.md): what is stable, and the deprecation policy
+
+## Optional
+
+- `cargo agents new <name> --template <chat|tools|hitl>` scaffolds a project.
+- `conformance/scenarios/` holds the declarative parity scenarios.

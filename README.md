@@ -30,12 +30,21 @@ Depend on `openai-agents`; it re-exports everything below under the paths the SD
 | `openai-agents-openai` | Chat Completions and Responses adapters, `OpenAIProvider`, `CompatibleProvider` | feature `openai` (**default**) |
 | `openai-agents-mcp` | MCP client: stdio and streamable HTTP, tool filters, `McpServerManager` | feature `mcp` |
 | `openai-agents-sqlite` | `SqliteSession`, file-compatible with the Python SDK | feature `sqlite` |
+| `openai-agents-providers` | provider presets (DeepSeek, Gemini, Groq, OpenRouter, Anthropic, Ollama), the capability matrix and the offline model | feature `providers` |
+| `openai-agents-sessions` | `FileSession` / `FileRunStateStore`; Redis and Postgres variants | features `sessions`, `redis`, `postgres` |
+| `openai-agents-observability` | console, JSONL and OpenTelemetry export, metrics | features `observability`, `otel` |
+| `openai-agents-tools` | calculator, clock, read-only files, `web_fetch` with private networks refused | features `tools`, `webfetch` |
+| `openai-agents-guardrails` | length, personal data, prompt injection, keywords, JSON Schema | feature `guardrails` |
 
 ```toml
 openai-agents = "0.1"                                                        # core + OpenAI
+openai-agents = { version = "0.1", features = ["providers", "tools", "guardrails"] }
 openai-agents = { version = "0.1", features = ["mcp", "sqlite"] }            # plus MCP and SQLite
 openai-agents = { version = "0.1", default-features = false }                # core only, bring your own Model
 ```
+
+Features add up; `providers` is what makes `openai_agents::run` and `zero_config_options` work with
+anything but OpenAI.
 
 Contributors: each crate carries an `AGENTS.md` with its boundary rules and the traps worth
 knowing before you change it (`crates/core/AGENTS.md`, `crates/mcp/AGENTS.md`, and so on).
@@ -62,6 +71,18 @@ async fn main() -> Result<(), AgentsError> {
 ```
 
 `openai_agents::prelude` holds the types most programs need; everything else is at the crate root.
+
+### Start a project
+
+```bash
+cargo install openai-agents-scaffold   # installs `cargo-agents`
+cargo agents new my-agent              # templates: chat (default), tools, hitl
+cd my-agent && AGENTS_OFFLINE=1 cargo run   # no key needed; set one to talk to a model
+```
+
+The generated project depends on `openai-agents` with `providers`, so a key in the environment (or
+`AGENTS_OFFLINE=1`) is the whole setup. `--path` points it at a local checkout instead of the
+published version.
 
 ## Examples
 
@@ -116,6 +137,10 @@ Ordered like the web demo's capability checklist, one knowledge point per exampl
 | `reasoning` | Run control | Typed `Reasoning` effort/summary for either API |
 | `capability` | Rust-only | A named bundle of tools, instructions and guardrails |
 | `zero_config` | Rust-only | `openai_agents::run`: provider and model from the environment, offline without a key |
+| `deferred_capability` | Rust-only | `CapabilityParts::deferred`: tools stay out of the prompt until the model loads them |
+| `builtin_guardrails` | Safety and governance | Ready-made guardrails from `openai-agents-guardrails` |
+| `file_session` | Conversation and memory | `FileSession`: a conversation in a JSONL file |
+| `trace_export` | Output and observability | Batched console/JSONL export and metrics |
 
 They need `OPENAI_API_KEY` and `OPENAI_MODEL` in the environment; `OPENAI_BASE_URL` and
 `OPENAI_API` (`chat_completions` | `responses`) are optional.
@@ -264,6 +289,8 @@ let session = CompactingSession::new(
 - [`CHANGELOG.md`](./CHANGELOG.md) — what changed in each release
 - [`docs/MIGRATION-FROM-PYTHON.md`](./docs/MIGRATION-FROM-PYTHON.md) — Python → Rust API mapping and what to write yourself
 - [`docs/CONTRIBUTING.md`](./docs/CONTRIBUTING.md) — commit message format and verification
+- [`docs/COMPARISON.md`](./docs/COMPARISON.md) — where this SDK differs from the Python one, Rig and ADK-Rust
+- [`llms.txt`](./llms.txt) — the docs as one index for coding assistants ([`llms-full.txt`](./llms-full.txt) is the flat file)
 
 HITL is supported as tool-call *resolution*: a call pauses when `needs_resolution` (Python:
 `needs_approval`; fixed or dynamic) says so, and the host resolves it on the `RunState` — approve /
