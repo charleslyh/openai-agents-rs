@@ -74,6 +74,18 @@ cargo test --no-default-features
 cargo test --all-features
 ```
 
+Fast local loop (while iterating; CI runs the full set above):
+
+```bash
+cargo test --all-features --lib --bins --tests
+cargo check --no-default-features --all-targets
+```
+
+This skips the 34 examples and doctests, and does not run the `cfg(not(feature = ...))`
+runtime paths. Run the full set before opening a PR. Do not add `--workspace`: it pulls in
+`examples` and `demo/web`, which enable `openai`, so `--no-default-features` would no longer
+test a build without the HTTP client (CI omits it for the same reason).
+
 Python oracle (parity scenarios; needs Python >= 3.10 and [uv](https://docs.astral.sh/uv/)):
 
 ```bash
