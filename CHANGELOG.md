@@ -1,10 +1,13 @@
 # Changelog
 
 All notable changes are recorded here. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Nothing has been released yet; the first
-entry will be `0.1.0`.
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/). 
 
 ## [Unreleased]
+
+## [0.1.0] - 2026-10-21
+
+First release on crates.io: 14 crates under the `opai-agents-*` names (facade: `opai-agents`).
 
 ### Changed
 
@@ -212,3 +215,6 @@ entry will be `0.1.0`.
 - `RunState::approval_status`; use `RunState::resolution_status`.
 - **Breaking:** `McpServer::needs_approval_for` is renamed `needs_resolution_for`. Human-approval
   names (`approve` / `reject`, MCP `RequireApproval`, `ToolErrorKind::ApprovalRejected`) stay.
+
+[Unreleased]: https://github.com/charleslyh/openai-agents-rs/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/charleslyh/openai-agents-rs/releases/tag/v0.1.0
