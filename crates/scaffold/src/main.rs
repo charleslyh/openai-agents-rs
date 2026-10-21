@@ -51,7 +51,7 @@ impl Template {
     }
 }
 
-const TEMPLATE_CARGO_TOML: &str = include_str!("../templates/Cargo.toml");
+const TEMPLATE_CARGO_TOML: &str = include_str!("../templates/Cargo.toml.tpl");
 const TEMPLATE_README: &str = include_str!("../templates/README.md");
 
 fn usage() -> &'static str {
