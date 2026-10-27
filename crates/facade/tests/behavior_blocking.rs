@@ -77,16 +77,21 @@ fn run_blocking_on_uses_the_given_runtime() {
 
 #[test]
 fn a_panic_in_the_run_reaches_the_caller() {
-    use opai_agents::FunctionTool;
-    let model = Arc::new(ScriptedModel::new([ModelStep::from(
-        ItemHelpers::function_tool_call("boom", "{}", "c1"),
-    )]));
-    let agent = Agent::new("a").model(model).tools(vec![FunctionTool::new(
-        "boom",
-        "panics",
-        serde_json::json!({"type": "object", "properties": {}}),
-        |_ctx, _args| async move { panic!("tool bug") },
-    )]);
+    use opai_agents::{Model, ModelError, ModelRequest, ModelResponse};
+
+    struct Panics;
+
+    #[async_trait::async_trait]
+    impl Model for Panics {
+        async fn get_response(
+            &self,
+            _request: ModelRequest<'_>,
+        ) -> Result<ModelResponse, ModelError> {
+            panic!("model bug");
+        }
+    }
+
+    let agent = Agent::new("a").model(Arc::new(Panics));
     let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _ = Runner::run_blocking(&agent, "go", RunOptions::default());
     }));

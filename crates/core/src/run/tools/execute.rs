@@ -21,6 +21,7 @@ use crate::tool_guardrails::{run_tool_input_guardrails, run_tool_output_guardrai
 use crate::tracing::function_span;
 
 use crate::run::agent_loop::{SharedToolGuardrailLog, NESTED_RESUME_STATES};
+use crate::run::panic;
 
 use super::plan::ToolPlan;
 
@@ -86,13 +87,17 @@ pub(crate) async fn execute_planned_tools(
                 // Python: input guardrails run before the start hooks; a rejection replaces the
                 // call, so neither the hooks, the body nor the output guardrails run.
                 let mut input_results = Vec::new();
-                let rejection = run_tool_input_guardrails(
-                    &tool.tool_input_guardrails,
-                    &ctx,
-                    &agent,
-                    &mut input_results,
+                let rejection = panic::guard(
+                    "a tool input guardrail",
+                    run_tool_input_guardrails(
+                        &tool.tool_input_guardrails,
+                        &ctx,
+                        &agent,
+                        &mut input_results,
+                    ),
                 )
-                .await;
+                .await
+                .and_then(|checked| Ok(checked?));
                 guardrail_log
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -106,10 +111,18 @@ pub(crate) async fn execute_planned_tools(
                     ));
                 }
                 if let Some(h) = &hooks {
-                    h.on_tool_start(hook_ctx.clone(), &agent, &tool).await;
+                    panic::guard(
+                        "RunHooks::on_tool_start",
+                        h.on_tool_start(hook_ctx.clone(), &agent, &tool),
+                    )
+                    .await?;
                 }
                 if let Some(ah) = &agent_hooks {
-                    ah.on_tool_start(hook_ctx.clone(), &agent, &tool).await;
+                    panic::guard(
+                        "AgentHooks::on_tool_start",
+                        ah.on_tool_start(hook_ctx.clone(), &agent, &tool),
+                    )
+                    .await?;
                 }
                 // Python (`failure_error_function`): a failing tool is reported to the model so it
                 // can retry, instead of aborting the run.
@@ -118,7 +131,16 @@ pub(crate) async fn execute_planned_tools(
                 let call = crate::tracing::with_current_span(
                     &span_id,
                     NESTED_RESUME_STATES.scope(RefCell::new(resume_map), async {
-                        (tool.on_invoke_tool)(ctx, arguments).await
+                        // A panic in the tool body is a failed call, like an `Err`: the model is
+                        // told and can retry. The text it gets is fixed; the panic message goes to
+                        // the log only, since it may carry internals the model should not see.
+                        match panic::catch((tool.on_invoke_tool)(ctx, arguments)).await {
+                            Ok(outcome) => outcome,
+                            Err(message) => {
+                                tracing::error!(tool = %tool.name, %message, "tool panicked");
+                                Err(AgentsError::tool("the tool panicked"))
+                            }
+                        }
                     }),
                 );
                 // Python applies the timeout outside the failure handler, so `RaiseException`
@@ -166,14 +188,18 @@ pub(crate) async fn execute_planned_tools(
                 // call paused for a nested resolution.
                 if result.interruptions.is_empty() {
                     let mut output_results = Vec::new();
-                    let guarded = run_tool_output_guardrails(
-                        &tool.tool_output_guardrails,
-                        &hook_ctx,
-                        &agent,
-                        result.output.clone().unwrap_or(Value::Null),
-                        &mut output_results,
+                    let guarded = panic::guard(
+                        "a tool output guardrail",
+                        run_tool_output_guardrails(
+                            &tool.tool_output_guardrails,
+                            &hook_ctx,
+                            &agent,
+                            result.output.clone().unwrap_or(Value::Null),
+                            &mut output_results,
+                        ),
                     )
-                    .await;
+                    .await
+                    .and_then(|checked| Ok(checked?));
                     guardrail_log
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -183,11 +209,18 @@ pub(crate) async fn execute_planned_tools(
                 }
                 let output = result.output.clone().unwrap_or(Value::Null);
                 if let Some(h) = &hooks {
-                    h.on_tool_end(hook_ctx.clone(), &agent, &tool, &output)
-                        .await;
+                    panic::guard(
+                        "RunHooks::on_tool_end",
+                        h.on_tool_end(hook_ctx.clone(), &agent, &tool, &output),
+                    )
+                    .await?;
                 }
                 if let Some(ah) = &agent_hooks {
-                    ah.on_tool_end(hook_ctx, &agent, &tool, &output).await;
+                    panic::guard(
+                        "AgentHooks::on_tool_end",
+                        ah.on_tool_end(hook_ctx, &agent, &tool, &output),
+                    )
+                    .await?;
                 }
                 Ok::<_, AgentsError>((tool, call_id, result))
             }
