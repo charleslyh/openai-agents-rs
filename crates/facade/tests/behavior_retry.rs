@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 use tokio::time::Instant;
 
 fn status(code: u16, headers: &[(&str, &str)], body: Value) -> ModelError {
-    ModelError::Status(ModelStatusError {
+    ModelError::Status(Box::new(ModelStatusError {
         status_code: code,
         message: format!("status={code} body={body}"),
         body,
@@ -26,7 +26,7 @@ fn status(code: u16, headers: &[(&str, &str)], body: Value) -> ModelError {
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect::<BTreeMap<_, _>>(),
-    })
+    }))
 }
 
 fn connection(is_timeout: bool) -> ModelError {

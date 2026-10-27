@@ -478,12 +478,12 @@ mod tests {
     use std::collections::BTreeMap;
 
     fn status(code: u16) -> AgentsError {
-        AgentsError::Model(ModelError::Status(ModelStatusError {
+        AgentsError::Model(ModelError::Status(Box::new(ModelStatusError {
             status_code: code,
             message: format!("[injected] HTTP {code}"),
             body: Value::Null,
             headers: BTreeMap::new(),
-        }))
+        })))
     }
 
     #[test]

@@ -37,6 +37,8 @@ fn not_found_conversation() -> Response {
     )
 }
 
+// `Response` is axum's own type and is the natural error of a handler guard.
+#[allow(clippy::result_large_err)]
 fn require_debug(app: &AppState) -> Result<(), Response> {
     if app.debug {
         Ok(())

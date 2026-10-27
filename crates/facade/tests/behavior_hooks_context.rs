@@ -331,7 +331,8 @@ async fn input_guardrail_tripwire_aborts() {
         .await
         .expect_err("tripwire must abort");
     match err {
-        AgentsError::InputGuardrailTripwire(InputGuardrailTripwireTriggered { result }) => {
+        AgentsError::InputGuardrailTripwire(triggered) => {
+            let InputGuardrailTripwireTriggered { result } = *triggered;
             assert_eq!(result.guardrail_name, "block");
             assert!(result.output.tripwire_triggered());
         }
@@ -379,7 +380,8 @@ async fn output_guardrail_tripwire_aborts() {
         .await
         .expect_err("tripwire must abort");
     match err {
-        AgentsError::OutputGuardrailTripwire(OutputGuardrailTripwireTriggered { result }) => {
+        AgentsError::OutputGuardrailTripwire(triggered) => {
+            let OutputGuardrailTripwireTriggered { result } = *triggered;
             assert_eq!(result.guardrail_name, "no-secrets");
         }
         other => panic!("unexpected error: {other}"),
@@ -403,11 +405,7 @@ async fn run_config_guardrails_apply() {
         .expect_err("tripwire must abort");
     assert!(matches!(
         err,
-        AgentsError::InputGuardrailTripwire(InputGuardrailTripwireTriggered {
-            result: opai_agents::InputGuardrailResult {
-                guardrail_name,
-                ..
-            }
-        }) if guardrail_name == "cfg-block"
+        AgentsError::InputGuardrailTripwire(triggered)
+            if triggered.result.guardrail_name == "cfg-block"
     ));
 }

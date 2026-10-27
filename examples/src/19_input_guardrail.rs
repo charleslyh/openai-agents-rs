@@ -54,7 +54,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let input = common::example_input("What is the capital of France?");
     match Runner::run(&agent, input, RunOptions::default()).await {
         Ok(result) => println!("{}", result.final_output),
-        Err(AgentsError::InputGuardrailTripwire(InputGuardrailTripwireTriggered { result })) => {
+        Err(AgentsError::InputGuardrailTripwire(triggered)) => {
+            let InputGuardrailTripwireTriggered { result } = *triggered;
             println!("blocked by input guardrail `{}`", result.guardrail_name);
         }
         Err(e) => return Err(e.into()),

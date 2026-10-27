@@ -29,10 +29,10 @@ pub enum AgentsError {
     User(#[from] UserError),
     /// An input guardrail halted the run (Python: `InputGuardrailTripwireTriggered`).
     #[error(transparent)]
-    InputGuardrailTripwire(#[from] InputGuardrailTripwireTriggered),
+    InputGuardrailTripwire(Box<InputGuardrailTripwireTriggered>),
     /// An output guardrail halted the run (Python: `OutputGuardrailTripwireTriggered`).
     #[error(transparent)]
-    OutputGuardrailTripwire(#[from] OutputGuardrailTripwireTriggered),
+    OutputGuardrailTripwire(Box<OutputGuardrailTripwireTriggered>),
     /// Tool execution failure that should abort the run.
     #[error("tool error: {message}")]
     Tool {
@@ -44,10 +44,10 @@ pub enum AgentsError {
     },
     /// A tool input guardrail halted the run (Python: `ToolInputGuardrailTripwireTriggered`).
     #[error(transparent)]
-    ToolInputGuardrailTripwire(#[from] ToolInputGuardrailTripwireTriggered),
+    ToolInputGuardrailTripwire(Box<ToolInputGuardrailTripwireTriggered>),
     /// A tool output guardrail halted the run (Python: `ToolOutputGuardrailTripwireTriggered`).
     #[error(transparent)]
-    ToolOutputGuardrailTripwire(#[from] ToolOutputGuardrailTripwireTriggered),
+    ToolOutputGuardrailTripwire(Box<ToolOutputGuardrailTripwireTriggered>),
     /// A function tool exceeded its timeout with `ToolTimeoutBehavior::RaiseException`
     /// (Python: `ToolTimeoutError`).
     #[error(transparent)]
@@ -61,6 +61,32 @@ pub enum AgentsError {
         #[source]
         source: Option<Box<dyn std::error::Error + Send + Sync>>,
     },
+}
+
+// The tripwire payloads are boxed so `Result<_, AgentsError>` stays small (the largest was 264
+// bytes). `From` keeps `?` working on the unboxed types.
+impl From<InputGuardrailTripwireTriggered> for AgentsError {
+    fn from(error: InputGuardrailTripwireTriggered) -> Self {
+        Self::InputGuardrailTripwire(Box::new(error))
+    }
+}
+
+impl From<OutputGuardrailTripwireTriggered> for AgentsError {
+    fn from(error: OutputGuardrailTripwireTriggered) -> Self {
+        Self::OutputGuardrailTripwire(Box::new(error))
+    }
+}
+
+impl From<ToolInputGuardrailTripwireTriggered> for AgentsError {
+    fn from(error: ToolInputGuardrailTripwireTriggered) -> Self {
+        Self::ToolInputGuardrailTripwire(Box::new(error))
+    }
+}
+
+impl From<ToolOutputGuardrailTripwireTriggered> for AgentsError {
+    fn from(error: ToolOutputGuardrailTripwireTriggered) -> Self {
+        Self::ToolOutputGuardrailTripwire(Box::new(error))
+    }
 }
 
 impl AgentsError {
@@ -161,7 +187,7 @@ pub enum ModelError {
     Transport(String),
     /// The provider answered with a non-success HTTP status.
     #[error("model transport error: {0}")]
-    Status(ModelStatusError),
+    Status(Box<ModelStatusError>),
     /// The request never produced a response: connection, TLS, timeout or body-read failure.
     #[error("model transport error: {0}")]
     Connection(ModelConnectionError),
@@ -271,4 +297,27 @@ impl UserError {
     pub fn new(msg: impl Into<String>) -> Self {
         Self(msg.into())
     }
+}
+
+#[cfg(test)]
+mod size_tests {
+    use super::*;
+
+    /// `Result<_, AgentsError>` is returned from nearly every async function, so its size is paid
+    /// everywhere. The tripwire payloads and the HTTP status error are boxed to keep it down;
+    /// this fails when a new variant brings the size back up. Raise the limit only on purpose.
+    #[test]
+    fn agents_error_stays_small() {
+        let size = std::mem::size_of::<AgentsError>();
+        assert!(size <= MAX_AGENTS_ERROR_BYTES, "AgentsError is {size} bytes");
+    }
+
+    #[test]
+    fn model_error_stays_small() {
+        let size = std::mem::size_of::<ModelError>();
+        assert!(size <= MAX_MODEL_ERROR_BYTES, "ModelError is {size} bytes");
+    }
+
+    const MAX_AGENTS_ERROR_BYTES: usize = 56;
+    const MAX_MODEL_ERROR_BYTES: usize = 40;
 }

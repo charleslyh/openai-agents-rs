@@ -214,12 +214,12 @@ fn status_error(code: u16, reason: &str, retry_after: Option<u32>) -> ModelError
     if let Some(secs) = retry_after {
         headers.insert("retry-after".to_string(), secs.to_string());
     }
-    ModelError::Status(ModelStatusError {
+    ModelError::Status(Box::new(ModelStatusError {
         status_code: code,
         message: format!("{INJECTED_TAG} HTTP {code}: {reason}"),
         body: json!({"error": {"message": reason, "type": "injected"}}),
         headers,
-    })
+    }))
 }
 
 enum Step {

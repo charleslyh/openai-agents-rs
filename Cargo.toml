@@ -27,13 +27,9 @@ uuid = { version = "1", features = ["v4"] }
 
 # Lints every member inherits with `[lints] workspace = true`.
 #
-# These three are a *known, tracked backlog*, not a preference: `-D warnings` in CI blocks every
+# These two are a *known, tracked backlog*, not a preference: `-D warnings` in CI blocks every
 # other lint, and this list must only ever shrink. Counts as of the 2026-10 re-audit (see
 # docs/refactor/06-progress.md for how to re-count):
-#   result_large_err           63 — `AgentsError` is a big enum, so `Result<_, AgentsError>` is
-#                                   large on the stack. Fixing it means boxing the error variant
-#                                   (an API change) or shrinking `ModelStatusError`; both need a
-#                                   design pass.
 #   field_reassign_with_default 35 — mechanical (`Y { field, ..Default::default() }`), mostly in
 #                                   tests and examples.
 #   needless_question_mark       8 — emitted inside `#[function_tool]`-generated code, so it can
@@ -43,6 +39,5 @@ uuid = { version = "1", features = ["v4"] }
 unsafe_code = "forbid"
 
 [workspace.lints.clippy]
-result_large_err = "allow"
 field_reassign_with_default = "allow"
 needless_question_mark = "allow"

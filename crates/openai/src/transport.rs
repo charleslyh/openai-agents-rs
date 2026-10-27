@@ -46,12 +46,12 @@ pub(crate) async fn status_error(label: &str, resp: reqwest::Response) -> ModelE
             serde_json::Value::String(text)
         }
     });
-    ModelError::Status(opai_agents_core::error::ModelStatusError {
+    ModelError::Status(Box::new(opai_agents_core::error::ModelStatusError {
         status_code: status.as_u16(),
         message: format!("{label} status={status} body={body}"),
         body,
         headers,
-    })
+    }))
 }
 
 /// Whether a response carries a plain JSON body instead of an SSE stream.
