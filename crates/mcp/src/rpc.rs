@@ -12,6 +12,7 @@ const SUPPORTED_PROTOCOL_VERSIONS: [&str; 3] = ["2025-06-18", "2025-03-26", "202
 
 /// What can go wrong talking to an MCP server.
 #[derive(Debug, Clone, thiserror::Error)]
+#[non_exhaustive]
 pub enum McpError {
     /// The server answered with a JSON-RPC error object.
     #[error("MCP error {code}: {message}")]

@@ -80,6 +80,7 @@ fn describe(data: &SpanData) -> (&'static str, String) {
         SpanData::Turn {
             turn, agent_name, ..
         } => ("turn", format!("turn {turn} · {agent_name}")),
+        _ => ("other", String::new()),
     }
 }
 

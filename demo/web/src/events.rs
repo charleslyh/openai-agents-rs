@@ -268,6 +268,7 @@ pub fn map_stream_event(event: StreamEvent, delivered: &mut usize) -> Vec<DemoEv
             }],
             _ => Vec::new(),
         },
+        _ => Vec::new(),
     }
 }
 
@@ -411,7 +412,8 @@ pub fn classify(err: &AgentsError) -> ErrorInfo {
             "A tool failed and aborted the run. Resend the message.",
             err,
         ),
-        AgentsError::User(_) | AgentsError::Internal { .. } => ErrorInfo::new(
+        // `AgentsError` is `#[non_exhaustive]`, so a variant added later lands here too.
+        _ => ErrorInfo::new(
             "internal",
             false,
             "Unexpected failure in the run. Resend, or start a new conversation.",
@@ -468,6 +470,7 @@ pub fn model_error_kind(err: &ModelError) -> &'static str {
         ModelError::Transport(_) => "transport",
         ModelError::Script(_) => "script",
         ModelError::Unsupported(_) => "unsupported",
+        _ => "model_error",
     }
 }
 

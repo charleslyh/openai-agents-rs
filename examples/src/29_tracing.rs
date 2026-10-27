@@ -55,6 +55,7 @@ impl TracingProcessor for PrintSpans {
             SpanData::Task { .. } => ("task", "run".to_string()),
             SpanData::Response { .. } => ("response", "response".to_string()),
             SpanData::Custom { name } => ("custom", name.clone()),
+            _ => ("other", String::new()),
         };
         let ms = span
             .ended_at

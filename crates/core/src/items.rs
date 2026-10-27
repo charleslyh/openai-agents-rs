@@ -36,6 +36,7 @@ impl ModelResponse {
 
 /// An item produced during a run (Python: `RunItem` union).
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum RunItem {
     /// Assistant message.
     Message(MessageOutputItem),

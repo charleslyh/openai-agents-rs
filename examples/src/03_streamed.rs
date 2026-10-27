@@ -88,6 +88,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     _ => {}
                 }
             }
+            _ => {}
         }
     }
     end_section(&mut section)?;

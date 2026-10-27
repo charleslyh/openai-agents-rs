@@ -34,6 +34,7 @@ pub struct RunErrorData {
 /// The error a run error handler is asked to turn into a final output
 /// (Python: `MaxTurnsExceeded | ModelRefusalError | ModelBehaviorError`).
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum RunHandledError {
     /// `max_turns` was exceeded.
     MaxTurns(MaxTurnsExceeded),

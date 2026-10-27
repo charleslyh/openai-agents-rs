@@ -17,6 +17,7 @@ use serde_json::Value;
 /// `Value` when needed.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(tag = "type")]
+#[non_exhaustive]
 pub enum WireEvent {
     /// `response.created`.
     #[serde(rename = "response.created")]

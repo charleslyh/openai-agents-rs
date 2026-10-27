@@ -6,6 +6,7 @@ use crate::items::RunItem;
 
 /// Semantic stream event names for [`StreamEvent::RunItem`] (Python: `RunItemStreamEvent.name`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum RunItemStreamName {
     /// Assistant message created.
     MessageOutputCreated,
@@ -37,6 +38,7 @@ impl RunItemStreamName {
 
 /// A streaming event from an agent run (Python: `StreamEvent`).
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum StreamEvent {
     /// One Responses API wire event (Python: `RawResponsesStreamEvent.data`).
     ///

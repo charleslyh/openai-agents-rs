@@ -14,6 +14,7 @@ pub(crate) use retry_after::retry_after_from_headers;
 
 /// Top-level Agents SDK error.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum AgentsError {
     /// Maximum number of turns was exceeded.
     #[error(transparent)]
@@ -178,6 +179,7 @@ pub struct ModelRefusalError {
 
 /// Model-layer errors.
 #[derive(Debug, Error, Clone)]
+#[non_exhaustive]
 pub enum ModelError {
     /// Scripted model ran out of steps or received an unexpected call.
     #[error("model script error: {0}")]
@@ -309,7 +311,10 @@ mod size_tests {
     #[test]
     fn agents_error_stays_small() {
         let size = std::mem::size_of::<AgentsError>();
-        assert!(size <= MAX_AGENTS_ERROR_BYTES, "AgentsError is {size} bytes");
+        assert!(
+            size <= MAX_AGENTS_ERROR_BYTES,
+            "AgentsError is {size} bytes"
+        );
     }
 
     #[test]

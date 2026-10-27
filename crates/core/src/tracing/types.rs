@@ -48,6 +48,7 @@ pub struct Trace {
 
 /// Span data kinds.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum SpanData {
     /// Agent span.
     Agent {

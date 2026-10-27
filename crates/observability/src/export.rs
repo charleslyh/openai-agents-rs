@@ -14,6 +14,7 @@ use opai_agents_core::tracing::{Span, SpanData, Trace};
 
 /// One thing that happened, ready to be written somewhere.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum ExportEvent {
     /// A trace opened.
     TraceStart(Value),
@@ -98,6 +99,8 @@ pub fn span_to_json(span: &Span) -> Value {
             Some(agent_name.clone()),
             Some(json!({"turn": turn, "usage": usage})),
         ),
+        // `SpanData` is `#[non_exhaustive]`: a kind added later still exports, just untyped.
+        _ => ("unknown", None, None),
     };
     if let Value::Object(map) = &mut out {
         map.insert("span_kind".into(), json!(kind));
