@@ -1,0 +1,64 @@
+name: release
+
+# Publishes every crate to crates.io through scripts/publish.py, which paces the uploads (see
+# docs/RELEASING.md for why `cargo publish --workspace` is not used for the real thing).
+#
+# Safe to re-run: crates whose version is already in the index are skipped, so a re-run does not
+# spend rate-limit tokens on them.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Rehearse only (cargo publish --workspace --dry-run); upload nothing"
+        type: boolean
+        default: true
+      from_crate:
+        description: "Resume at this crate (leave empty to start from the beginning)"
+        type: string
+        default: ""
+  push:
+    tags:
+      - "v*"
+
+# Two runs at once would race for the same rate-limit tokens. Never cancel a running upload.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # A first release is about 70 minutes of deliberate waiting; leave room for 429 sleeps.
+    timeout-minutes: 240
+    # Put required reviewers on this environment to gate real uploads.
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Script tests
+        run: python3 scripts/test_publish.py
+
+      - name: Plan
+        run: python3 scripts/publish.py --plan
+
+      - name: Rehearse (whole workspace resolved at once)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: python3 scripts/publish.py --dry-run
+
+      - name: Publish
+        if: ${{ github.event_name == 'push' || !inputs.dry_run }}
+        env:
+          # Read by cargo itself; the script never prints it or puts it on a command line.
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          FROM_CRATE: ${{ inputs.from_crate }}
+        run: |
+          if [ -n "$FROM_CRATE" ]; then
+            python3 scripts/publish.py --from "$FROM_CRATE"
+          else
+            python3 scripts/publish.py
+          fi
