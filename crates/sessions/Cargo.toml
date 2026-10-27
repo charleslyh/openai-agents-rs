@@ -47,6 +47,8 @@ rusqlite = { workspace = true, optional = true }
 sqlx = { version = "0.9.0", default-features = false, features = ["postgres", "runtime-tokio", "tls-rustls"], optional = true }
 
 [dev-dependencies]
+# The shared `Session` contract every backend's tests run.
+opai-agents-core = { workspace = true, features = ["session-contract"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 # The Redis tests change a stored state behind the store's back, which is the tampering the
 # signature is there to catch; they need the client for that. Test profile only.

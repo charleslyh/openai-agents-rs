@@ -205,7 +205,7 @@ dictionaries are merged (`model_settings.py:273`).
 | `FileSession` (feature `sessions`) | S | Rust-only: JSONL, locked across processes; passes the shared `Session` contract (X-017) |
 | `RedisSession` (feature `redis`) | S | Rust-only: a list, `replace_items` in one MULTI, optional TTL; same contract (X-017) |
 | `PostgresSession` (feature `postgres`) | S | Rust-only: rows, values bound, table name validated; same contract (X-017) |
-| Shared `Session` contract (`core::session_contract`) | S | Rust-only: the suite every backend runs (X-017) |
+| Shared `Session` contract (`core::session_contract`, core feature `session-contract`) | S | Rust-only: the suite every backend runs (X-017) |
 | `RunStateStore`: file, Redis, Postgres | S | Rust-only: a run that paused for an approval, stored and reloaded (X-016) |
 | OpenAI-conversations session, `responses.compact` compaction | X | OpenAI-hosted |
 | `ToolOutputTrimmer` | P | Checked against Python; string outputs only (D-039) |

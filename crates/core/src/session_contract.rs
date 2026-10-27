@@ -5,6 +5,8 @@
 //! outside this workspace can run it too, which is the point — the same eight behaviours, whether
 //! the store is a file, Redis, Postgres or something else.
 //!
+//! Behind the `session-contract` feature of `opai-agents-core`, which is off by default.
+//!
 //! ```rust,no_run
 //! use opai_agents_core::{session_contract, Session};
 //!

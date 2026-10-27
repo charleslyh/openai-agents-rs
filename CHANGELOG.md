@@ -19,6 +19,8 @@ Collects the changes for 0.2.0. Breaking changes are marked **breaking**.
   The published SDK is now twelve crates.
 - **breaking**: public enums that may grow are `#[non_exhaustive]`, and `ToolContext` is
   `#[non_exhaustive]` (build one with `ToolContext::new`).
+- **breaking**: `opai_agents_core::session_contract` is behind the new `session-contract` feature
+  (off by default). A backend that runs it enables the feature in its dev dependencies.
 - **breaking**: large error variants are boxed (`AgentsError` 264 to 48 bytes, `ModelError` 128 to
   32), and the `result_large_err` lint allow is gone.
 

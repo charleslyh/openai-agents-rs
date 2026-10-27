@@ -14,6 +14,13 @@ repository.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = []
+# `session_contract`: the test suite every `Session` backend runs. It is test support, so a build
+# that only runs agents compiles none of it. The bundled backends turn it on in their dev
+# dependencies; a backend outside this workspace turns it on in its own.
+session-contract = []
+
 [dependencies]
 async-trait = { workspace = true }
 futures = { workspace = true }
