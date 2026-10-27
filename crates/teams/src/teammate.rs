@@ -381,19 +381,20 @@ async fn work_on(
             return false;
         }
 
+        // The member's token is the run's token, so cancelling the member cancels the run the
+        // same way cancelling any other run does: the model call is dropped, tools see the
+        // token, and a call that is already running is allowed to finish.
         let make_options = || {
-            shared.run_options(
-                handle.clone(),
-                Some(&entry.role),
-                Some(Arc::clone(session)),
-                Some(max_turns),
-            )
+            shared
+                .run_options(
+                    handle.clone(),
+                    Some(&entry.role),
+                    Some(Arc::clone(session)),
+                    Some(max_turns),
+                )
+                .cancellation_token(entry.token.child_token())
         };
-        let mut result = tokio::select! {
-            biased;
-            _ = entry.token.cancelled() => return true,
-            result = Runner::run(agent, input.clone(), make_options()) => result,
-        };
+        let mut result = Runner::run(agent, input.clone(), make_options()).await;
 
         // A run that paused on tool calls waits for the lead, then continues where it stopped.
         let summary = loop {
@@ -412,6 +413,10 @@ async fn work_on(
                     return false;
                 }
             };
+            if run.is_cancelled {
+                shared.meter.add_tokens(run.usage.total_tokens);
+                return true;
+            }
             if !run.is_interrupted() {
                 // The usage of a resumed run already includes what came before the pause.
                 shared.meter.add_tokens(run.usage.total_tokens);
@@ -419,11 +424,7 @@ async fn work_on(
             }
             match await_decisions(shared, entry, &run).await {
                 Ok(Decisions::Resolved(state)) => {
-                    result = tokio::select! {
-                        biased;
-                        _ = entry.token.cancelled() => return true,
-                        result = Runner::run_state(agent, *state, make_options()) => result,
-                    };
+                    result = Runner::run_state(agent, *state, make_options()).await;
                 }
                 Ok(Decisions::Cancelled) => return true,
                 Ok(Decisions::Shutdown) => return false,
