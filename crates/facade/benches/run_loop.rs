@@ -98,6 +98,39 @@ fn bench_many_tools_many_turns(c: &mut Criterion) {
     });
 }
 
+/// 200 tool turns of a single run: the cost that grows with the length of the history.
+///
+/// Anything the runner copies from the whole run on every turn makes this quadratic, which the
+/// ten-turn benchmark above is too short to show. Compare the time per turn with `ten_turns`.
+fn bench_long_history(c: &mut Criterion) {
+    let rt = Runtime::new().expect("runtime");
+    let mut group = c.benchmark_group("long_history");
+    group.sample_size(20);
+    for turns in [50usize, 200] {
+        group.bench_function(format!("{turns}_tool_turns"), |b| {
+            b.iter(|| {
+                let mut steps: Vec<ModelStep> = (0..turns)
+                    .map(|turn| {
+                        ModelStep::output(vec![function_call(
+                            "echo",
+                            json!({"n": turn}),
+                            format!("c{turn}"),
+                        )])
+                    })
+                    .collect();
+                steps.push(ModelStep::output(vec![assistant_message("done")]));
+                let model = Arc::new(ScriptedModel::new(steps));
+                let agent = Agent::new("a")
+                    .model(model)
+                    .tools(vec![FunctionTool::constant("echo", "echo", "ok")]);
+                let opts = RunOptions::new().max_turns(turns + 2);
+                rt.block_on(Runner::run(&agent, "ping", opts)).expect("run")
+            })
+        });
+    }
+    group.finish();
+}
+
 /// `stop_on_first_tool`: how cheap the "stop" paths are compared with `run_llm_again`.
 fn bench_stop_on_first_tool(c: &mut Criterion) {
     let rt = Runtime::new().expect("runtime");
@@ -156,6 +189,7 @@ criterion_group!(
     bench_one_tool_then_answer,
     bench_parallel_tools,
     bench_many_tools_many_turns,
+    bench_long_history,
     bench_stop_on_first_tool,
     bench_session_round_trip,
     bench_strict_schema

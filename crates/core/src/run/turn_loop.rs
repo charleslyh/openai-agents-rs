@@ -453,6 +453,11 @@ impl<'a> TurnLoop<'a> {
         }
         // Python (`run.py:1506-1507`): the turn counter is incremented first and only compared
         // when `max_turns` is not `None`.
+        // Only a run that is over its limit needs a copy of the history, for the handler; copying it
+        // every turn made a long run quadratic.
+        if !self.max_turns.is_some_and(|limit| self.turn > limit) {
+            return Ok(None);
+        }
         let done_items = self.generated_items.clone();
         let exceeded = handle_max_turns_exceeded(
             self.turn,
