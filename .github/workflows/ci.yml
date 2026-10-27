@@ -26,6 +26,8 @@ jobs:
       - name: Docs state what the code has
         # Schema id, crate list and crate count in the docs. See the script for the checks.
         run: python3 scripts/check_docs_drift.py
+      - name: Publish script tests
+        run: python3 scripts/test_publish.py
       - name: Facade Runner mirrors the core Runner
         # The facade wraps every `Runner` method to install the default model provider; this fails
         # when core gains, loses or changes a method without the wrapper following.
