@@ -1,19 +1,19 @@
-//! Test doubles. `opai-agents-testing` cannot be used here: extension crates may not depend on one
-//! another (see `scripts/check_module_deps.py`), so this is a minimal scripted model.
+//! Test helpers for the team tests: a small, call-order-friendly face over the shared
+//! `opai_agents_testing::ScriptedModel` (a dev dependency; see `DEV_ONLY_DEPS` in
+//! `scripts/check_module_deps.py` for why that is allowed here).
 
 #![allow(dead_code)]
 
-use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
-use opai_agents_core::error::ModelError;
-use opai_agents_core::items::{ItemHelpers, ModelResponse};
-use opai_agents_core::model::{Model, ModelRequest};
+use opai_agents_core::items::ItemHelpers;
+use opai_agents_core::model::Model;
 use opai_agents_core::usage::Usage;
 use opai_agents_core::Agent;
+use opai_agents_testing::{ModelStep, ScriptedModel};
+use serde_json::Value;
 
 /// One scripted model answer.
 pub enum Step {
@@ -42,114 +42,84 @@ impl Step {
     }
 }
 
-/// A model that plays back `Step`s and records what it was asked.
+/// A scripted model that records what it was asked.
 pub struct Script {
-    steps: Mutex<VecDeque<Step>>,
-    inputs: Mutex<Vec<String>>,
-    instructions: Mutex<Vec<String>>,
-    tools: Mutex<Vec<Vec<String>>>,
-    calls: AtomicUsize,
+    model: Arc<ScriptedModel>,
     call_ids: AtomicUsize,
 }
 
 impl Script {
     pub fn new(steps: Vec<Step>) -> Arc<Self> {
-        Arc::new(Self {
-            steps: Mutex::new(steps.into()),
-            inputs: Mutex::new(Vec::new()),
-            instructions: Mutex::new(Vec::new()),
-            tools: Mutex::new(Vec::new()),
-            calls: AtomicUsize::new(0),
+        let script = Arc::new(Self {
+            model: Arc::new(ScriptedModel::new([])),
             call_ids: AtomicUsize::new(0),
-        })
+        });
+        for step in steps {
+            script.push(step);
+        }
+        script
     }
 
     pub fn push(&self, step: Step) {
-        self.steps.lock().unwrap().push_back(step);
+        self.model.enqueue(self.convert(step));
+    }
+
+    fn convert(&self, step: Step) -> ModelStep {
+        let mut converted = match step {
+            Step::Say(text) => ModelStep::from(ItemHelpers::text_message(text)),
+            Step::Call { name, args } => {
+                let n = self.call_ids.fetch_add(1, Ordering::SeqCst);
+                ModelStep::from(ItemHelpers::function_tool_call(
+                    name,
+                    args,
+                    format!("call-{n}"),
+                ))
+            }
+            Step::Fail(message) => return ModelStep::raise_error(message),
+            Step::Panic => return ModelStep::panic("scripted panic"),
+            Step::Hang => return ModelStep::hang(),
+        };
+        converted.usage = Usage::from_tokens(10, 5);
+        converted
     }
 
     /// Number of model calls so far.
     pub fn calls(&self) -> usize {
-        self.calls.load(Ordering::SeqCst)
+        self.model.calls().len()
     }
 
-    /// The input of call `index`, as JSON text.
+    /// The input of call `index`, as JSON text (always an item list).
     pub fn input(&self, index: usize) -> String {
-        self.inputs.lock().unwrap()[index].clone()
+        input_json(&self.model.calls()[index].input)
     }
 
     pub fn last_input(&self) -> String {
-        self.inputs
-            .lock()
-            .unwrap()
-            .last()
-            .cloned()
+        self.model
+            .last_call()
+            .map(|c| input_json(&c.input))
             .unwrap_or_default()
     }
 
     /// Names of the tools offered on the last call.
     pub fn last_tools(&self) -> Vec<String> {
-        self.tools
-            .lock()
-            .unwrap()
-            .last()
-            .cloned()
+        self.model
+            .last_call()
+            .map(|c| c.tool_names)
             .unwrap_or_default()
     }
 
     pub fn last_instructions(&self) -> String {
-        self.instructions
-            .lock()
-            .unwrap()
-            .last()
-            .cloned()
+        self.model
+            .last_call()
+            .and_then(|c| c.system_instructions)
             .unwrap_or_default()
     }
 }
 
-#[async_trait]
-impl Model for Script {
-    async fn get_response(&self, request: ModelRequest<'_>) -> Result<ModelResponse, ModelError> {
-        self.calls.fetch_add(1, Ordering::SeqCst);
-        self.inputs
-            .lock()
-            .unwrap()
-            .push(serde_json::to_string(&request.input.to_owned_items()).unwrap());
-        self.tools
-            .lock()
-            .unwrap()
-            .push(request.tools.iter().map(|t| t.name.clone()).collect());
-        self.instructions
-            .lock()
-            .unwrap()
-            .push(request.system_instructions.unwrap_or_default().to_string());
-
-        let step = self.steps.lock().unwrap().pop_front();
-        let output = match step {
-            Some(Step::Say(text)) => vec![ItemHelpers::text_message(text)],
-            Some(Step::Call { name, args }) => {
-                let n = self.call_ids.fetch_add(1, Ordering::SeqCst);
-                vec![ItemHelpers::function_tool_call(
-                    name,
-                    args,
-                    format!("call-{n}"),
-                )]
-            }
-            Some(Step::Fail(message)) => return Err(ModelError::Script(message)),
-            Some(Step::Panic) => panic!("scripted panic"),
-            Some(Step::Hang) => {
-                std::future::pending::<()>().await;
-                unreachable!()
-            }
-            None => return Err(ModelError::Script("the script ran out of steps".into())),
-        };
-        Ok(ModelResponse {
-            output,
-            usage: Usage::from_tokens(10, 5),
-            response_id: Some("scripted".into()),
-            request_id: None,
-            raw_usage: None,
-        })
+fn input_json(input: &Value) -> String {
+    match input {
+        Value::String(text) => serde_json::json!([{"role": "user", "content": text}]).to_string(),
+        other => other.to_string(),
     }
 }
 
@@ -157,7 +127,7 @@ impl Model for Script {
 pub fn agent(name: &str, script: &Arc<Script>) -> Agent {
     Agent::new(name)
         .instructions("Do the job you are given.")
-        .model(Arc::clone(script) as Arc<dyn Model>)
+        .model(Arc::clone(&script.model) as Arc<dyn Model>)
 }
 
 /// Poll `condition` until it holds, up to five seconds.

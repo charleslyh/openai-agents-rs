@@ -91,6 +91,17 @@ CRATE_DEPS: dict[str, set[str]] = {
     "opai-agents-scaffold": set(),
 }
 
+# Extra workspace crates an extension may use in `[dev-dependencies]` only.
+#
+# The reason dev dependencies count at all is the double-types problem for *core's own* tests.
+# An extension crate is an outside user of core: `opai-agents-testing` links the same core library
+# the extension does, so no second copy appears. Tests of `teams` can therefore use the shared
+# `ScriptedModel` instead of keeping a private copy. Declare it by path without a version, so it is
+# stripped on publish and does not constrain the publish order. Core itself gets no exception.
+DEV_ONLY_DEPS: dict[str, set[str]] = {
+    "opai-agents-teams": {"opai-agents-testing"},
+}
+
 # Third-party crates core must not depend on, and tokio features it must not enable. They are what
 # a build without the OpenAI adapters, MCP or SQLite is meant to be free of.
 BANNED_IN_CORE = {"reqwest", "async-openai", "rusqlite", "hyper"}
@@ -237,6 +248,8 @@ def check_crates() -> list[str]:
         for dep in package["dependencies"]:
             if dep["name"] in packages and dep["name"] not in CRATE_DEPS[name]:
                 kind = dep["kind"] or "normal"
+                if kind == "dev" and dep["name"] in DEV_ONLY_DEPS.get(name, set()):
+                    continue
                 problems.append(
                     f"{name} depends on {dep['name']} ({kind}); it may only depend on "
                     f"{sorted(CRATE_DEPS[name]) or 'no workspace crate'}"

@@ -29,6 +29,13 @@ This convention is also enforced for agents via [`.cursor/rules/commit-messages.
 The repo is a Cargo workspace. Do not add to `opai-agents-core` what belongs in an extension
 crate, and do not reach from one extension crate into another.
 
+One exception, dev-only: `opai-agents-teams` may list `opai-agents-testing` under
+`[dev-dependencies]` (by path, no version) so its tests use the shared `ScriptedModel`. Dev
+dependencies are counted by `scripts/check_module_deps.py` because core's *own* tests must not
+use an extension: two copies of core would be linked and the types would stop matching. An
+extension crate is an outside user of core, so it links the same copy as `testing` does and the
+problem does not arise. The list is `DEV_ONLY_DEPS` in the script; it gets no entry for core.
+
 | crate | holds |
 | --- | --- |
 | `opai-agents-core` | agents, tools, handoffs, guardrails, the run loop, sessions, tracing, context trimmers. No HTTP, no database, no child processes, and **no features** |

@@ -29,4 +29,6 @@ tracing = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
+# The shared scripted model for the integration tests. By path, no version: stripped on publish.
+opai-agents-testing = { path = "../testing" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "test-util"] }
