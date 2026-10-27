@@ -1,7 +1,7 @@
 [package]
 name = "opai-agents-examples"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 publish = false
 description = "Runnable examples for the Rust OpenAI Agents SDK"
 
@@ -193,12 +193,12 @@ path = "src/35_teams.rs"
 # must keep verifying that the SDK builds without an HTTP client.
 [dependencies]
 # `20_hooks.rs` implements `AgentHooks`, whose methods are `async_trait`.
-async-trait = "0.1"
+async-trait = { workspace = true }
 # `mcp` is needed by the `mcp` example only (a real MCP server over stdio: the example's own
 # binary re-executed with `--mcp-server`). Every example in this package compiles the
 # `opai-agents-mcp` crate too because of it.
-opai-agents = { path = "../crates/facade", version = "0.1.0", features = ["openai", "mcp", "providers", "sessions", "observability", "tools", "guardrails", "teams"] }
-serde = { version = "1", features = ["derive"] }
-schemars = "1"
-serde_json = { version = "1", features = ["preserve_order"] }
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+opai-agents = { workspace = true, features = ["openai", "mcp", "providers", "sessions", "observability", "tools", "guardrails", "teams"] }
+serde = { workspace = true }
+schemars = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }

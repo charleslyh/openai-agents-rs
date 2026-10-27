@@ -3,25 +3,59 @@ members = ["crates/*", "examples", "demo/web", "tools/console", "tools/scaffold"
 # The examples and demo packages turn on the facade's `openai` feature, which would defeat
 # `cargo test --no-default-features` (the check that the SDK still builds with no HTTP client).
 # Keeping them out of the default set preserves that check; build them explicitly with `-p`.
-# `tools/console` and `tools/scaffold` are programs of their own (a web server), not part of the SDK, so it sits outside
-# `crates/*` for the same reason.
+# `tools/console` (a web server) and `tools/scaffold` (`cargo opai`) are programs of their own, not
+# part of the SDK, so they sit outside `crates/*` for the same reason.
 default-members = ["crates/*"]
 resolver = "2"
 
-# Dependencies every crate needs with the *same* features, so the version is declared once.
+[workspace.package]
+# One version for every crate: they are released together and depend on each other with this exact
+# series. A release changes this version and the `version` of each `opai-agents*` entry below (they
+# are the version requirements published crates carry); `scripts/check_docs_drift.py` fails when
+# either is left behind or when an install snippet in the docs names another series.
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.89"
+license = "MIT"
+repository = "https://github.com/charleslyh/openai-agents-rs"
+
+# Every dependency declared by more than one crate is declared once here, so a version is bumped in
+# one place. A member adds only what differs: `features`, `optional`.
 #
-# Deliberately not here: `tokio`, `reqwest` and the path dependencies.
-#   - `tokio` / `reqwest` take different feature sets per crate (`tokio/process` only for the MCP
-#     stdio transport, `reqwest` only where HTTP is used). Cargo unions features across a build, so
-#     declaring them once here would pull the widest set into every crate that names them.
-#   - The `opai-agents-*` crates are path dependencies, and some are `optional` (a facade
-#     feature turns them on). Keeping those next to the feature that needs them reads better than
-#     splitting the declaration across two files.
+# Features that differ per crate are NOT listed here, on purpose: a member's `features` are added to
+# the workspace entry, and Cargo unions features across a build, so listing the widest set here
+# would pull it into every crate that names the dependency (`tokio/process` is only for the MCP
+# stdio transport, `reqwest` only where HTTP is used). `default-features = false` is set here where
+# every member wants it, because a member cannot switch defaults off for an inherited dependency.
 [workspace.dependencies]
+# SDK crates. `default-features = false` only on the facade: the console program uses it without
+# the OpenAI adapters, and the examples and the demo name `openai` explicitly.
+opai-agents = { path = "crates/facade", version = "0.2.0", default-features = false }
+opai-agents-core = { path = "crates/core", version = "0.2.0" }
+opai-agents-guardrails = { path = "crates/guardrails", version = "0.2.0" }
+opai-agents-macros = { path = "crates/macros", version = "0.2.0" }
+opai-agents-mcp = { path = "crates/mcp", version = "0.2.0" }
+opai-agents-observability = { path = "crates/observability", version = "0.2.0" }
+opai-agents-openai = { path = "crates/openai", version = "0.2.0" }
+opai-agents-providers = { path = "crates/providers", version = "0.2.0" }
+opai-agents-sessions = { path = "crates/sessions", version = "0.2.0" }
+opai-agents-teams = { path = "crates/teams", version = "0.2.0" }
+opai-agents-testing = { path = "crates/testing", version = "0.2.0" }
+opai-agents-tools = { path = "crates/tools", version = "0.2.0" }
+
 async-trait = "0.1"
+axum = { version = "0.8", default-features = false }
 futures = "0.3"
+redis = { version = "1.7.1", default-features = false }
+reqwest = { version = "0.12", default-features = false }
+# `bundled` compiles SQLite in, so `SqliteSession` needs no system library.
+rusqlite = { version = "0.32", features = ["bundled"] }
+schemars = "1"
+serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 thiserror = "2"
+tokio = "1"
+tokio-util = { version = "0.7", default-features = false }
 tracing = "0.1"
 uuid = { version = "1", features = ["v4"] }
 

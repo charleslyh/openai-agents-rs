@@ -1,14 +1,14 @@
 [package]
 name = "opai-agents-observability"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.89"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 description = "Trace processors for the Rust OpenAI Agents SDK: batched export, console, JSONL files, OpenTelemetry"
-license = "MIT"
+license.workspace = true
 readme = "README.md"
 keywords = ["openai", "agents", "tracing", "opentelemetry"]
 categories = ["development-tools::debugging", "asynchronous"]
-repository = "https://github.com/charleslyh/openai-agents-rs"
+repository.workspace = true
 
 # Inherits the lint config (including the tracked clippy backlog) from `[workspace.lints]`.
 [lints]
@@ -24,11 +24,11 @@ otel = ["dep:opentelemetry"]
 [dependencies]
 # `conversation.rs` implements `RunHooks`, whose methods are `async_trait`.
 async-trait = { workspace = true }
-opai-agents-core = { path = "../core", version = "0.1.0", default-features = false }
+opai-agents-core = { workspace = true }
 opentelemetry = { version = "0.33", default-features = false, features = ["trace"], optional = true }
-serde_json = { version = "1", features = ["preserve_order"] }
-tracing = "0.1"
+serde_json = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
-tokio = { version = "1", features = ["macros", "rt"] }
+tokio = { workspace = true, features = ["macros", "rt"] }
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["registry"] }

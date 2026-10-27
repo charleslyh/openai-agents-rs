@@ -1,24 +1,24 @@
 [package]
 name = "opai-agents-testing"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.89"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 description = "Deterministic test doubles for the Rust OpenAI Agents SDK (ScriptedModel and item builders)"
-license = "MIT"
+license.workspace = true
 readme = "README.md"
 keywords = ["openai", "agents", "testing", "mock"]
 categories = ["development-tools::testing"]
-repository = "https://github.com/charleslyh/openai-agents-rs"
+repository.workspace = true
 
 # Inherits the lint config (including the tracked clippy backlog) from `[workspace.lints]`.
 [lints]
 workspace = true
 
 [dependencies]
-opai-agents-core = { path = "../core", version = "0.1.0", default-features = false }
-async-trait = "0.1"
-serde_json = { version = "1", features = ["preserve_order"] }
-tokio = { version = "1", features = ["sync"] }
+opai-agents-core = { workspace = true }
+async-trait = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
 
 [dev-dependencies]
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }

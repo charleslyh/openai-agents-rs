@@ -97,6 +97,27 @@ The `429` text names `help@crates.io`. Send it before a release that creates sev
 the crate names, why they must go out together, and that you have a script that paces them. A
 raised limit shortens the first release; it is not needed for ordinary releases.
 
+## Versions
+
+Every crate shares `[workspace.package] version` in the root `Cargo.toml`, and the `opai-agents*`
+entries in `[workspace.dependencies]` carry the same number (that is the requirement a published
+crate states for its siblings). To release `X.Y.Z`: change those thirteen numbers, update the
+install snippets, run `python3 scripts/check_docs_drift.py`, which names anything left behind, then
+follow the process above.
+
+### Release tools, evaluated
+
+`release-plz` and `cargo-release` both automate the bump, the changelog and the publish. Neither
+is adopted, for these reasons:
+
+- Both publish with plain `cargo publish`, one crate per call, with no pacing between uploads and
+  no reading of the `429` time. That pacing is the part of releasing this workspace cannot do
+  without, and `scripts/publish.py` already does it, and skips what the index already has.
+- Every crate moves with one version, so the "only release crates that changed" feature that
+  `release-plz` is chiefly for has nothing to decide here.
+- Revisit if the crates start to version independently: then use one of them for the bump and
+  changelog and keep `scripts/publish.py` for the upload.
+
 ## Fewer new crates
 
 Every new crate name costs a token the first time. When something new is an optional extension, make

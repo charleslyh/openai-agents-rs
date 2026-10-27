@@ -1,14 +1,14 @@
 [package]
 name = "opai-agents-scaffold"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.89"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 description = "`cargo opai new`: create a project that uses the OpenAI Agents Rust SDK"
-license = "MIT"
+license.workspace = true
 # A developer tool installed from the repository, not published: keeps the crates.io rate-limited
 # new-crate budget for the SDK itself (see docs/RELEASING.md).
 publish = false
-repository = "https://github.com/charleslyh/openai-agents-rs"
+repository.workspace = true
 readme = "README.md"
 keywords = ["openai", "agents", "scaffold", "cargo-subcommand"]
 categories = ["command-line-utilities", "development-tools::cargo-plugins"]

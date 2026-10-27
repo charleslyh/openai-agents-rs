@@ -1,7 +1,7 @@
 [package]
 name = "opai-agents-web-demo"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 publish = false
 description = "Web console for the Rust OpenAI Agents SDK: one chat box, a capability checklist and a chaos drawer"
 
@@ -13,18 +13,18 @@ workspace = true
 # it out of `default-members`; build it with `-p opai-agents-web-demo`.
 [dependencies]
 # `hooks.rs` implements `RunHooks`, whose methods are `async_trait`.
-async-trait = "0.1"
+async-trait = { workspace = true }
 # Routing plus SSE, so the demo is one `cargo run`. The default feature set is enough (no
 # WebSocket, no multipart, no macros).
-axum = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio"] }
+axum = { workspace = true, features = ["http1", "json", "query", "tokio"] }
 # `mcp` demonstrates a real MCP server over stdio (this binary re-executed with `--mcp-server`).
 # `teams` adds the Lead agent: a team of long-lived teammates that work in parallel (Rust-only).
-opai-agents = { path = "../../crates/facade", version = "0.1.0", features = ["openai", "mcp", "teams"] }
+opai-agents = { workspace = true, features = ["openai", "mcp", "teams"] }
 # `stream::unfold` turns the run's event channel into the SSE body.
-futures = "0.3"
-serde = { version = "1", features = ["derive"] }
-schemars = "1"
-serde_json = { version = "1", features = ["preserve_order"] }
+futures = { workspace = true }
+serde = { workspace = true }
+schemars = { workspace = true }
+serde_json = { workspace = true }
 # `net` for the listener, `time` for the injected delays, `signal` for graceful shutdown.
-tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
-uuid = { version = "1", features = ["v4"] }
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+uuid = { workspace = true }

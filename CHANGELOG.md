@@ -22,6 +22,12 @@ Collects the changes for 0.2.0. Breaking changes are marked **breaking**.
 - **breaking**: large error variants are boxed (`AgentsError` 264 to 48 bytes, `ModelError` 128 to
   32), and the `result_large_err` lint allow is gone.
 
+### Changed
+
+- Every crate shares one version and one copy of each shared third-party dependency, declared in the
+  root `Cargo.toml` (`[workspace.package]`, `[workspace.dependencies]`). `scripts/check_docs_drift.py`
+  fails when the versions or the install snippets disagree. The workspace is now at `0.2.0`.
+
 ### Added
 
 - Cooperative cancellation: `RunOptions::cancellation_token`, `ToolContext::cancellation()` and

@@ -1,29 +1,29 @@
 [package]
 name = "opai-agents-openai"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.89"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 description = "OpenAI and OpenAI-compatible model adapters (Chat Completions, Responses) for the Rust OpenAI Agents SDK"
-license = "MIT"
+license.workspace = true
 readme = "README.md"
 keywords = ["openai", "llm", "chat-completions", "responses"]
 categories = ["api-bindings", "asynchronous"]
-repository = "https://github.com/charleslyh/openai-agents-rs"
+repository.workspace = true
 
 # Inherits the lint config (including the tracked clippy backlog) from `[workspace.lints]`.
 [lints]
 workspace = true
 
 [dependencies]
-opai-agents-core = { path = "../core", version = "0.1.0" }
+opai-agents-core = { workspace = true }
 async-openai = { version = "0.42", default-features = false, features = ["chat-completion", "responses"] }
 async-trait = { workspace = true }
 futures = { workspace = true }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+reqwest = { workspace = true, features = ["json", "rustls-tls", "stream"] }
 serde_json = { workspace = true }
-tokio = { version = "1", features = ["sync", "time"] }
+tokio = { workspace = true, features = ["sync", "time"] }
 tracing = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util"] }

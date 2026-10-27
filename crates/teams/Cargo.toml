@@ -1,34 +1,34 @@
 [package]
 name = "opai-agents-teams"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.89"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 description = "Agent teams for the Rust OpenAI Agents SDK: a lead and long-lived teammates that work in parallel, talk through mailboxes and share a task list"
-license = "MIT"
+license.workspace = true
 readme = "README.md"
 keywords = ["openai", "agents", "multi-agent", "llm"]
 categories = ["api-bindings", "asynchronous"]
-repository = "https://github.com/charleslyh/openai-agents-rs"
+repository.workspace = true
 
 # Inherits the lint config (including the tracked clippy backlog) from `[workspace.lints]`.
 [lints]
 workspace = true
 
 [dependencies]
-opai-agents-core = { path = "../core", version = "0.1.0", default-features = false }
+opai-agents-core = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
-schemars = "1"
-serde = { version = "1", features = ["derive"] }
+schemars = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-tokio = { version = "1", features = ["rt", "sync", "time", "macros"] }
+tokio = { workspace = true, features = ["rt", "sync", "time", "macros"] }
 # Only `CancellationToken` is used, so no default features.
-tokio-util = { version = "0.7", default-features = false }
+tokio-util = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
 # The shared scripted model for the integration tests. By path, no version: stripped on publish.
 opai-agents-testing = { path = "../testing" }
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "test-util"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time", "test-util"] }

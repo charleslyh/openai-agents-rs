@@ -37,10 +37,10 @@ Depend on `opai-agents`; it re-exports everything below under the paths the SDK 
 | `opai-agents-teams` | agent teams: a lead and long-lived teammates with mailboxes, a shared task list and a budget (experimental) | feature `teams` |
 
 ```toml
-opai-agents = "0.1"                                                        # core + OpenAI
-opai-agents = { version = "0.1", features = ["providers", "tools", "guardrails"] }
-opai-agents = { version = "0.1", features = ["mcp", "sqlite"] }            # plus MCP and SQLite
-opai-agents = { version = "0.1", default-features = false }                # core only, bring your own Model
+opai-agents = "0.2"                                                        # core + OpenAI
+opai-agents = { version = "0.2", features = ["providers", "tools", "guardrails"] }
+opai-agents = { version = "0.2", features = ["mcp", "sqlite"] }            # plus MCP and SQLite
+opai-agents = { version = "0.2", default-features = false }                # core only, bring your own Model
 ```
 
 Features add up; `providers` is what makes `opai_agents::run` and `zero_config_options` work with

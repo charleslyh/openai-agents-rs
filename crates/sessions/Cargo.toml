@@ -1,14 +1,14 @@
 [package]
 name = "opai-agents-sessions"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.89"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 description = "Session and paused-run storage for the Rust OpenAI Agents SDK: JSONL files, SQLite, Redis and Postgres"
-license = "MIT"
+license.workspace = true
 readme = "README.md"
 keywords = ["openai", "agents", "session", "redis", "sqlite"]
 categories = ["asynchronous", "database"]
-repository = "https://github.com/charleslyh/openai-agents-rs"
+repository.workspace = true
 
 # Inherits the lint config (including the tracked clippy backlog) from `[workspace.lints]`.
 [lints]
@@ -31,23 +31,23 @@ redis-tls = ["redis", "redis/tokio-rustls-comp"]
 sqlite = ["dep:rusqlite"]
 
 [dependencies]
-opai-agents-core = { path = "../core", version = "0.1.0", default-features = false }
-async-trait = "0.1"
+opai-agents-core = { workspace = true }
+async-trait = { workspace = true }
 # Cross-process file locking (`flock` / `LockFileEx`); a second process touching the same session
 # waits instead of interleaving writes.
 fs2 = "0.4"
 # Signing a stored run state so a state edited outside the process is refused, not resumed.
 hmac = "0.12"
 sha2 = "0.10"
-serde_json = { version = "1", features = ["preserve_order"] }
-tokio = { version = "1", features = ["rt"] }
-tracing = "0.1"
-redis = { version = "1.7.1", default-features = false, features = ["tokio-comp"], optional = true }
-rusqlite = { version = "0.32", features = ["bundled"], optional = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["rt"] }
+tracing = { workspace = true }
+redis = { workspace = true, features = ["tokio-comp"], optional = true }
+rusqlite = { workspace = true, optional = true }
 sqlx = { version = "0.9.0", default-features = false, features = ["postgres", "runtime-tokio", "tls-rustls"], optional = true }
 
 [dev-dependencies]
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 # The Redis tests change a stored state behind the store's back, which is the tampering the
 # signature is there to catch; they need the client for that. Test profile only.
-redis = { version = "1.7.1", default-features = false, features = ["tokio-comp"] }
+redis = { workspace = true, features = ["tokio-comp"] }

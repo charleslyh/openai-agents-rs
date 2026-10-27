@@ -1,6 +1,6 @@
 # Stability
 
-`0.1.0` of every crate is on crates.io. While the version is `0.x`, a minor release may still change
+`0.1.0` of every crate is on crates.io; `0.2.0` is the next release. While the version is `0.x`, a minor release may still change
 a public item; this file says what level each crate is at and how change is handled.
 
 ## Levels

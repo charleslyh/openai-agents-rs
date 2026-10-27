@@ -7,7 +7,7 @@ Handoffs swap the active agent and agents-as-tools nest a synchronous run. A tea
 shape: several agents running at the same time, each with its own context and tools.
 
 ```toml
-opai-agents = { version = "0.1", features = ["teams"] }
+opai-agents = { version = "0.2", features = ["teams"] }
 ```
 
 ```rust,ignore
