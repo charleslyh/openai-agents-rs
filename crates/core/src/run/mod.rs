@@ -15,6 +15,7 @@ pub mod errors;
 mod finalize;
 mod hitl;
 pub mod options;
+pub(crate) mod panic;
 mod resolve;
 mod session_writer;
 pub(crate) mod tools;
@@ -228,22 +229,36 @@ fn spawn_streamed(
     let task = tokio::spawn(async move {
         // Fail closed rather than ignore the resolver: a streamed run hands its pause back to the
         // caller (drain the stream, then `to_state`), so there is no point to resolve in-process.
-        let result = if options.resolver.is_some() {
-            Err(UserError::new(
-                "RunOptions::resolve_with is not supported by streamed runs; resolve \
-                 `RunResultStreaming::interruptions` and resume with `run_state_streamed`",
-            )
-            .into())
-        } else {
-            run_loop(
-                starting_agent,
-                start,
-                options,
-                Some(tx.clone()),
-                Some(Arc::clone(&snap)),
-            )
-            .await
+        let body = async {
+            if options.resolver.is_some() {
+                Err(UserError::new(
+                    "RunOptions::resolve_with is not supported by streamed runs; resolve \
+                     `RunResultStreaming::interruptions` and resume with `run_state_streamed`",
+                )
+                .into())
+            } else {
+                run_loop(
+                    starting_agent,
+                    start,
+                    options,
+                    Some(tx.clone()),
+                    Some(Arc::clone(&snap)),
+                )
+                .await
+            }
         };
+        // A panic in the loop must not look like a run that ended normally. Left alone it would
+        // unwind this task, drop `tx`, and the consumer would see a closed stream with no error
+        // and `is_complete == false`. It becomes an `Internal` error on the stream and snapshot.
+        let result =
+            match futures::FutureExt::catch_unwind(std::panic::AssertUnwindSafe(body)).await {
+                Ok(result) => result,
+                Err(payload) => {
+                    let message = panic::panic_message(payload.as_ref());
+                    tracing::error!(%message, "streamed run panicked");
+                    Err(AgentsError::internal(format!("run panicked: {message}")))
+                }
+            };
         match result {
             Ok(r) => {
                 let mut s = snap
