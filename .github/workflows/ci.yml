@@ -95,7 +95,7 @@ jobs:
           -p opai-agents --features mcp,providers,sqlite,sessions,redis,observability,tools,webfetch,guardrails,otel
           -p opai-agents-core -p opai-agents-macros -p opai-agents-openai -p opai-agents-testing
           -p opai-agents-providers -p opai-agents-observability -p opai-agents-tools
-          -p opai-agents-guardrails -p opai-agents-mcp -p opai-agents-sqlite -p opai-agents-scaffold
+          -p opai-agents-guardrails -p opai-agents-teams -p opai-agents-mcp -p opai-agents-sqlite -p opai-agents-scaffold
 
   parity:
     name: python oracle (parity, MCP interop)

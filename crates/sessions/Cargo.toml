@@ -23,6 +23,9 @@ redis = ["dep:redis"]
 # reach SQL. Added with the backend. Needs Rust 1.94: `sqlx` 0.9 declares it as its minimum, while
 # the rest of the crate builds on 1.89.
 postgres = ["dep:sqlx"]
+# `rediss://` (Redis over TLS) through rustls and the platform trust store. Without it a `rediss://`
+# URL is refused by the client instead of silently connecting in clear text.
+redis-tls = ["redis", "redis/tokio-rustls-comp"]
 
 [dependencies]
 opai-agents-core = { path = "../core", version = "0.1.0", default-features = false }

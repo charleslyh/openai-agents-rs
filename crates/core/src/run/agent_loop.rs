@@ -261,7 +261,7 @@ async fn run_loop_inner(
         .tracing
         .workflow_name
         .clone()
-        .unwrap_or_else(|| "Agent workflow".into());
+        .unwrap_or_else(|| super::config::DEFAULT_WORKFLOW_NAME.into());
 
     // Python: `trace(workflow_name, trace_id=..., group_id=..., metadata=...)`. A disabled run
     // still builds the guard, but it is inactive so no events reach the processors.

@@ -38,6 +38,10 @@ uuid = { version = "1", features = ["v4"] }
 #                                   tests and examples.
 #   needless_question_mark       8 — emitted inside `#[function_tool]`-generated code, so it can
 #                                   only be fixed in the macro crate.
+[workspace.lints.rust]
+# No crate needs `unsafe`; forbidding it keeps it that way (and lets reviewers skip the question).
+unsafe_code = "forbid"
+
 [workspace.lints.clippy]
 result_large_err = "allow"
 field_reassign_with_default = "allow"

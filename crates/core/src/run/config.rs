@@ -313,12 +313,15 @@ pub struct RunOptions {
     pub runtime: Option<Runtime>,
 }
 
+/// Workflow name used for tracing when the caller sets none.
+pub(crate) const DEFAULT_WORKFLOW_NAME: &str = "Agent workflow";
+
 impl Default for RunOptions {
     fn default() -> Self {
         Self {
             max_turns: Some(DEFAULT_MAX_TURNS),
             run_config: RunConfig::default()
-                .with_tracing(TracingOptions::new().workflow_name("Agent workflow")),
+                .with_tracing(TracingOptions::new().workflow_name(DEFAULT_WORKFLOW_NAME)),
             previous_response_id: None,
             conversation_id: None,
             context: None,
@@ -557,7 +560,20 @@ impl std::fmt::Debug for RunOptions {
             .field("extensions", &self.extensions)
             .field("has_hooks", &self.hooks.is_some())
             .field("has_session", &self.session.is_some())
+            .field(
+                "has_max_turns_handler",
+                &self.error_handlers.max_turns.is_some(),
+            )
+            .field(
+                "has_model_refusal_handler",
+                &self.error_handlers.model_refusal.is_some(),
+            )
+            .field(
+                "has_invalid_final_output_handler",
+                &self.error_handlers.invalid_final_output.is_some(),
+            )
             .field("has_resolver", &self.resolver.is_some())
+            .field("has_runtime", &self.runtime.is_some())
             .finish()
     }
 }

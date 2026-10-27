@@ -30,6 +30,7 @@ sqlite = ["dep:opai-agents-sqlite"]
 sessions = ["dep:opai-agents-sessions"]
 # `RedisSession` / `RedisRunStateStore`: a history more than one process shares.
 redis = ["dep:opai-agents-sessions", "opai-agents-sessions/redis"]
+redis-tls = ["redis", "opai-agents-sessions/redis-tls"]
 # `PostgresSession` / `PostgresRunStateStore`: a history in a database the deployment already has.
 # Needs Rust 1.94 (`sqlx` 0.9); every other feature builds on the declared 1.89.
 postgres = ["dep:opai-agents-sessions", "opai-agents-sessions/postgres"]
