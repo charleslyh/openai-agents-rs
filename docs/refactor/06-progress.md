@@ -1,5 +1,8 @@
 # 落地进度
 
+> 本文是历史记录。表中的行数是当时的快照;当前 `run/agent_loop.rs` 约 290 行,`run_loop_inner`
+> 已缩到几十行,逐轮逻辑在 `run/turn_loop.rs`(约 1000 行)。以代码为准,不要按表里的数字核对。
+
 ## P0 基线(已完成)
 
 见 [baseline.md](./baseline.md) 第 6 节。格式、clippy、doc、vendor 全部通过;测试 197(无默认特性)/ 262(全特性)。

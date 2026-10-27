@@ -12,7 +12,7 @@
 | D6 | facade 默认 feature 含 `openai`,不含 `mcp` | 需同步改 examples、tests、CI 的 `required-features` |
 | D8 | `conformance/` 存放 Python oracle、parity 场景、golden | 沿用倾向 |
 | D9 | 方案 A:粗粒度,常用功能合并在同一 crate,避免过细拆分 | 取代原先 B 的推荐 |
-| D10 | 不发布到 crates.io | P4 的发布配置(`exclude`、发布顺序)取消;package name 前缀保留 |
+| D10 | ~~不发布到 crates.io~~ **已被推翻**:0.1.0 已于 2026-10-21 发布到 crates.io,发布流程见 `docs/RELEASING.md` | 原结论:P4 的发布配置取消;package name 前缀保留 |
 | D12 | `as_tool` 保持在 core,不引入新 trait | 见下方分析 |
 | D13 | `context` 不抽 crate,`ContextWindowTrimmer` / `ToolOutputTrimmer` / `CompactingSession` 留在 core | 见下方分析 |
 

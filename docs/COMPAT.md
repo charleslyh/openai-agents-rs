@@ -23,6 +23,10 @@ The SDK is a Cargo workspace. `opai-agents` (the facade, `crates/facade`) re-exp
 | `mcp` | `opai-agents-mcp` | `crates/mcp`; the `McpServer` contract stays in core, facade feature **`mcp`** (**off** by default, D6) |
 | `extensions` (`sqlite`) / `SqliteSession` | `opai-agents-sqlite` | `crates/sqlite`; facade feature `sqlite` |
 | — (Rust-only) `FileSession`, `FileRunStateStore` | `opai-agents-sessions` | `crates/sessions`; facade feature `sessions` (**off** by default, X-016 / X-017) |
+| — (Rust-only) provider routing and prefixes | `opai-agents-providers` | `crates/providers`; facade feature `providers` |
+| — (Rust-only) ready-made tools (web fetch and similar) | `opai-agents-tools` | `crates/tools`; facade features `tools`, `webfetch` |
+| — (Rust-only) ready-made guardrails | `opai-agents-guardrails` | `crates/guardrails`; facade feature `guardrails` |
+| — (Rust-only) agent teams | `opai-agents-teams` | `crates/teams`; facade feature `teams` |
 | — (Rust-only) batched trace export, sinks, metrics | `opai-agents-observability` | `crates/observability`; facade feature `observability` (**off** by default, X-018) |
 | `testing` | `opai-agents-testing` | `crates/testing`; re-exported as `opai_agents::testing` (D2) |
 | `decorators` (`@function_tool`) | `opai-agents-macros` | `crates/macros`; `#[function_tool]` |
@@ -174,7 +178,7 @@ dictionaries are merged (`model_settings.py:273`).
 | `needs_approval` (fixed or dynamic) | S | Named `needs_resolution`; the Python names are aliases (D-048) |
 | `interruptions`, `RunState` approve/reject | S | Plus `RunState::provide_output`, which Python lacks (D-048) |
 | Sticky `always_approve` / `always_reject` | S | |
-| `to_json` / `from_json` | S | Schema `openai-agents-rs/3` (D-012); `openai-agents-rs/2`, `openai-agents-rust/1` and `openai-agents-rust/2` payloads still load |
+| `to_json` / `from_json` | S | Schema `openai-agents-rs/4` (D-012); `openai-agents-rs/3`, `openai-agents-rs/2`, `openai-agents-rust/1` and `openai-agents-rust/2` payloads still load |
 | `Agent.as_tool` nested approvals | S | Bubbles to the outer `RunState` |
 | `Agent.as_tool` config beyond `needs_approval` / `max_turns` | N | No `run_config`, `hooks`, `session`, `failure_error_function`, `is_enabled`, `parameters` / `input_builder` (D-043) |
 | Custom output extractor / `on_stream` | N | D-043 |

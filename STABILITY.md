@@ -1,7 +1,7 @@
 # Stability
 
-The SDK has not been released. Until `0.1.0`, any public item can change; this file says what is
-planned and how change will be handled afterwards.
+`0.1.0` of every crate is on crates.io. While the version is `0.x`, a minor release may still change
+a public item; this file says what level each crate is at and how change is handled.
 
 ## Levels
 
@@ -13,16 +13,22 @@ planned and how change will be handled afterwards.
 
 ## Crates
 
-| Crate | Level now | Planned at `0.1.0` |
+| Crate | Level now | Planned |
 | --- | --- | --- |
-| `opai-agents-core` | Unstable | Stabilising. Public structs become `#[non_exhaustive]` before release so fields can be added later. |
+| `opai-agents-core` | Unstable | Stabilising. Public enums and structs become `#[non_exhaustive]` in 0.2.0. |
 | `opai-agents-openai` | Unstable | Stabilising |
 | `opai-agents` (facade) | Unstable | Stabilising |
 | `opai-agents-macros` | Unstable | Stabilising |
 | `opai-agents-mcp` | Unstable | Unstable |
+| `opai-agents-providers` | Unstable | Unstable |
+| `opai-agents-sessions` | Unstable | Unstable |
 | `opai-agents-sqlite` | Unstable | Unstable |
-| `opai-agents-testing` | Unstable | Unstable |
+| `opai-agents-observability` | Unstable | Unstable |
+| `opai-agents-tools` | Unstable | Unstable |
+| `opai-agents-guardrails` | Unstable | Unstable |
 | `opai-agents-teams` | Unstable | Unstable |
+| `opai-agents-testing` | Unstable | Unstable |
+| `opai-agents-scaffold` | Unstable | Unstable |
 
 ## Behaviour versus API
 
