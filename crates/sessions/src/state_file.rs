@@ -234,18 +234,14 @@ mod tests {
     }
 
     /// A state edited outside the process is an error, not a resume; so is one whose signature was
-    /// removed. Both halves are in one test on purpose: `cargo test` runs tests of a binary in
-    /// parallel threads, and `AGENTS_STATE_KEY` is process-wide.
+    /// removed. The key is set on the store directly: changing `AGENTS_STATE_KEY` from a test
+    /// would change it for every test running in parallel.
     #[tokio::test]
     async fn a_signed_store_refuses_a_state_that_was_changed() {
         let dir = dir("signed");
-        std::env::set_var(STATE_KEY_ENV, "s3cret");
-        let store = FileRunStateStore::from_env(&dir).expect("open");
-        std::env::remove_var(STATE_KEY_ENV);
-        assert!(
-            store.is_signed(),
-            "the key is picked up from the environment"
-        );
+        let mut store = FileRunStateStore::unsigned(&dir).expect("open");
+        store.key = Some(b"s3cret".to_vec());
+        assert!(store.is_signed());
         store.save("k", &state(), None).await.expect("save");
 
         let path = dir.join("k.state.json");
