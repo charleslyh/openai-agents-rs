@@ -7,7 +7,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde_json::Value;
 
-use crate::error::AgentsError;
+use crate::error::{AgentsError, UserError};
 
 pub use crate::error::{default_tool_timeout_error_message, DEFAULT_APPROVAL_REJECTION_MESSAGE};
 use crate::extensions::TypeRequirement;
@@ -279,13 +279,27 @@ impl ToolSpec {
     ///
     /// Pair it with `serde_json::from_str::<Args>(&ctx.tool_arguments)` in [`Tool::call`], so the
     /// schema the model sees and the parse the tool does cannot drift apart.
+    ///
+    /// # Panics
+    ///
+    /// When `Args` has no strict JSON schema (see [`ToolSpec::try_typed`]). That depends only on
+    /// the type, so it shows up the first time the tool is built, never on a model's input.
     pub fn typed<Args: schemars::JsonSchema>(
         name: impl Into<String>,
         description: impl Into<String>,
     ) -> Self {
+        Self::try_typed::<Args>(name, description).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// [`ToolSpec::typed`] that returns an error instead of panicking when `Args` has no strict
+    /// JSON schema (a bare `serde_json::Value`, a map with free-form keys, ...).
+    pub fn try_typed<Args: schemars::JsonSchema>(
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Result<Self, AgentsError> {
         let name = name.into();
-        let schema = typed_params_schema::<Args>(&name);
-        Self::new(name, description, schema)
+        let schema = typed_params_schema::<Args>(&name)?;
+        Ok(Self::new(name, description, schema))
     }
 
     /// Accept non-strict schemas (or not). Strict is the default.
@@ -725,8 +739,18 @@ impl FunctionTool {
 
     /// Build the tool a [`TypedTool`] describes: schema from the struct, name, description,
     /// policy and requirements from its [`ToolMeta`].
+    ///
+    /// # Panics
+    ///
+    /// When `T` has no strict JSON schema; use [`FunctionTool::try_from_typed`] for an error.
     pub fn from_typed<T: TypedTool>() -> Self {
-        let schema = typed_params_schema::<T>(T::NAME);
+        Self::try_from_typed::<T>().unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// [`FunctionTool::from_typed`] that returns an error instead of panicking when `T` has no
+    /// strict JSON schema.
+    pub fn try_from_typed<T: TypedTool>() -> Result<Self, AgentsError> {
+        let schema = typed_params_schema::<T>(T::NAME)?;
         let policy = T::policy();
         let mut tool =
             Self::new_with_result(T::NAME, T::DESCRIPTION, schema, |ctx, args| async move {
@@ -752,7 +776,7 @@ impl FunctionTool {
         tool.timeout_behavior = policy.timeout_behavior;
         tool.timeout_error_function = policy.timeout_error_function;
         tool.requires = T::requires();
-        tool
+        Ok(tool)
     }
 
     /// Create a tool whose parameters are a typed `Deserialize` + `JsonSchema` struct, instead of
@@ -760,6 +784,12 @@ impl FunctionTool {
     ///
     /// This is what `#[function_tool]` generates for a plain function; call it directly when the
     /// macro does not fit (a closure that captures state, or parameters built at runtime).
+    ///
+    /// # Panics
+    ///
+    /// When `Args` has no strict JSON schema; use [`FunctionTool::try_typed`] to get an error
+    /// instead. The schema depends only on the type, so this fails the first time the tool is
+    /// built, never on a model's input.
     pub fn typed<Args, F, Fut>(
         name: impl Into<String>,
         description: impl Into<String>,
@@ -770,13 +800,33 @@ impl FunctionTool {
         F: Fn(ToolContext, Args) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<Value, AgentsError>> + Send + 'static,
     {
-        Self::typed_with_result::<Args, _, _>(name, description, move |ctx, args| {
+        Self::try_typed::<Args, F, Fut>(name, description, on_invoke)
+            .unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// [`FunctionTool::typed`] that returns an error instead of panicking when `Args` has no
+    /// strict JSON schema.
+    pub fn try_typed<Args, F, Fut>(
+        name: impl Into<String>,
+        description: impl Into<String>,
+        on_invoke: F,
+    ) -> Result<Self, AgentsError>
+    where
+        Args: serde::de::DeserializeOwned + schemars::JsonSchema,
+        F: Fn(ToolContext, Args) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Value, AgentsError>> + Send + 'static,
+    {
+        Self::try_typed_with_result::<Args, _, _>(name, description, move |ctx, args| {
             let fut = on_invoke(ctx, args);
             async move { Ok(ToolOutput::output(fut.await?)) }
         })
     }
 
     /// [`FunctionTool::typed`] whose invoker can return nested interruptions (`Agent.as_tool`).
+    ///
+    /// # Panics
+    ///
+    /// When `Args` has no strict JSON schema; see [`FunctionTool::try_typed_with_result`].
     pub fn typed_with_result<Args, F, Fut>(
         name: impl Into<String>,
         description: impl Into<String>,
@@ -787,18 +837,39 @@ impl FunctionTool {
         F: Fn(ToolContext, Args) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<ToolOutput, AgentsError>> + Send + 'static,
     {
+        Self::try_typed_with_result::<Args, F, Fut>(name, description, on_invoke)
+            .unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// [`FunctionTool::typed_with_result`] that returns an error instead of panicking when `Args`
+    /// has no strict JSON schema.
+    pub fn try_typed_with_result<Args, F, Fut>(
+        name: impl Into<String>,
+        description: impl Into<String>,
+        on_invoke: F,
+    ) -> Result<Self, AgentsError>
+    where
+        Args: serde::de::DeserializeOwned + schemars::JsonSchema,
+        F: Fn(ToolContext, Args) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<ToolOutput, AgentsError>> + Send + 'static,
+    {
         let name = name.into();
-        let schema = typed_params_schema::<Args>(&name);
+        let schema = typed_params_schema::<Args>(&name)?;
         let on_invoke = Arc::new(on_invoke);
-        Self::new_with_result(name, description, schema, move |ctx, args| {
-            let on_invoke = Arc::clone(&on_invoke);
-            async move {
-                let parsed: Args = serde_json::from_str(&args).map_err(|e| {
-                    AgentsError::tool_with_source("invalid arguments for typed tool", e)
-                })?;
-                on_invoke(ctx, parsed).await
-            }
-        })
+        Ok(Self::new_with_result(
+            name,
+            description,
+            schema,
+            move |ctx, args| {
+                let on_invoke = Arc::clone(&on_invoke);
+                async move {
+                    let parsed: Args = serde_json::from_str(&args).map_err(|e| {
+                        AgentsError::tool_with_source("invalid arguments for typed tool", e)
+                    })?;
+                    on_invoke(ctx, parsed).await
+                }
+            },
+        ))
     }
 }
 
@@ -835,19 +906,23 @@ impl Tool for FunctionTool {
 
 /// `schemars::schema_for!(Args)`, normalized to a strict schema (Python: the same conversion
 /// `#[function_tool]` runs on its generated args struct).
-fn typed_params_schema<Args: schemars::JsonSchema>(tool_name: &str) -> Value {
-    let raw = serde_json::to_value(schemars::schema_for!(Args)).unwrap_or_else(|e| {
-        panic!("tool `{tool_name}`: could not serialize the parameter JSON schema: {e}")
-    });
-    let mut schema = crate::strict_schema::ensure_strict_json_schema(&raw).unwrap_or_else(|e| {
-        panic!("tool `{tool_name}`: parameters cannot be converted to a strict JSON schema: {e}")
-    });
+fn typed_params_schema<Args: schemars::JsonSchema>(tool_name: &str) -> Result<Value, AgentsError> {
+    let raw = serde_json::to_value(schemars::schema_for!(Args)).map_err(|e| {
+        UserError::new(format!(
+            "tool `{tool_name}`: could not serialize the parameter JSON schema: {e}"
+        ))
+    })?;
+    let mut schema = crate::strict_schema::ensure_strict_json_schema(&raw).map_err(|e| {
+        UserError::new(format!(
+            "tool `{tool_name}`: parameters cannot be converted to a strict JSON schema: {e}"
+        ))
+    })?;
     // Python's pydantic schemas do not carry a `$schema` keyword; drop it so the advertised tool
     // schema matches the macro-generated one byte for byte.
     if let Some(root) = schema.as_object_mut() {
         root.remove("$schema");
     }
-    schema
+    Ok(schema)
 }
 
 #[cfg(test)]
@@ -992,6 +1067,33 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(out.value(), Some(&Value::from(5)));
+    }
+
+    /// A map with free-form keys sets `additionalProperties`, which cannot be made strict.
+    #[test]
+    fn try_typed_reports_a_type_without_a_strict_schema_instead_of_panicking() {
+        let err = FunctionTool::try_typed::<std::collections::HashMap<String, String>, _, _>(
+            "loose",
+            "d",
+            |_c, _v| async move { Ok(Value::Null) },
+        )
+        .map(|_| ())
+        .expect_err("a free-form schema has no strict form");
+        assert!(err.to_string().contains("tool `loose`"), "{err}");
+        assert!(
+            ToolSpec::try_typed::<std::collections::HashMap<String, String>>("loose", "d").is_err()
+        );
+        assert!(ToolSpec::try_typed::<AddArgs>("add", "d").is_ok());
+    }
+
+    #[test]
+    #[should_panic(expected = "tool `loose`")]
+    fn typed_still_panics_for_a_type_without_a_strict_schema() {
+        let _ = FunctionTool::typed::<std::collections::HashMap<String, String>, _, _>(
+            "loose",
+            "d",
+            |_c, _v| async move { Ok(Value::Null) },
+        );
     }
 
     #[tokio::test]
