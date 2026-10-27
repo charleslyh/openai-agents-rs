@@ -25,6 +25,10 @@ use crate::run::panic;
 
 use super::plan::ToolPlan;
 
+/// The output of a call the run was cancelled before starting.
+pub(crate) const CANCELLED_BEFORE_START: &str =
+    "The run was cancelled before this tool call started, so it did not run.";
+
 pub(crate) async fn execute_planned_tools(
     plan: &ToolPlan,
     nested_resume: &HashMap<String, RunState>,
@@ -230,22 +234,54 @@ pub(crate) async fn execute_planned_tools(
     // frees as soon as a call finishes, and the first failure cancels the rest.
     // The window is driven by hand over concrete futures: boxing them would need a `Send` proof
     // that the recursive agent-as-tool call chain makes impossible to infer.
+    //
+    // Cancellation is cooperative. Once the run's token fires, calls that have not started are
+    // not started (each gets a "cancelled" output so every call still has one), and calls that
+    // are running are awaited to the end: dropping them would lose their last output and skip
+    // the cleanup they do on their own token. The token is raced against the wait for the next
+    // call, so a cancel that arrives while every slot is busy is seen at once instead of after
+    // the next call happens to finish.
     let limit = max_concurrency.unwrap_or(usize::MAX).max(1);
+    let token = context.cancellation().clone();
     let mut waiting = invoke_futs.into_iter().enumerate();
     let mut running = futures::stream::FuturesUnordered::new();
     let mut invoked = Vec::new();
+    let mut not_started = Vec::new();
+    let mut cancelled = false;
     loop {
-        while running.len() < limit {
-            match waiting.next() {
-                Some((index, fut)) => running.push(async move { (index, fut.await) }),
-                None => break,
+        cancelled = cancelled || token.is_cancelled();
+        if cancelled {
+            not_started.extend(waiting.by_ref().map(|(index, _)| index));
+        } else {
+            while running.len() < limit {
+                match waiting.next() {
+                    Some((index, fut)) => running.push(async move { (index, fut.await) }),
+                    None => break,
+                }
             }
         }
-        match running.next().await {
+        let next = if cancelled {
+            running.next().await
+        } else {
+            tokio::select! {
+                biased;
+                () = token.cancelled() => continue,
+                next = running.next() => next,
+            }
+        };
+        match next {
             Some((index, Ok(done))) => invoked.push((index, done)),
             Some((_, Err(error))) => return Err(error),
             None => break,
         }
+    }
+    for index in not_started {
+        let (tool, _, call_id) = &plan.to_invoke[index];
+        results.push((
+            tool.clone(),
+            Value::String(CANCELLED_BEFORE_START.to_owned()),
+            call_id.clone(),
+        ));
     }
     invoked.sort_by_key(|(index, _)| *index);
     for (_, (tool, call_id, result)) in invoked {

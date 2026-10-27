@@ -3,6 +3,8 @@
 
 use std::sync::Arc;
 
+use tokio_util::sync::CancellationToken;
+
 use crate::agent::Agent;
 use crate::extensions::Extensions;
 use crate::guardrail::{InputGuardrail, OutputGuardrail};
@@ -311,6 +313,9 @@ pub struct RunOptions {
     /// The environment this run executes in: default provider, tracing switch and processors,
     /// handoff history markers. `None` uses [`Runtime::global()`].
     pub runtime: Option<Runtime>,
+    /// Cancels the run when triggered; set with [`RunOptions::cancellation_token`]. Tools see a
+    /// child of it ([`ToolContext::cancellation`](crate::ToolContext::cancellation)).
+    pub cancellation: Option<CancellationToken>,
 }
 
 /// Workflow name used for tracing when the caller sets none.
@@ -331,6 +336,7 @@ impl Default for RunOptions {
             error_handlers: RunErrorHandlers::default(),
             resolver: None,
             runtime: None,
+            cancellation: None,
         }
     }
 }
@@ -339,6 +345,21 @@ impl RunOptions {
     /// Options with the defaults of [`RunOptions::default`].
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Let `token` cancel the run, cooperatively.
+    ///
+    /// Once it is cancelled the run stops at the next safe point: a model call in flight is
+    /// dropped, tool calls that were already running finish (they can watch
+    /// [`ToolContext::cancellation`](crate::ToolContext::cancellation) to return sooner) and
+    /// their outputs are recorded, calls that had not started get a "cancelled" output, and the
+    /// run returns `Ok` with [`RunResult::is_cancelled`](crate::result::RunResult::is_cancelled)
+    /// set. A run that is waiting on [`RunOptions::resolve_with`] stops waiting. Agents used as
+    /// tools share the token.
+    #[must_use]
+    pub fn cancellation_token(mut self, token: CancellationToken) -> Self {
+        self.cancellation = Some(token);
+        self
     }
 
     /// Add a typed value that tools, guardrails and hooks read with `ctx.get::<T>()`.
@@ -545,7 +566,11 @@ impl RunOptions {
         if let Some(value) = &self.context {
             extensions.insert_shared(Arc::clone(value));
         }
-        RunContextWrapper::from_extensions(extensions)
+        let context = RunContextWrapper::from_extensions(extensions);
+        match &self.cancellation {
+            Some(token) => context.with_cancellation(token.clone()),
+            None => context,
+        }
     }
 }
 
@@ -574,6 +599,7 @@ impl std::fmt::Debug for RunOptions {
             )
             .field("has_resolver", &self.resolver.is_some())
             .field("has_runtime", &self.runtime.is_some())
+            .field("has_cancellation", &self.cancellation.is_some())
             .finish()
     }
 }

@@ -22,6 +22,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+tokio-util = { version = "0.7", default-features = false }
 tracing = { workspace = true }
 uuid = { workspace = true }
 

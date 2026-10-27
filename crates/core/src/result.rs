@@ -11,6 +11,8 @@ use crate::items::{
     InputLike, ItemHelpers, ModelResponse, ResponseInputItem, RunItem, ToolInterruptionItem,
 };
 use crate::model_settings::ModelSettings;
+use tokio_util::sync::CancellationToken;
+
 use crate::run_state::{ResolutionStore, RunState};
 use crate::stream_events::StreamEvent;
 use crate::tool_guardrails::{ToolInputGuardrailResult, ToolOutputGuardrailResult};
@@ -47,6 +49,11 @@ pub struct RunResult {
     pub tool_output_guardrail_results: Vec<ToolOutputGuardrailResult>,
     /// The `RunConfig.reasoning_item_id_policy` this run used, applied by [`Self::to_input_list`].
     pub reasoning_item_id_policy: Option<crate::items::ReasoningItemIdPolicy>,
+    /// The run was cancelled ([`RunOptions::cancellation_token`](crate::RunOptions::cancellation_token))
+    /// before it produced a final output. [`Self::final_output`] is `Null`; `new_items` holds
+    /// what the run produced up to then, including the outputs of tool calls that were already
+    /// running (calls that had not started carry a "cancelled" output instead).
+    pub is_cancelled: bool,
     /// Internal snapshot used by [`Self::to_state`] when interrupted.
     pub(crate) interrupt_state: Option<InterruptSnapshot>,
 }
@@ -212,6 +219,7 @@ pub struct RunResultStreaming {
     pub max_turns: Option<usize>,
     rx: mpsc::Receiver<Result<StreamEvent, AgentsError>>,
     task: Option<tokio::task::JoinHandle<()>>,
+    cancellation: Option<CancellationToken>,
     cancel_on_drop: bool,
 }
 
@@ -227,8 +235,15 @@ impl RunResultStreaming {
             max_turns,
             rx,
             task: None,
+            cancellation: None,
             cancel_on_drop: false,
         }
+    }
+
+    /// Remember the run's token so an immediate cancel can notify the tools.
+    pub(crate) fn with_cancellation(mut self, token: CancellationToken) -> Self {
+        self.cancellation = Some(token);
+        self
     }
 
     /// Cancel the run immediately when this handle is dropped while the run is still going.
@@ -268,6 +283,11 @@ impl RunResultStreaming {
                 snap.is_complete = true;
                 snap.final_output = None;
                 drop(snap);
+                // Aborting the task below drops everything it holds, but a tool that handed work
+                // to another task, or a nested run, learns of the cancel from the token.
+                if let Some(token) = &self.cancellation {
+                    token.cancel();
+                }
                 if let Some(task) = &self.task {
                     task.abort();
                 }

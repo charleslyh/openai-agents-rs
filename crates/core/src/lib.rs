@@ -121,6 +121,9 @@ pub use serde;
 /// Re-exported so `#[function_tool]`-generated code does not require a direct dependency.
 pub use serde_json;
 pub use stream_events::{RunItemStreamName, StreamEvent};
+/// Re-exported so a caller can cancel a run ([`RunOptions::cancellation_token`]) without a direct
+/// `tokio-util` dependency.
+pub use tokio_util::sync::CancellationToken;
 pub use tool::{
     FunctionTool, IsEnabledFn, NeedsResolution, Tool, ToolContext, ToolEnabled,
     ToolFailureHandling, ToolMeta, ToolOutput, ToolPolicy, ToolSpec, ToolTimeoutBehavior,

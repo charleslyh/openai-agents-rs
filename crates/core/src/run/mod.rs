@@ -220,6 +220,11 @@ fn spawn_streamed(
         .runtime
         .get_or_insert_with(crate::runtime::Runtime::current);
     let max_turns = options.max_turns;
+    // The handle needs the run's token to tell tools about an immediate cancel.
+    let cancellation = options
+        .cancellation
+        .get_or_insert_with(Default::default)
+        .clone();
     let (tx, rx) = mpsc::channel(64);
     let snapshot = Arc::new(Mutex::new(StreamingSnapshot {
         current_agent_name: starting_agent.name.clone(),
@@ -265,8 +270,9 @@ fn spawn_streamed(
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
                 s.is_complete = true;
-                // A graceful cancel returns a result without a real final output.
-                let stopped_early = s.cancel_after_turn;
+                // A graceful cancel, or a cancelled token, returns a result without a real final
+                // output.
+                let stopped_early = s.cancel_after_turn || r.is_cancelled;
                 if stopped_early {
                     s.is_cancelled = true;
                 }
@@ -294,7 +300,9 @@ fn spawn_streamed(
             }
         }
     });
-    RunResultStreaming::new(snapshot, max_turns, rx).with_task(task)
+    RunResultStreaming::new(snapshot, max_turns, rx)
+        .with_task(task)
+        .with_cancellation(cancellation)
 }
 
 /// The runtime behind `run_blocking` when the caller has none of its own (`Runtime::global()`'s).

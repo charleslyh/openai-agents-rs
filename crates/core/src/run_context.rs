@@ -9,6 +9,8 @@ use std::any::Any;
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex, MutexGuard};
 
+use tokio_util::sync::CancellationToken;
+
 use crate::error::{AgentsError, UserError};
 use crate::extensions::Extensions;
 use crate::usage::Usage;
@@ -24,6 +26,8 @@ pub struct RunContextWrapper {
     usage: Arc<Mutex<Usage>>,
     /// Deferred capabilities the model has loaded, as `(agent name, capability name)`.
     loaded: Arc<Mutex<BTreeSet<(String, String)>>>,
+    /// Cancels the run; tool calls get a child of it ([`ToolContext::cancellation`]).
+    cancellation: CancellationToken,
 }
 
 impl std::fmt::Debug for RunContextWrapper {
@@ -51,7 +55,27 @@ impl RunContextWrapper {
             extensions,
             usage: Arc::new(Mutex::new(Usage::default())),
             loaded: Arc::default(),
+            cancellation: CancellationToken::new(),
         }
+    }
+
+    /// Use `token` as the run's cancellation token.
+    #[must_use]
+    pub(crate) fn with_cancellation(mut self, token: CancellationToken) -> Self {
+        self.cancellation = token;
+        self
+    }
+
+    /// The token that cancels this run. Cancelling it asks the run to stop: the model call is
+    /// dropped, tool calls already running are left to finish, and the run ends with
+    /// [`RunResult::is_cancelled`](crate::result::RunResult::is_cancelled) set.
+    pub fn cancellation(&self) -> &CancellationToken {
+        &self.cancellation
+    }
+
+    /// Whether the run was asked to stop.
+    pub fn is_cancelled(&self) -> bool {
+        self.cancellation.is_cancelled()
     }
 
     /// Wrap a concrete context value.
@@ -161,6 +185,7 @@ impl RunContextWrapper {
 
 /// Context passed to tool invocations (Python: `ToolContext` subset).
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct ToolContext {
     /// Tool name being invoked.
     pub tool_name: String,
@@ -170,22 +195,42 @@ pub struct ToolContext {
     pub tool_arguments: String,
     /// Run context shared with guardrails and hooks.
     pub run_context: RunContextWrapper,
+    cancellation: CancellationToken,
 }
 
 impl ToolContext {
-    /// Build a tool context from the run context.
+    /// Build a tool context from the run context. Its cancellation token is a child of the
+    /// run's.
     pub fn new(
         tool_name: impl Into<String>,
         tool_call_id: impl Into<String>,
         tool_arguments: impl Into<String>,
         run_context: RunContextWrapper,
     ) -> Self {
+        let cancellation = run_context.cancellation().child_token();
         Self {
             tool_name: tool_name.into(),
             tool_call_id: tool_call_id.into(),
             tool_arguments: tool_arguments.into(),
             run_context,
+            cancellation,
         }
+    }
+
+    /// The cancellation token of this call, a child of the run's token.
+    ///
+    /// Cancellation is cooperative: the SDK never drops a tool that is running. A long tool
+    /// should watch this token (`ctx.cancellation().cancelled().await` in a `select!`, or
+    /// [`is_cancelled`](Self::is_cancelled) between steps) and return early; whatever it returns
+    /// is still recorded as its output. Calls that had not started when the run was cancelled
+    /// never run.
+    pub fn cancellation(&self) -> &CancellationToken {
+        &self.cancellation
+    }
+
+    /// Whether this call, or the run it belongs to, was cancelled.
+    pub fn is_cancelled(&self) -> bool {
+        self.cancellation.is_cancelled()
     }
 
     /// Convenience accessor for the user context.

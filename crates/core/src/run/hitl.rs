@@ -53,6 +53,15 @@ impl std::fmt::Debug for ToolResolver {
     }
 }
 
+/// A paused result turned into a cancelled one: the calls that were waiting for an answer will
+/// not get one, so the result no longer lists them or offers a state to resume from.
+fn cancelled_while_paused(mut result: RunResult) -> RunResult {
+    result.interruptions.clear();
+    result.interrupt_state = None;
+    result.is_cancelled = true;
+    result
+}
+
 /// Run from `start`, then, while the result is paused and `options` has a resolver, resolve every
 /// pending call through it and resume. Without a resolver this is a single `run_loop`.
 pub(super) async fn run_resolving(
@@ -64,6 +73,7 @@ pub(super) async fn run_resolving(
         return run_loop(agent, start, options, None, None).await;
     };
     let mut result = run_loop(Arc::clone(&agent), start, options.clone(), None, None).await?;
+    let token = options.cancellation.clone().unwrap_or_default();
     while result.is_interrupted() {
         let mut state = result.to_state()?;
         for item in &result.interruptions {
@@ -73,7 +83,16 @@ pub(super) async fn run_resolving(
                 call_id = %item.call_id,
                 "resolving paused tool call through RunOptions::resolve_with"
             );
-            let resolution = resolver.resolve(item.clone()).await;
+            // The callback may wait on a person. Cancelling stops the wait and drops the
+            // callback's future, so whatever it holds (a pending prompt, a lock) is released by
+            // its own `Drop` instead of staying behind for as long as nobody answers.
+            let resolution = tokio::select! {
+                biased;
+                () = token.cancelled() => {
+                    return Ok(cancelled_while_paused(result));
+                }
+                resolution = resolver.resolve(item.clone()) => resolution,
+            };
             state.resolve(item, resolution);
         }
         result = run_loop(

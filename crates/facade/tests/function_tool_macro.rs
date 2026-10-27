@@ -63,12 +63,7 @@ fn macro_uses_doc_comment_as_description() {
 #[tokio::test]
 async fn macro_deserializes_nested_arguments() {
     let out = (summarize().on_invoke_tool)(
-        opai_agents::ToolContext {
-            tool_name: "summarize".into(),
-            tool_call_id: "c".into(),
-            tool_arguments: "{}".into(),
-            run_context: Default::default(),
-        },
+        opai_agents::ToolContext::new("summarize", "c", "{}", Default::default()),
         r#"{"names":["a","b"],"address":{"city":"Paris","zip":null}}"#.into(),
     )
     .await
@@ -85,12 +80,7 @@ fn describe(ctx: opai_agents::ToolContext, label: String) -> String {
 #[tokio::test]
 async fn macro_injects_tool_context() {
     let out = (describe().on_invoke_tool)(
-        opai_agents::ToolContext {
-            tool_name: "describe".into(),
-            tool_call_id: "call-42".into(),
-            tool_arguments: "{}".into(),
-            run_context: Default::default(),
-        },
+        opai_agents::ToolContext::new("describe", "call-42", "{}", Default::default()),
         r#"{"label":"x"}"#.into(),
     )
     .await
@@ -140,12 +130,7 @@ async fn macro_name_override_and_sync_fn() {
     assert_eq!(tool.name, "greet");
     assert_eq!(tool.description, "Greet someone");
     let out = (tool.on_invoke_tool)(
-        opai_agents::ToolContext {
-            tool_name: "greet".into(),
-            tool_call_id: "c".into(),
-            tool_arguments: r#"{"name":"Ada"}"#.into(),
-            run_context: Default::default(),
-        },
+        opai_agents::ToolContext::new("greet", "c", r#"{"name":"Ada"}"#, Default::default()),
         r#"{"name":"Ada"}"#.into(),
     )
     .await

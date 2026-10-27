@@ -168,6 +168,7 @@ pub(crate) fn finished_result(
         tool_input_guardrail_results: Vec::new(),
         tool_output_guardrail_results: Vec::new(),
         reasoning_item_id_policy: None,
+        is_cancelled: false,
         interrupt_state: None,
     }
 }
@@ -200,6 +201,7 @@ pub(crate) fn interrupted_result(
         tool_input_guardrail_results: Vec::new(),
         tool_output_guardrail_results: Vec::new(),
         reasoning_item_id_policy: None,
+        is_cancelled: false,
         interrupt_state: Some(interrupt_state),
     }
 }

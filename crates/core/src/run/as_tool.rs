@@ -72,6 +72,8 @@ fn build_agent_as_tool(agent: &Agent, config: AsToolConfig) -> FunctionTool {
             async move {
                 let input_text = extract_as_tool_input(&args)?;
                 let mut opts = RunOptions::default();
+                // The nested run stops with the outer one.
+                opts.cancellation = Some(ctx.cancellation().clone());
                 if let Some(mt) = max_turns {
                     opts.max_turns = Some(mt);
                 }

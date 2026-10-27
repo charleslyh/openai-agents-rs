@@ -380,7 +380,17 @@ impl<'a> TurnLoop<'a> {
         let (response, resolutions, from_resume) = match self.resume_pending.take() {
             Some((pending, resolutions)) => (pending, resolutions, true),
             None => {
-                let response = self.call_model(&setup, &*model, &mut turn_guard).await?;
+                // The model call is plain I/O, so cancelling drops it; tool calls are different
+                // (see `execute_planned_tools`).
+                let token = self.context.cancellation().clone();
+                let response = tokio::select! {
+                    biased;
+                    () = token.cancelled() => None,
+                    response = self.call_model(&setup, &*model, &mut turn_guard) => Some(response?),
+                };
+                let Some(response) = response else {
+                    return Ok(Some(self.cancelled().await?));
+                };
                 (response, self.live_resolutions.clone(), false)
             }
         };
@@ -437,6 +447,9 @@ impl<'a> TurnLoop<'a> {
                 Value::Null,
                 Arc::clone(&self.current_agent),
             )));
+        }
+        if self.context.is_cancelled() {
+            return Ok(Some(self.cancelled().await?));
         }
         // Python (`run.py:1506-1507`): the turn counter is incremented first and only compared
         // when `max_turns` is not `None`.
@@ -875,6 +888,11 @@ impl<'a> TurnLoop<'a> {
             )
             .await;
         }
+        // The outputs above are recorded first, so a cancelled turn still shows what its tools
+        // returned.
+        if self.context.is_cancelled() {
+            return Ok(Some(self.cancelled().await?));
+        }
 
         let handed_off = perform_handoff(
             HandoffTurn {
@@ -939,6 +957,19 @@ impl<'a> TurnLoop<'a> {
             },
         )
         .await
+    }
+
+    /// End the run because its cancellation token fired. What the run produced is kept and saved
+    /// to the session, but there is no final output and the run cannot be resumed.
+    async fn cancelled(&mut self) -> Result<RunResult, AgentsError> {
+        if let Some(writer) = self.session_writer.as_deref_mut() {
+            writer.flush(&self.generated_items).await?;
+        }
+        let record = self.take_record();
+        let mut result = finished_result(record, Value::Null, Arc::clone(&self.current_agent));
+        result.is_cancelled = true;
+        result.input_guardrail_results = std::mem::take(&mut self.input_guardrail_results);
+        Ok(result)
     }
 
     /// End the run paused, with everything needed to resume it.
