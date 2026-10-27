@@ -16,7 +16,7 @@ use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{oneshot, Mutex as AsyncMutex};
 
 use super::rpc::{
-    handshake, notification_message, reply_to_server_request, request_message, response_outcome,
+    negotiate, notification_message, reply_to_server_request, request_message, response_outcome,
     Connector, McpError, Transport,
 };
 
@@ -280,11 +280,13 @@ pub(crate) struct StdioConnector(pub StdioParams);
 #[async_trait]
 impl Connector for StdioConnector {
     async fn connect(&self, timeout: Duration) -> Result<Arc<dyn Transport>, McpError> {
-        let transport = StdioTransport::spawn(&self.0)?;
-        if let Err(error) = handshake(&transport, timeout).await {
-            transport.close().await;
-            return Err(error);
+        let transport: Arc<dyn Transport> = Arc::new(StdioTransport::spawn(&self.0)?);
+        match negotiate(Arc::clone(&transport), timeout).await {
+            Ok(transport) => Ok(transport),
+            Err(error) => {
+                transport.close().await;
+                Err(error)
+            }
         }
-        Ok(Arc::new(transport))
     }
 }

@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use serde_json::{json, Value};
@@ -22,6 +22,20 @@ use opai_agents_core::{McpCallToolResult, McpServer, McpTool};
 /// Upper bound on `tools/list` pages followed, so a misbehaving server cannot loop forever.
 const MAX_TOOL_PAGES: usize = 100;
 
+/// A fetched tool list and how long it may be reused.
+struct CachedTools {
+    tools: Vec<McpTool>,
+    /// `None` keeps it until invalidated (`cache_tools_list(true)`); otherwise the server's
+    /// `ttlMs` (2026-07-28) from when the list was fetched.
+    expires: Option<Instant>,
+}
+
+impl CachedTools {
+    fn is_fresh(&self) -> bool {
+        self.expires.is_none_or(|at| Instant::now() < at)
+    }
+}
+
 /// An MCP server reached over a private `Transport` (Python: `MCPServerStdio`,
 /// `MCPServerStreamableHttp`).
 pub struct McpClient {
@@ -30,7 +44,7 @@ pub struct McpClient {
     connection: AsyncMutex<Option<Arc<dyn Transport>>>,
     request_timeout: Duration,
     cache_tools_list: bool,
-    cached_tools: Mutex<Option<Vec<McpTool>>>,
+    cached_tools: Mutex<Option<CachedTools>>,
     tool_filter: Option<ToolFilter>,
     require_approval: RequireApproval,
     use_structured_content: bool,
@@ -94,7 +108,9 @@ impl McpClient {
     }
 
     /// Keep the tool list after the first fetch (Python: `cache_tools_list`). Only turn this on
-    /// for servers whose tools do not change; see [`McpServer::invalidate_tools_cache`].
+    /// for servers whose tools do not change; see [`McpServer::invalidate_tools_cache`]. Without
+    /// it, a server that sends `ttlMs` with its list (protocol 2026-07-28) is still believed, for
+    /// that long.
     pub fn cache_tools_list(mut self, cache: bool) -> Self {
         self.cache_tools_list = cache;
         self
@@ -207,22 +223,31 @@ impl McpClient {
     }
 
     async fn fetch_tools(&self) -> Result<Vec<McpTool>, AgentsError> {
-        if self.cache_tools_list {
-            if let Some(tools) = self
-                .cached_tools
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .clone()
-            {
-                return Ok(tools);
-            }
+        if let Some(cached) = self
+            .cached_tools
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+            .filter(|c| c.is_fresh())
+        {
+            return Ok(cached.tools.clone());
         }
         let mut tools = Vec::new();
+        // The shortest freshness any page allowed; `None` when a page gave no (or zero) ttl.
+        let mut ttl: Option<Option<u64>> = None;
         let mut cursor: Option<String> = None;
         let mut seen_cursors = HashSet::new();
         for _ in 0..MAX_TOOL_PAGES {
             let params = cursor.as_ref().map(|c| json!({"cursor": c}));
             let page = self.request("tools/list", params).await?;
+            let page_ttl = page
+                .get("ttlMs")
+                .and_then(Value::as_u64)
+                .filter(|ms| *ms > 0);
+            ttl = Some(match ttl {
+                None => page_ttl,
+                Some(seen) => seen.zip(page_ttl).map(|(a, b)| a.min(b)),
+            });
             tools.extend(
                 page.get("tools")
                     .and_then(Value::as_array)
@@ -241,11 +266,21 @@ impl McpClient {
                 _ => break,
             }
         }
-        if self.cache_tools_list {
+        // `cache_tools_list(true)` is the caller's choice and keeps the list for good. Without it, a
+        // server that says how long the list stays valid (`ttlMs`) is believed.
+        let expires = match (self.cache_tools_list, ttl.flatten()) {
+            (true, _) => Some(None),
+            (false, Some(ms)) => Some(Some(Instant::now() + Duration::from_millis(ms))),
+            (false, None) => None,
+        };
+        if let Some(expires) = expires {
             *self
                 .cached_tools
                 .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(tools.clone());
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(CachedTools {
+                tools: tools.clone(),
+                expires,
+            });
         }
         Ok(tools)
     }

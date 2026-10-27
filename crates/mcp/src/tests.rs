@@ -174,6 +174,48 @@ async fn the_tool_list_is_cached_only_on_request() {
 }
 
 #[tokio::test]
+async fn a_server_ttl_is_believed_until_it_runs_out() {
+    let list = |ttl: u64| json!({"tools": [tool_json("a")], "ttlMs": ttl});
+    let (client, transport, _) = fake(vec![list(60_000)]);
+    names(&client).await;
+    names(&client).await;
+    assert_eq!(listed(&transport), 1, "within the ttl the list is reused");
+    client.invalidate_tools_cache();
+    names(&client).await;
+    assert_eq!(listed(&transport), 2, "invalidating still forces a refetch");
+
+    let (client, transport, _) = fake(vec![list(1)]);
+    names(&client).await;
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    names(&client).await;
+    assert_eq!(
+        listed(&transport),
+        2,
+        "after the ttl the list is fetched again"
+    );
+
+    let (client, transport, _) = fake(vec![list(0)]);
+    names(&client).await;
+    names(&client).await;
+    assert_eq!(listed(&transport), 2, "a zero ttl means do not reuse");
+}
+
+#[tokio::test]
+async fn a_page_without_a_ttl_makes_a_paged_list_uncacheable() {
+    let (client, transport, _) = fake(vec![
+        json!({"tools": [tool_json("a")], "nextCursor": "1", "ttlMs": 60_000}),
+        json!({"tools": [tool_json("b")]}),
+    ]);
+    names(&client).await;
+    names(&client).await;
+    assert_eq!(
+        listed(&transport),
+        4,
+        "a page without a ttl makes the whole list uncacheable"
+    );
+}
+
+#[tokio::test]
 async fn filters_select_tools() {
     let page = || vec![json!({"tools": [tool_json("a"), tool_json("b"), tool_json("c")]})];
     let (client, ..) = fake(page());

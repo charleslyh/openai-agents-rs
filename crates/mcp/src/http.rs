@@ -2,7 +2,8 @@
 //!
 //! Every message is a `POST`. The server answers either with one JSON document or with an event
 //! stream (SSE) that ends with the response. A session id the server hands out on `initialize`
-//! is sent back on later requests.
+//! is sent back on later requests. A stateless (2026-07-28) server has no session; its requests
+//! carry `Mcp-Method` and `Mcp-Name` headers instead.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -15,12 +16,75 @@ use reqwest::header::{HeaderMap, HeaderName, HeaderValue, ACCEPT, CONTENT_TYPE};
 use serde_json::Value;
 
 use super::rpc::{
-    handshake, notification_message, reply_to_server_request, request_message, response_outcome,
-    Connector, McpError, Transport,
+    negotiate, notification_message, reply_to_server_request, request_message, response_outcome,
+    Connector, McpError, Transport, MODERN_VERSION,
 };
 
 const SESSION_HEADER: &str = "mcp-session-id";
 const VERSION_HEADER: &str = "mcp-protocol-version";
+const METHOD_HEADER: &str = "mcp-method";
+const NAME_HEADER: &str = "mcp-name";
+
+/// The headers the stateless revision requires on a request, so an intermediary can route it
+/// without reading the body: `Mcp-Method` on every request, `Mcp-Name` (the tool, prompt or
+/// resource) on `tools/call`, `prompts/get` and `resources/read`. Responses we post (to a request
+/// the server sent) and notifications carry neither.
+fn routing_headers(body: &Value) -> Vec<(&'static str, String)> {
+    let Some(method) = body
+        .get("method")
+        .and_then(Value::as_str)
+        .filter(|_| body.get("id").is_some())
+    else {
+        return Vec::new();
+    };
+    let mut headers = vec![(METHOD_HEADER, method.to_string())];
+    let source = match method {
+        "tools/call" | "prompts/get" => "name",
+        "resources/read" => "uri",
+        _ => return headers,
+    };
+    if let Some(name) = body
+        .get("params")
+        .and_then(|p| p.get(source))
+        .and_then(Value::as_str)
+    {
+        headers.push((NAME_HEADER, header_safe(name)));
+    }
+    headers
+}
+
+/// A value as a header can carry it: printable ASCII as it is, anything else as the specification's
+/// `=?base64?...?=` sentinel.
+fn header_safe(value: &str) -> String {
+    let plain = value.bytes().all(|b| (0x20..0x7f).contains(&b))
+        && !value.starts_with(' ')
+        && !value.ends_with(' ')
+        && !value.starts_with("=?base64?");
+    if plain {
+        value.to_string()
+    } else {
+        format!("=?base64?{}?=", base64(value.as_bytes()))
+    }
+}
+
+fn base64(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let n = chunk
+            .iter()
+            .enumerate()
+            .fold(0u32, |acc, (i, b)| acc | (u32::from(*b) << (16 - 8 * i)));
+        for i in 0..4 {
+            if i <= chunk.len() {
+                out.push(char::from(ALPHABET[((n >> (18 - 6 * i)) & 0x3f) as usize]));
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
 
 /// How to reach a streamable HTTP server (Python: `MCPServerStreamableHttpParams`).
 #[derive(Debug, Clone, Default)]
@@ -145,7 +209,7 @@ impl HttpTransport {
         }
     }
 
-    fn header_map(&self) -> Result<HeaderMap, McpError> {
+    fn header_map(&self, body: Option<&Value>) -> Result<HeaderMap, McpError> {
         let mut map = HeaderMap::new();
         let bad = |what: &str, name: &str| McpError::Transport(format!("invalid {what} `{name}`"));
         for (name, value) in &self.headers {
@@ -181,14 +245,31 @@ impl HttpTransport {
                 HeaderValue::from_str(version).map_err(|_| bad("protocol version", version))?,
             );
         }
+        if let Some(body) = body.filter(|_| self.is_stateless()) {
+            for (name, value) in routing_headers(body) {
+                map.insert(
+                    HeaderName::from_static(name),
+                    HeaderValue::from_str(&value).map_err(|_| bad("header value for", name))?,
+                );
+            }
+        }
         Ok(map)
+    }
+
+    /// Whether the connection speaks the stateless revision, which routes by header.
+    fn is_stateless(&self) -> bool {
+        self.protocol_version
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_deref()
+            == Some(MODERN_VERSION)
     }
 
     async fn post(&self, body: &Value) -> Result<reqwest::Response, McpError> {
         let response = self
             .client
             .post(&self.url)
-            .headers(self.header_map()?)
+            .headers(self.header_map(Some(body))?)
             .body(body.to_string())
             .send()
             .await
@@ -305,11 +386,11 @@ impl Transport for HttpTransport {
         .map(|_| ())
     }
 
-    fn set_protocol_version(&self, version: &str) {
+    fn set_protocol_version(&self, version: Option<&str>) {
         *self
             .protocol_version
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(version.to_string());
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = version.map(str::to_string);
     }
 
     async fn close(&self) {
@@ -322,7 +403,7 @@ impl Transport for HttpTransport {
             return;
         }
         // Ending the session is polite and optional: a server may answer 405, which is fine.
-        let mut headers = self.header_map().unwrap_or_default();
+        let mut headers = self.header_map(None).unwrap_or_default();
         if let Some(id) = session
             .as_deref()
             .and_then(|s| HeaderValue::from_str(s).ok())
@@ -340,18 +421,50 @@ pub(crate) struct HttpConnector(pub StreamableHttpParams);
 #[async_trait]
 impl Connector for HttpConnector {
     async fn connect(&self, timeout: Duration) -> Result<Arc<dyn Transport>, McpError> {
-        let transport = HttpTransport::new(&self.0);
-        if let Err(error) = handshake(&transport, timeout).await {
-            transport.close().await;
-            return Err(error);
+        let transport: Arc<dyn Transport> = Arc::new(HttpTransport::new(&self.0));
+        match negotiate(Arc::clone(&transport), timeout).await {
+            Ok(transport) => Ok(transport),
+            Err(error) => {
+                transport.close().await;
+                Err(error)
+            }
         }
-        Ok(Arc::new(transport))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::SseEvents;
+
+    #[test]
+    fn routing_headers_name_the_method_and_the_target() {
+        use serde_json::json;
+        let call = json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "get_weather"}});
+        assert_eq!(
+            super::routing_headers(&call),
+            vec![
+                ("mcp-method", "tools/call".to_string()),
+                ("mcp-name", "get_weather".to_string())
+            ]
+        );
+        let read = json!({"id": 2, "method": "resources/read", "params": {"uri": "file:///a b"}});
+        assert_eq!(super::routing_headers(&read)[1].1, "file:///a b");
+        let list = json!({"id": 3, "method": "tools/list", "params": {}});
+        assert_eq!(super::routing_headers(&list).len(), 1, "no name for a list");
+        let note = json!({"method": "notifications/cancelled"});
+        assert!(super::routing_headers(&note).is_empty());
+        let reply = json!({"id": 4, "result": {}});
+        assert!(super::routing_headers(&reply).is_empty());
+    }
+
+    #[test]
+    fn a_name_that_is_not_plain_ascii_is_base64_encoded() {
+        assert_eq!(super::header_safe("get_weather"), "get_weather");
+        assert_eq!(super::header_safe("天气"), "=?base64?5aSp5rCU?=");
+        assert_eq!(super::base64(b"a"), "YQ==");
+        assert_eq!(super::base64(b"ab"), "YWI=");
+        assert_eq!(super::base64(b"abc"), "YWJj");
+    }
 
     #[test]
     fn sse_events_handle_chunking_crlf_and_multiline_data() {

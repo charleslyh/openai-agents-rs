@@ -189,6 +189,8 @@ dictionaries are merged (`model_settings.py:273`).
 |------------|--------|-------|
 | `MCPServerStdio` | S | `McpClient::stdio`; restricted environment, child killed on drop (D-041) |
 | `MCPServerStreamableHttp` | S | `McpClient::streamable_http`; SSE and JSON replies, session id (D-041) |
+| MCP protocol 2026-07-28 (stateless) | S | Rust-only ahead of Python. `server/discover` first, per-request `_meta` (version, capabilities, client info), `Mcp-Method` / `Mcp-Name` headers, `ttlMs` honoured for the tool list; falls back to the `initialize` handshake for older servers (X-026) |
+| MCP 2026-07-28: multi round-trip requests (`input_required`), `subscriptions/listen`, tasks extension, `x-mcp-header` | N | `input_required` is reported as an error; the client declares no capability that could answer it |
 | `MCPServerSse` (legacy SSE transport) | N | Superseded by streamable HTTP |
 | `Agent.mcp_servers`, `Agent.mcp_config.convert_schemas_to_strict` | S | Tools listed every turn |
 | `tool_filter` (static, dynamic), `cache_tools_list`, `require_approval`, `use_structured_content` | S | |

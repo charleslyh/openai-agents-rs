@@ -32,6 +32,11 @@ Collects the changes for 0.2.0. Breaking changes are marked **breaking**.
 
 ### Added
 
+- MCP protocol 2026-07-28 (stateless): the client tries `server/discover` first and falls back to the
+  `initialize` handshake for older servers. Requests carry the version, capabilities and client
+  info in `_meta`; HTTP requests carry `Mcp-Method` and `Mcp-Name`; a server's `ttlMs` is honoured
+  for the tool list. A reply that asks for more input (`input_required`) is reported as an error.
+  Not implemented: `subscriptions/listen`, the tasks extension, `x-mcp-header`, `cacheScope`.
 - Cooperative cancellation: `RunOptions::cancellation_token`, `ToolContext::cancellation()` and
   `is_cancelled()`, `RunResult::is_cancelled`. Tools already running finish; calls that had not
   started get a cancelled output. `teams` cancels a teammate through the same token.
