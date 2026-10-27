@@ -21,7 +21,7 @@ The SDK is a Cargo workspace. `opai-agents` (the facade, `crates/facade`) re-exp
 | `retry` | `opai-agents-core` | `crates/core/src/retry`; `openai_retry_advice` moved to `crates/openai/src/retry_advice.rs` (D7) |
 | `models` (OpenAI provider, Responses / Chat Completions) | `opai-agents-openai` | `crates/openai`; facade feature **`openai`** (on by default) |
 | `mcp` | `opai-agents-mcp` | `crates/mcp`; the `McpServer` contract stays in core, facade feature **`mcp`** (**off** by default, D6) |
-| `extensions` (`sqlite`) / `SqliteSession` | `opai-agents-sqlite` | `crates/sqlite`; facade feature `sqlite` |
+| `extensions` (`sqlite`) / `SqliteSession` | `opai-agents-sessions` | `crates/sessions/src/sqlite.rs`; facade feature `sqlite` |
 | — (Rust-only) `FileSession`, `FileRunStateStore` | `opai-agents-sessions` | `crates/sessions`; facade feature `sessions` (**off** by default, X-016 / X-017) |
 | — (Rust-only) provider routing and prefixes | `opai-agents-providers` | `crates/providers`; facade feature `providers` |
 | — (Rust-only) ready-made tools (web fetch and similar) | `opai-agents-tools` | `crates/tools`; facade features `tools`, `webfetch` |

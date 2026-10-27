@@ -41,7 +41,7 @@ problem does not arise. The list is `DEV_ONLY_DEPS` in the script; it gets no en
 | `opai-agents-core` | agents, tools, handoffs, guardrails, the run loop, sessions, tracing, context trimmers. No HTTP, no database, no child processes, and **no features** |
 | `opai-agents-openai` | the OpenAI provider and the Responses / Chat Completions adapters (facade feature `openai`, on by default) |
 | `opai-agents-mcp` | the MCP client and its two transports (facade feature `mcp`, **off** by default) |
-| `opai-agents-sqlite` | `SqliteSession` (facade feature `sqlite`) |
+| `opai-agents-sessions` (feature `sqlite`) | `SqliteSession` (facade feature `sqlite`) |
 | `opai-agents-testing` | `ScriptedModel` and item builders |
 | `opai-agents-macros` | `#[function_tool]` |
 | `opai-agents` (facade) | re-exports everything, installs the default model provider |

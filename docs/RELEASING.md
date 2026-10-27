@@ -40,16 +40,19 @@ The first release, 2026-10-21 (UTC), as read from the sparse index:
 
 ## Why this workspace hits it
 
+The table below is the 0.1.0 layout of fourteen crates. Since 0.2.0 `sqlite` lives in `sessions` and
+`scaffold` is not published, so the set is twelve crates: batch 1 has two, batch 2 has eight.
+
 Publish order follows dependencies, and most crates depend only on `core`:
 
 | Batch | Crates | Count |
 | --- | --- | --- |
-| 1 | `core`, `macros`, `scaffold` | 3 |
-| 2 | `testing`, `openai`, `mcp`, `sqlite`, `sessions`, `observability`, `tools`, `guardrails`, `teams` | 9 |
+| 1 | `core`, `macros` | 2 |
+| 2 | `testing`, `openai`, `mcp`, `sessions`, `observability`, `tools`, `guardrails`, `teams` | 8 |
 | 3 | `providers` | 1 |
 | 4 | `opai-agents` (facade) | 1 |
 
-Batch 1 leaves 2 tokens of the burst. Batch 2 unlocks nine uploads at once; the third one fails.
+Batch 1 leaves 2 tokens of the burst. Batch 2 unlocks eight uploads at once; the third one fails.
 
 ## The process
 

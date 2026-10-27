@@ -5,6 +5,9 @@ edition = "2021"
 rust-version = "1.89"
 description = "`cargo opai new`: create a project that uses the OpenAI Agents Rust SDK"
 license = "MIT"
+# A developer tool installed from the repository, not published: keeps the crates.io rate-limited
+# new-crate budget for the SDK itself (see docs/RELEASING.md).
+publish = false
 repository = "https://github.com/charleslyh/openai-agents-rs"
 readme = "README.md"
 keywords = ["openai", "agents", "scaffold", "cargo-subcommand"]

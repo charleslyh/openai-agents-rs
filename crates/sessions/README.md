@@ -1,6 +1,6 @@
 # opai-agents-sessions
 
-Conversation and paused-run storage: JSONL files, Redis and Postgres.
+Conversation and paused-run storage: JSONL files, SQLite, Redis and Postgres.
 
 Part of the Rust port of the OpenAI Agents SDK. Start from the
 [`opai-agents`](https://crates.io/crates/opai-agents) crate, which re-exports everything; the

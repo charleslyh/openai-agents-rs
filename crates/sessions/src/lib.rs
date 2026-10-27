@@ -9,6 +9,8 @@
 //!   refused instead of resumed.
 //! * [`RedisSession`] and [`RedisRunStateStore`] (`redis` feature): the same, in a list and a key,
 //!   for a history more than one process shares.
+//! * [`SqliteSession`] (`sqlite` feature): a database file or in-memory, with the Python SDK's
+//!   schema so either SDK can read the file.
 //! * [`PostgresSession`] and [`PostgresRunStateStore`] (`postgres` feature): the same, in rows, for
 //!   a deployment that already has a database.
 //!
@@ -26,6 +28,8 @@ pub mod state_file;
 pub mod postgres;
 #[cfg(feature = "redis")]
 pub mod redis;
+#[cfg(feature = "sqlite")]
+pub mod sqlite;
 
 pub use file::FileSession;
 pub use state_file::{FileRunStateStore, STATE_KEY_ENV};
@@ -34,3 +38,5 @@ pub use state_file::{FileRunStateStore, STATE_KEY_ENV};
 pub use postgres::{PostgresRunStateStore, PostgresSession};
 #[cfg(feature = "redis")]
 pub use redis::{RedisRunStateStore, RedisSession};
+#[cfg(feature = "sqlite")]
+pub use sqlite::SqliteSession;

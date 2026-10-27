@@ -44,7 +44,7 @@ pub use opai_agents_mcp::{
 
 /// SQLite-backed [`Session`] (Python: `SQLiteSession`).
 #[cfg(feature = "sqlite")]
-pub use opai_agents_sqlite::SqliteSession;
+pub use opai_agents_sessions::SqliteSession;
 
 /// Provider presets, discovery and the capability matrix.
 #[cfg(feature = "providers")]

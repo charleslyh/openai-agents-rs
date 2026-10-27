@@ -1,9 +1,9 @@
 [workspace]
-members = ["crates/*", "examples", "demo/web", "tools/console"]
+members = ["crates/*", "examples", "demo/web", "tools/console", "tools/scaffold"]
 # The examples and demo packages turn on the facade's `openai` feature, which would defeat
 # `cargo test --no-default-features` (the check that the SDK still builds with no HTTP client).
 # Keeping them out of the default set preserves that check; build them explicitly with `-p`.
-# `tools/console` is a program of its own (a web server), not part of the SDK, so it sits outside
+# `tools/console` and `tools/scaffold` are programs of their own (a web server), not part of the SDK, so it sits outside
 # `crates/*` for the same reason.
 default-members = ["crates/*"]
 resolver = "2"

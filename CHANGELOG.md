@@ -5,6 +5,38 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased]
 
+Collects the changes for 0.2.0. Breaking changes are marked **breaking**.
+
+### Breaking
+
+- **breaking**: `opai-agents-sqlite` is merged into `opai-agents-sessions` behind its `sqlite`
+  feature. `opai_agents::SqliteSession` and the facade feature `sqlite` are unchanged; code that
+  named `opai_agents_sqlite::SqliteSession` should use `opai_agents_sessions::SqliteSession` with
+  `features = ["sqlite"]`. The published `opai-agents-sqlite` 0.1.0 stays on crates.io and gets no
+  new versions.
+- **breaking**: `opai-agents-scaffold` lives in `tools/scaffold` and is no longer published. Install
+  it with `cargo install --git https://github.com/charleslyh/openai-agents-rs opai-agents-scaffold`.
+  The published SDK is now twelve crates.
+- **breaking**: public enums that may grow are `#[non_exhaustive]`, and `ToolContext` is
+  `#[non_exhaustive]` (build one with `ToolContext::new`).
+- **breaking**: large error variants are boxed (`AgentsError` 264 to 48 bytes, `ModelError` 128 to
+  32), and the `result_large_err` lint allow is gone.
+
+### Added
+
+- Cooperative cancellation: `RunOptions::cancellation_token`, `ToolContext::cancellation()` and
+  `is_cancelled()`, `RunResult::is_cancelled`. Tools already running finish; calls that had not
+  started get a cancelled output. `teams` cancels a teammate through the same token.
+- `FunctionTool::try_typed` and `ToolSpec::try_typed`, which return an error instead of panicking.
+- `ScriptedModel` steps that panic or never return, for testing failure paths.
+- `redis-tls` feature for `rediss://`; `scripts/publish.py` and `docs/RELEASING.md` for a paced,
+  resumable crates.io release; `scripts/check_docs_drift.py`.
+
+### Fixed
+
+- A panic in a streamed run's background task is reported as an error instead of a normal end.
+- A panic in a tool, hook or guardrail becomes a tool error instead of unwinding through the run.
+
 ## [0.1.0] - 2026-10-21
 
 First release on crates.io: 14 crates under the `opai-agents-*` names (facade: `opai-agents`).

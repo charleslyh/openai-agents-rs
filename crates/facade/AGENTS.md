@@ -15,7 +15,7 @@ path stays `opai_agents::…`.
   | --- | --- | --- |
   | `openai` | yes | `opai-agents-openai` |
   | `mcp` | **no** | `opai-agents-mcp` (D6) |
-  | `sqlite` | no | `opai-agents-sqlite` |
+  | `sqlite` | no | `opai-agents-sessions` (feature `sqlite`) |
 
 - **`mcp` is off by default, which has a sharp edge.** `cargo test --test mcp_interop` without
   `--features mcp` compiles to zero tests and **still passes**. CI, docs and any new command must

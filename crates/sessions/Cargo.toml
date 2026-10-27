@@ -3,10 +3,10 @@ name = "opai-agents-sessions"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.89"
-description = "Session and paused-run storage for the Rust OpenAI Agents SDK: JSONL files, Redis and Postgres"
+description = "Session and paused-run storage for the Rust OpenAI Agents SDK: JSONL files, SQLite, Redis and Postgres"
 license = "MIT"
 readme = "README.md"
-keywords = ["openai", "agents", "session", "redis"]
+keywords = ["openai", "agents", "session", "redis", "sqlite"]
 categories = ["asynchronous", "database"]
 repository = "https://github.com/charleslyh/openai-agents-rs"
 
@@ -26,6 +26,9 @@ postgres = ["dep:sqlx"]
 # `rediss://` (Redis over TLS) through rustls and the platform trust store. Without it a `rediss://`
 # URL is refused by the client instead of silently connecting in clear text.
 redis-tls = ["redis", "redis/tokio-rustls-comp"]
+# SQLite-backed session with the Python SDK's schema, on a bundled `rusqlite`. Merged in from the
+# former `opai-agents-sqlite` crate. Do not enable `sqlx/sqlite` next to it: both link `sqlite3`.
+sqlite = ["dep:rusqlite"]
 
 [dependencies]
 opai-agents-core = { path = "../core", version = "0.1.0", default-features = false }
@@ -40,6 +43,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 tokio = { version = "1", features = ["rt"] }
 tracing = "0.1"
 redis = { version = "1.7.1", default-features = false, features = ["tokio-comp"], optional = true }
+rusqlite = { version = "0.32", features = ["bundled"], optional = true }
 sqlx = { version = "0.9.0", default-features = false, features = ["postgres", "runtime-tokio", "tls-rustls"], optional = true }
 
 [dev-dependencies]

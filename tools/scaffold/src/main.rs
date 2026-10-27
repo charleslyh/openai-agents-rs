@@ -5,7 +5,7 @@
 //! that waits for a human). They are compiled into this binary, so it works from anywhere.
 //!
 //! ```bash
-//! cargo install opai-agents-scaffold   # installs `cargo-opai`
+//! cargo install --git https://github.com/charleslyh/openai-agents-rs opai-agents-scaffold   # installs `cargo-opai`
 //! cargo opai new my-agent --template tools
 //! cd my-agent && cargo run
 //! ```
@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 /// Version the generated `Cargo.toml` asks for. A path is used instead when `--path` is given.
-const SDK_VERSION: &str = "0.1.0";
+const SDK_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Template {

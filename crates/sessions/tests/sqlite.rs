@@ -1,10 +1,11 @@
 //! The bundled SQLite backend runs the same contract as every other [`Session`].
+#![cfg(feature = "sqlite")]
 
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use opai_agents_core::session_contract;
-use opai_agents_sqlite::SqliteSession;
+use opai_agents_sessions::SqliteSession;
 
 /// A path no other test will pick, so parallel test binaries do not share a database.
 fn temp_db(name: &str) -> std::path::PathBuf {

@@ -24,7 +24,7 @@ mcp = ["dep:opai-agents-mcp"]
 # because every preset speaks Chat Completions or Responses.
 providers = ["dep:opai-agents-providers"]
 # `SqliteSession`: file or in-memory conversation storage, same schema as the Python SDK.
-sqlite = ["dep:opai-agents-sqlite"]
+sqlite = ["dep:opai-agents-sessions", "opai-agents-sessions/sqlite"]
 # `FileSession` (a conversation in a JSONL file) and `FileRunStateStore` (a run that paused for an
 # approval). Off by default: nothing in the core loop needs a file.
 sessions = ["dep:opai-agents-sessions"]
@@ -59,7 +59,6 @@ opai-agents-macros = { path = "../macros", version = "0.1.0" }
 opai-agents-testing = { path = "../testing", version = "0.1.0" }
 opai-agents-openai = { path = "../openai", version = "0.1.0", optional = true }
 opai-agents-mcp = { path = "../mcp", version = "0.1.0", optional = true }
-opai-agents-sqlite = { path = "../sqlite", version = "0.1.0", optional = true }
 opai-agents-providers = { path = "../providers", version = "0.1.0", optional = true }
 opai-agents-sessions = { path = "../sessions", version = "0.1.0", optional = true }
 opai-agents-observability = { path = "../observability", version = "0.1.0", optional = true }

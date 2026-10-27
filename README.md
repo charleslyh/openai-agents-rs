@@ -29,9 +29,8 @@ Depend on `opai-agents`; it re-exports everything below under the paths the SDK 
 | `opai-agents-testing` | `ScriptedModel` and item builders (`opai_agents::testing`) | always |
 | `opai-agents-openai` | Chat Completions and Responses adapters, `OpenAIProvider`, `CompatibleProvider` | feature `openai` (**default**) |
 | `opai-agents-mcp` | MCP client: stdio and streamable HTTP, tool filters, `McpServerManager` | feature `mcp` |
-| `opai-agents-sqlite` | `SqliteSession`, file-compatible with the Python SDK | feature `sqlite` |
 | `opai-agents-providers` | provider presets (DeepSeek, Gemini, Groq, OpenRouter, Anthropic, Ollama), the capability matrix and the offline model | feature `providers` |
-| `opai-agents-sessions` | `FileSession` / `FileRunStateStore`; Redis and Postgres variants | features `sessions`, `redis`, `postgres` |
+| `opai-agents-sessions` | `FileSession` / `FileRunStateStore`; `SqliteSession` (file-compatible with the Python SDK); Redis and Postgres variants | features `sessions`, `sqlite`, `redis`, `postgres` |
 | `opai-agents-observability` | console, JSONL and OpenTelemetry export, metrics | features `observability`, `otel` |
 | `opai-agents-tools` | calculator, clock, read-only files, `web_fetch` with private networks refused | features `tools`, `webfetch` |
 | `opai-agents-guardrails` | length, personal data, prompt injection, keywords, JSON Schema | feature `guardrails` |
@@ -76,7 +75,7 @@ async fn main() -> Result<(), AgentsError> {
 ### Start a project
 
 ```bash
-cargo install opai-agents-scaffold   # installs `cargo-opai`
+cargo install --git https://github.com/charleslyh/openai-agents-rs opai-agents-scaffold   # installs `cargo-opai`
 cargo opai new my-agent              # templates: chat (default), tools, hitl
 cd my-agent && AGENTS_OFFLINE=1 cargo run   # no key needed; set one to talk to a model
 ```

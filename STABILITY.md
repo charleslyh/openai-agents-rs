@@ -22,13 +22,11 @@ a public item; this file says what level each crate is at and how change is hand
 | `opai-agents-mcp` | Unstable | Unstable |
 | `opai-agents-providers` | Unstable | Unstable |
 | `opai-agents-sessions` | Unstable | Unstable |
-| `opai-agents-sqlite` | Unstable | Unstable |
 | `opai-agents-observability` | Unstable | Unstable |
 | `opai-agents-tools` | Unstable | Unstable |
 | `opai-agents-guardrails` | Unstable | Unstable |
 | `opai-agents-teams` | Unstable | Unstable |
 | `opai-agents-testing` | Unstable | Unstable |
-| `opai-agents-scaffold` | Unstable | Unstable |
 
 ## Behaviour versus API
 

@@ -4,7 +4,7 @@
 ([`opai-agents`](https://crates.io/crates/opai-agents)).
 
 ```bash
-cargo install opai-agents-scaffold   # installs `cargo-opai`
+cargo install --git https://github.com/charleslyh/openai-agents-rs opai-agents-scaffold   # installs `cargo-opai`
 cargo opai new my-agent              # templates: chat (default), tools, hitl
 cd my-agent && AGENTS_OFFLINE=1 cargo run -- "Hello"   # no key needed
 ```
