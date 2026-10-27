@@ -111,6 +111,17 @@ pub struct ModelCall {
     pub output_schema_name: Option<String>,
 }
 
+/// A way a step can misbehave instead of answering (Rust-only; Python has no equivalent).
+///
+/// For testing how the code around a model copes with a model that crashes or never answers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StepFault {
+    /// The model call panics with this message.
+    Panic(String),
+    /// The model call never returns; only dropping or cancelling the call ends it.
+    Hang,
+}
+
 /// One deterministic step (Python: `ModelStep`).
 #[derive(Debug, Clone)]
 pub struct ModelStep {
@@ -129,6 +140,8 @@ pub struct ModelStep {
     /// Provider retry guidance attached to the error this step raises
     /// (Python: `ModelStep.retry_advice`).
     pub retry_advice: Option<ModelRetryAdvice>,
+    /// If set, the call panics or never returns instead of answering (see [`StepFault`]).
+    pub fault: Option<StepFault>,
 }
 
 impl ModelStep {
@@ -142,6 +155,23 @@ impl ModelStep {
             error: None,
             model_error: None,
             retry_advice: None,
+            fault: None,
+        }
+    }
+
+    /// Create a step whose model call panics with `message`.
+    pub fn panic(message: impl Into<String>) -> Self {
+        Self {
+            fault: Some(StepFault::Panic(message.into())),
+            ..Self::raise_error("").without_message()
+        }
+    }
+
+    /// Create a step whose model call never returns.
+    pub fn hang() -> Self {
+        Self {
+            fault: Some(StepFault::Hang),
+            ..Self::raise_error("").without_message()
         }
     }
 
@@ -155,6 +185,7 @@ impl ModelStep {
             error: Some(message.into()),
             model_error: None,
             retry_advice: None,
+            fault: None,
         }
     }
 
@@ -351,6 +382,7 @@ impl Model for ScriptedModel {
             )
         })?;
 
+        apply_fault(&step).await;
         if let Some(err) = self.step_error(&step) {
             return Err(err);
         }
@@ -391,6 +423,7 @@ impl Model for ScriptedModel {
             )
         })?;
 
+        apply_fault(&step).await;
         if let Some(err) = self.step_error(&step) {
             return Err(err);
         }
@@ -416,6 +449,15 @@ impl Model for ScriptedModel {
         .await;
 
         Ok(response)
+    }
+}
+
+/// Act out a step's [`StepFault`]: panic, or wait forever. Returns at once for a normal step.
+async fn apply_fault(step: &ModelStep) {
+    match &step.fault {
+        Some(StepFault::Panic(message)) => panic!("{message}"),
+        Some(StepFault::Hang) => std::future::pending::<()>().await,
+        None => {}
     }
 }
 
@@ -468,5 +510,92 @@ impl ScriptedModel {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(call);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use opai_agents_core::items::ItemHelpers;
+    use opai_agents_core::{Agent, RunOptions, Runner};
+
+    use super::*;
+
+    fn agent(model: &Arc<ScriptedModel>) -> Agent {
+        Agent::new("a").model(Arc::clone(model) as Arc<dyn Model>)
+    }
+
+    #[tokio::test]
+    async fn steps_play_back_in_order_and_are_recorded() {
+        let model = Arc::new(ScriptedModel::new([ModelStep::from(
+            ItemHelpers::text_message("hello"),
+        )]));
+        let result = Runner::run(&agent(&model), "hi", RunOptions::default())
+            .await
+            .expect("run");
+        assert_eq!(result.final_output_as_str(), Some("hello"));
+        assert_eq!(model.calls().len(), 1);
+        assert_eq!(model.remaining_steps(), 0);
+        model.assert_complete();
+    }
+
+    #[tokio::test]
+    async fn a_failing_step_fails_the_call() {
+        let model = Arc::new(ScriptedModel::new([ModelStep::raise_error("boom")]));
+        let err = Runner::run(&agent(&model), "hi", RunOptions::default())
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("boom"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn running_out_of_steps_is_an_error() {
+        let model = Arc::new(ScriptedModel::new([]));
+        let err = Runner::run(&agent(&model), "hi", RunOptions::default())
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("UnexpectedModelCall"), "{err}");
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot combine error and output")]
+    fn a_step_cannot_mix_an_error_with_output() {
+        let mut step = ModelStep::from(ItemHelpers::text_message("x"));
+        step.error = Some("e".into());
+        let _ = ScriptedModel::new([step]);
+    }
+
+    #[test]
+    fn fault_constructors_carry_no_output_or_error() {
+        let p = ModelStep::panic("bang");
+        assert_eq!(p.fault, Some(StepFault::Panic("bang".into())));
+        assert!(p.output.is_empty() && p.error.is_none() && p.model_error.is_none());
+        let h = ModelStep::hang();
+        assert_eq!(h.fault, Some(StepFault::Hang));
+        assert!(h.output.is_empty() && h.error.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_panic_step_panics_in_the_model_call() {
+        let model = Arc::new(ScriptedModel::new([ModelStep::panic("scripted panic")]));
+        let handle = tokio::spawn({
+            let model = Arc::clone(&model);
+            async move { Runner::run(&agent(&model), "hi", RunOptions::default()).await }
+        });
+        let joined = handle.await;
+        let err = joined.expect_err("the task must panic");
+        assert!(err.is_panic());
+    }
+
+    #[tokio::test]
+    async fn a_hang_step_never_returns() {
+        let model = Arc::new(ScriptedModel::new([ModelStep::hang()]));
+        let hanging = agent(&model);
+        let run = Runner::run(&hanging, "hi", RunOptions::default());
+        let waited = tokio::time::timeout(Duration::from_millis(100), run).await;
+        assert!(waited.is_err(), "a hanging step must not complete");
+        assert_eq!(model.calls().len(), 1);
     }
 }

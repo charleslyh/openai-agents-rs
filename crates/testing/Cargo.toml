@@ -19,3 +19,6 @@ opai-agents-core = { path = "../core", version = "0.1.0", default-features = fal
 async-trait = "0.1"
 serde_json = { version = "1", features = ["preserve_order"] }
 tokio = { version = "1", features = ["sync"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }

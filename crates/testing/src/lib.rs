@@ -9,7 +9,9 @@ use serde_json::{json, Value};
 mod scripted;
 
 pub use opai_agents_core::items::ItemHelpers;
-pub use scripted::{ModelCall, ModelScriptError, ModelStep, ModelStepReason, ScriptedModel};
+pub use scripted::{
+    ModelCall, ModelScriptError, ModelStep, ModelStepReason, ScriptedModel, StepFault,
+};
 
 /// Build one normalized assistant text output item (Python: `assistant_message`).
 pub fn assistant_message(text: impl Into<String>) -> Value {
