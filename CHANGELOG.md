@@ -21,6 +21,9 @@ Collects the changes for 0.2.0. Breaking changes are marked **breaking**.
   `#[non_exhaustive]` (build one with `ToolContext::new`).
 - **breaking**: `opai_agents_core::session_contract` is behind the new `session-contract` feature
   (off by default). A backend that runs it enables the feature in its dev dependencies.
+- **breaking**: `#[function_tool]` needs a description: a doc comment on the function or
+  `description = "..."`. Without either it is now a compile error (it used to send the model an
+  empty description).
 - **breaking**: large error variants are boxed (`AgentsError` 264 to 48 bytes, `ModelError` 128 to
   32), and the `result_large_err` lint allow is gone.
 
@@ -47,6 +50,8 @@ Collects the changes for 0.2.0. Breaking changes are marked **breaking**.
 
 ### Fixed
 
+- `#[function_tool]` used only the first line of a multi-line doc comment as the description; it
+  now uses all of it, like parameter docs and `#[derive(ToolMeta)]`.
 - A panic in a streamed run's background task is reported as an error instead of a normal end.
 - A panic in a tool, hook or guardrail becomes a tool error instead of unwinding through the run.
 

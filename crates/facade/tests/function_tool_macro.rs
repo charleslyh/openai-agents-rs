@@ -23,6 +23,24 @@ fn summarize(names: Vec<String>, address: Address) -> String {
     format!("{} in {}", names.join(","), address.city)
 }
 
+/// Add two numbers.
+///
+/// The sum is returned as an integer.
+#[function_tool]
+fn plus(a: i64, b: i64) -> i64 {
+    a + b
+}
+
+/// Every line of the function's doc comment is the description; `description = ".."` overrides it.
+#[test]
+fn the_description_is_the_whole_doc_comment_unless_overridden() {
+    assert_eq!(
+        plus().description,
+        "Add two numbers. The sum is returned as an integer."
+    );
+    assert_eq!(add().description, "Add two integers");
+}
+
 /// B2: nested structs, `Vec<T>` and `Option<T>` yield a complete strict schema.
 #[test]
 fn macro_generates_nested_strict_schema() {

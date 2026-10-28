@@ -6,7 +6,8 @@
 use opai_agents::prelude::*;
 use opai_agents::function_tool;
 
-#[function_tool(description = "Get the current weather for a city")]
+/// Get the current weather for a city.
+#[function_tool]
 async fn get_weather(city: String) -> String {
     format!("The weather in {city} is sunny, 14-20C.")
 }

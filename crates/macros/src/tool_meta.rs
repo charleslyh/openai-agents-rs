@@ -6,7 +6,7 @@ use syn::{
     punctuated::Punctuated, DeriveInput, Expr, ExprPath, Lit, Meta, MetaNameValue, Token, Type,
 };
 
-use crate::{expect_seconds, expect_str, lit_bool, lit_str};
+use crate::{expect_seconds, expect_str, lit_bool};
 
 const SUPPORTED_OPTIONS: &str = "`name`, `description`, `needs_approval`, `needs_approval_if`, \
                                  `timeout`, `on_failure`, `requires(..)`";
@@ -95,22 +95,6 @@ fn on_failure_error(spanned: &Expr) -> syn::Error {
     )
 }
 
-/// The struct's doc comment as one line, the way `#[function_tool]` reads a function's.
-fn doc_description(attrs: &[syn::Attribute]) -> Option<String> {
-    let text = attrs
-        .iter()
-        .filter(|a| a.path().is_ident("doc"))
-        .filter_map(|a| match &a.meta {
-            Meta::NameValue(nv) => lit_str(&nv.value),
-            _ => None,
-        })
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ");
-    (!text.is_empty()).then_some(text)
-}
-
 pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let mut attrs = MetaAttrs::default();
     let mut seen = false;
@@ -134,7 +118,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
             "missing `#[tool(name = \"...\")]`: the model needs a name to call the tool by",
         ));
     };
-    let Some(description) = attrs.description.or_else(|| doc_description(&input.attrs)) else {
+    let Some(description) = attrs.description.or_else(|| crate::doc_text(&input.attrs)) else {
         return Err(syn::Error::new_spanned(
             ident,
             "the tool has no description: write a doc comment on the struct or \

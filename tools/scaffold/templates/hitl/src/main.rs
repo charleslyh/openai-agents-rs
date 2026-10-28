@@ -10,7 +10,8 @@
 use opai_agents::prelude::*;
 use opai_agents::function_tool;
 
-#[function_tool(description = "Refund an order; spends real money")]
+/// Refund an order; spends real money.
+#[function_tool]
 async fn refund(order_id: String) -> String {
     format!("Refunded {order_id}.")
 }

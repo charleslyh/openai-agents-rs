@@ -19,7 +19,8 @@ use opai_agents::{
     function_tool, Agent, ItemHelpers, RunItem, RunItemStreamName, RunOptions, Runner, StreamEvent,
 };
 
-#[function_tool(description = "Return how many jokes to tell (1-5)")]
+/// Return how many jokes to tell (1-5).
+#[function_tool]
 fn how_many_jokes() -> i64 {
     3
 }

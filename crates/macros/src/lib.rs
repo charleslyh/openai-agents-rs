@@ -56,8 +56,9 @@ pub fn derive_tool_meta(input: TokenStream) -> TokenStream {
 /// let tool = add(); // -> FunctionTool
 /// ```
 ///
-/// Supported options: `name`, `description`, `needs_approval` (alias `needs_resolution`) and
-/// `timeout` (seconds, e.g. `timeout = 5`). Unknown options are compile errors.
+/// Supported options: `name`, `description` (default: the function's doc comment, which is
+/// required when it is not given), `needs_approval` (alias `needs_resolution`) and `timeout`
+/// (seconds, e.g. `timeout = 5`). Unknown options are compile errors.
 #[proc_macro_attribute]
 pub fn function_tool(attr: TokenStream, item: TokenStream) -> TokenStream {
     let args = parse_macro_input!(attr with Punctuated::<Meta, Token![,]>::parse_terminated);
@@ -82,21 +83,23 @@ pub fn function_tool(attr: TokenStream, item: TokenStream) -> TokenStream {
     let args_ident = format_ident!("{fn_ident}_args");
     let tool_name = name_override.unwrap_or_else(|| fn_ident.to_string());
 
-    // Fall back to the function's doc comment for the tool description (Python: docstring).
+    // The description is `description = "..."`, else the function's doc comment (Python:
+    // docstring), every line of it. A tool the model cannot tell apart from the others is chosen
+    // badly, so having neither is a compile error, as it is for `#[derive(ToolMeta)]`.
     let doc_attrs: Vec<&Attribute> = input_fn
         .attrs
         .iter()
         .filter(|a| a.path().is_ident("doc"))
         .collect();
-    let doc_description = doc_attrs
-        .first()
-        .and_then(|a| match &a.meta {
-            Meta::NameValue(nv) => lit_str(&nv.value),
-            _ => None,
-        })
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
-    let tool_description = description_override.or(doc_description).unwrap_or_default();
+    let Some(tool_description) = description_override.or_else(|| doc_text(&input_fn.attrs)) else {
+        return syn::Error::new_spanned(
+            &input_fn.sig.ident,
+            "the tool has no description: write a doc comment on the function or \
+             `#[function_tool(description = \"...\")]`",
+        )
+        .to_compile_error()
+        .into();
+    };
 
     // Split parameters into an optional leading context parameter and the data parameters
     // that become the tool's JSON Schema properties.
@@ -368,6 +371,11 @@ fn is_context_type(ty: &Type) -> bool {
 
 /// Doc comment attached to a parameter, if any.
 fn param_doc(attrs: &[Attribute]) -> Option<String> {
+    doc_text(attrs)
+}
+
+/// All lines of the doc comment in `attrs`, trimmed and joined with spaces; `None` when empty.
+fn doc_text(attrs: &[Attribute]) -> Option<String> {
     let text = attrs
         .iter()
         .filter(|a| a.path().is_ident("doc"))
@@ -431,6 +439,22 @@ mod tests {
         let err = parse("timeut = 5").err().expect("typo must fail");
         assert!(err.to_string().contains("unsupported"));
         assert!(parse("retries").is_err());
+    }
+
+    #[test]
+    fn a_doc_comment_of_several_lines_is_one_description() {
+        let item: syn::ItemFn = syn::parse_quote! {
+            /// Add two numbers.
+            ///
+            /// Returns the sum.
+            fn add() {}
+        };
+        assert_eq!(
+            doc_text(&item.attrs).as_deref(),
+            Some("Add two numbers. Returns the sum.")
+        );
+        let bare: syn::ItemFn = syn::parse_quote! { fn add() {} };
+        assert_eq!(doc_text(&bare.attrs), None);
     }
 
     #[test]

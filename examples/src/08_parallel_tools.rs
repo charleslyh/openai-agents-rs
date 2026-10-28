@@ -15,7 +15,8 @@ mod common;
 
 use opai_agents::{function_tool, Agent, RunOptions, Runner, ToolExecutionConfig};
 
-#[function_tool(description = "Get the weather for one city")]
+/// Get the weather for one city.
+#[function_tool]
 async fn get_weather(city: String) -> String {
     println!("[tool] get_weather({city})");
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;

@@ -12,7 +12,8 @@ mod common;
 
 use opai_agents::{function_tool, Agent, RunOptions, Runner};
 
-#[function_tool(description = "Charge a payment for an invoice id", needs_approval)]
+/// Charge a payment for an invoice id.
+#[function_tool(needs_approval)]
 async fn pay(invoice_id: String) -> String {
     println!("[tool] pay invoice_id={invoice_id}");
     format!("paid:{invoice_id}")

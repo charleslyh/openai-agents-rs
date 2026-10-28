@@ -19,7 +19,8 @@ use std::path::Path;
 
 use opai_agents::prelude::*;
 
-#[function_tool(description = "Get the weather for a given city")]
+/// Get the weather for a given city.
+#[function_tool]
 async fn get_weather(city: String) -> String {
     format!("The weather in {city} is sunny")
 }

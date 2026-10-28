@@ -27,7 +27,8 @@ use opai_agents::observability::{BatchedProcessor, JsonlSink, Metrics, MetricsSi
 use opai_agents::tracing::{set_trace_processors, TracingProcessor};
 use opai_agents::{function_tool, Agent, RunOptions, Runner};
 
-#[function_tool(description = "Get operations metrics for a city")]
+/// Get operations metrics for a city.
+#[function_tool]
 async fn get_city_metrics(city: String) -> String {
     tokio::time::sleep(Duration::from_millis(300)).await;
     format!("{city}: 1200 orders today, 98% on time")
