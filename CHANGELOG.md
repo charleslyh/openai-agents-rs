@@ -177,12 +177,14 @@ First release on crates.io: 14 crates under the `opai-agents-*` names (facade: `
   and the `ToolPolicy` builders (`needs_resolution`, `enabled`, `timeout`, `timeout_behavior`,
   `on_failure`, `timeout_message`), plus `NeedsResolution::dynamic`. See
   `examples/src/11_structured_tool.rs` (X-023).
-- `#[derive(ToolMeta)]` + `TypedTool` + `FunctionTool::from_typed::<Args>()` (X-024): a tool declared
-  by annotations on its argument struct. Field doc comments are the parameter descriptions, the
-  struct's doc comment is the tool description, and `#[tool(name, timeout, requires(..),
-  needs_approval, needs_approval_if = path, on_failure = "..{error}..")]` carries the rest; the body
-  is `impl TypedTool` taking the parsed arguments and returning a typed result. The `structured_tool`
-  example now uses it; `impl Tool` stays for a tool with state of its own.
+- `#[derive(ToolMeta)]` + `TypedTool` + `FunctionTool::from_typed(tool)` (X-024): a tool declared
+  by annotations on the tool type, with its arguments in a separate `Args` struct. Field doc comments
+  of `Args` are the parameter descriptions, the tool type's doc comment is the tool description, and
+  `#[tool(name, timeout, requires(..), needs_approval, needs_approval_if = path, on_failure =
+  "..{error}..")]` carries the rest; the body is `impl TypedTool` with `&self` (so the tool can hold
+  state) taking the parsed `Args` and returning a typed result. The `structured_tool` example uses it.
+- The `parameters` schema of every typed tool and `#[function_tool]` no longer carries the Rust type
+  `title`, a `description` repeating the tool's, or an unreferenced `$defs`.
 - `CapabilityParts::deferred(description)` (X-021): a capability the model loads on demand. Until it
   calls `load_capability`, the prompt carries one catalog line and none of the capability's tools or
   instructions; loading is per agent and run, idempotent, and saved in a paused run's `RunState`

@@ -421,48 +421,49 @@ pub trait Tool: Send + Sync {
     async fn call(&self, ctx: &ToolContext) -> Result<ToolOutput, AgentsError>;
 }
 
-/// What a [`TypedTool`] is, declared on the argument struct (Rust-only).
+/// What a [`TypedTool`] is: its name, description and scheduling policy (Rust-only).
 ///
-/// Usually derived: `#[derive(ToolMeta)]` with a `#[tool(name = "...", ...)]` attribute fills in the
-/// name, description and policy next to the fields that make up the schema. Implement it by hand
-/// when the metadata has to be computed.
+/// Declared on the tool type, not on its arguments. Usually derived: `#[derive(ToolMeta)]` with a
+/// `#[tool(name = "...", ...)]` attribute, and the type's doc comment as the description. Implement
+/// it by hand when the metadata has to be computed from the tool's own state.
 pub trait ToolMeta {
     /// Tool name shown to the model.
-    const NAME: &'static str;
+    fn name(&self) -> &str;
     /// Tool description shown to the model.
-    const DESCRIPTION: &'static str;
+    fn description(&self) -> &str;
 
     /// Enablement, pause-for-resolution and failure/timeout policy. Defaults to
     /// [`ToolPolicy::default`].
-    fn policy() -> ToolPolicy {
+    fn policy(&self) -> ToolPolicy {
         ToolPolicy::default()
     }
 
     /// Types the tool reads from [`Extensions`](crate::Extensions); see [`Tool::requires`].
-    fn requires() -> Vec<TypeRequirement> {
+    fn requires(&self) -> Vec<TypeRequirement> {
         Vec::new()
     }
 }
 
-/// A tool whose argument struct *is* the tool (Rust-only).
+/// A tool with typed arguments and a typed result (Rust-only).
 ///
-/// The struct supplies the parameter schema (`JsonSchema`, so field doc comments become the
-/// descriptions the model reads), the parse (`Deserialize`) and, through [`ToolMeta`], the name and
-/// policy. `run` receives the already-parsed value. [`FunctionTool::from_typed`] turns it into the
-/// SDK's tool type.
+/// Two types, two roles. The tool is a value that can hold state (a client, a cache, a counter)
+/// for as long as it lives, and carries the name and policy through [`ToolMeta`]. `Args` is only
+/// the shape of one call: `JsonSchema` gives the schema the model reads (field doc comments become
+/// the parameter descriptions), `Deserialize` the parse. [`FunctionTool::from_typed`] turns the
+/// tool into the SDK's tool type.
 ///
-/// The tool has no state of its own; what it needs from the run comes from
-/// [`ToolContext::require`] and is declared with `requires(..)`. A tool with state of its own
-/// implements [`Tool`] instead.
+/// What a tool needs from the run rather than from itself comes from [`ToolContext::require`] and
+/// is declared with `requires(..)`.
 #[async_trait]
-pub trait TypedTool:
-    ToolMeta + serde::de::DeserializeOwned + schemars::JsonSchema + Send + 'static
-{
+pub trait TypedTool: ToolMeta + Send + Sync + 'static {
+    /// The arguments of one call.
+    type Args: serde::de::DeserializeOwned + schemars::JsonSchema + Send + 'static;
     /// What the tool answers with; serialized to JSON for the model.
     type Output: serde::Serialize + Send;
 
-    /// Run the call. An `Err` is shown to the model according to the tool's failure policy.
-    async fn run(self, ctx: &ToolContext) -> Result<Self::Output, AgentsError>;
+    /// Run one call with its parsed arguments. An `Err` is shown to the model according to the
+    /// tool's failure policy.
+    async fn run(&self, args: Self::Args, ctx: &ToolContext) -> Result<Self::Output, AgentsError>;
 }
 
 mod function;

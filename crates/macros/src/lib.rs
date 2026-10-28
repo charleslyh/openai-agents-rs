@@ -9,26 +9,31 @@ use syn::{
     Meta, Pat, ReturnType, Token, Type,
 };
 
-/// Declare a tool's name, description and policy on its argument struct.
+/// Declare a tool's name, description and policy on the tool type.
 ///
-/// The counterpart of `#[function_tool]` for a tool that is a type rather than a function: the
-/// struct carries the parameters (field doc comments become the schema descriptions the model
-/// reads), and `#[tool(..)]` carries the rest. Implement `TypedTool` for the body, then build the
-/// tool with `FunctionTool::from_typed::<Args>()`.
+/// The counterpart of `#[function_tool]` for a tool that is a type rather than a function, so it
+/// can hold state. The tool type carries the identity (`#[tool(..)]`, and its doc comment as the
+/// description); a separate `Args` struct carries the parameters, whose field doc comments become
+/// the schema descriptions the model reads. Implement `TypedTool` for the body, then build the
+/// tool with `FunctionTool::from_typed(tool)`.
 ///
 /// ```ignore
-/// /// Refund an order, whole or in part.
-/// #[derive(Deserialize, JsonSchema, ToolMeta)]
-/// #[tool(name = "refund_order", timeout = 5, requires(Payments),
-///        needs_approval_if = is_large, on_failure = "The refund was not made: {error}")]
+/// #[derive(Deserialize, JsonSchema)]
 /// struct RefundArgs {
 ///     /// Order to refund.
 ///     order_id: String,
 /// }
+///
+/// /// Refund an order, whole or in part.
+/// #[derive(ToolMeta)]
+/// #[tool(name = "refund_order", timeout = 5, requires(Payments),
+///        needs_approval_if = is_large, on_failure = "The refund was not made: {error}")]
+/// struct RefundTool { /* state */ }
 /// ```
 ///
-/// Options: `name` (required), `description` (default: the struct's doc comment), `needs_approval`,
-/// `needs_approval_if = path` (a `fn(&Self) -> bool` run on the parsed arguments of each call),
+/// Options: `name` (required), `description` (default: the type's doc comment), `needs_approval`,
+/// `needs_approval_if = path` (a `fn(&<Self as TypedTool>::Args) -> bool` run on the parsed
+/// arguments of each call),
 /// `timeout` (seconds), `on_failure` (a format string with `{error}`, shown to the model instead of
 /// the default text) and `requires(TypeA, TypeB)` (types the run must supply). Unknown options are
 /// compile errors.
@@ -79,7 +84,7 @@ pub fn function_tool(attr: TokenStream, item: TokenStream) -> TokenStream {
     let is_async = sig.asyncness.is_some();
     let fn_ident = &sig.ident;
     let impl_ident = format_ident!("{fn_ident}_impl");
-    // Python names the generated args model `{func_name}_args`; keep the same title.
+    // The hidden arguments struct, named `{func_name}_args` as in Python.
     let args_ident = format_ident!("{fn_ident}_args");
     let tool_name = name_override.unwrap_or_else(|| fn_ident.to_string());
 
@@ -228,22 +233,10 @@ pub fn function_tool(attr: TokenStream, item: TokenStream) -> TokenStream {
                 #(#fields),*
             }
 
-            let __raw_schema = opai_agents::serde_json::to_value(opai_agents::schemars::schema_for!(#args_ident))
-                .unwrap_or_else(|e| panic!(
-                    "function_tool `{}`: could not serialize the parameter JSON schema: {e}",
-                    #tool_name
-                ));
-            let mut __schema =
-                opai_agents::strict_schema::ensure_strict_json_schema(&__raw_schema)
-                    .unwrap_or_else(|e| panic!(
-                        "function_tool `{}`: parameters cannot be converted to a strict JSON schema: {e}",
-                        #tool_name
-                    ));
-            // Python's pydantic schemas do not carry a `$schema` keyword; drop it so the
-            // advertised tool schema matches the reference implementation byte for byte.
-            if let Some(__root) = __schema.as_object_mut() {
-                __root.remove("$schema");
-            }
+            // The same schema every typed constructor advertises: strict, without the type's
+            // `title`/`description`, without unused `$defs`.
+            let __schema = opai_agents::FunctionTool::parameters_schema::<#args_ident>(#tool_name)
+                .unwrap_or_else(|e| panic!("function_tool `{}`: {e}", #tool_name));
 
             opai_agents::FunctionTool::new(
                 #tool_name,

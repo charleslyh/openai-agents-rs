@@ -1,7 +1,9 @@
-//! A tool declared by annotations on its argument struct (`#[derive(ToolMeta)]` + `TypedTool`).
+//! A tool declared by annotations on the tool type (`#[derive(ToolMeta)]` + `TypedTool`), with its
+//! arguments in a separate struct.
 //!
 //! The same contract as `behavior_custom_tool.rs` (which covers the hand-written `impl Tool`),
-//! reached from the other side: everything below is read from the struct's attributes.
+//! reached from the other side: the identity is read from the tool type's attributes, the schema
+//! from the arguments struct, and the tool value can hold state of its own.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -16,17 +18,9 @@ use opai_agents::{
 #[derive(Default)]
 struct Ledger(Mutex<Vec<(String, u64)>>);
 
-/// Refund an order. Large refunds wait for a person.
-#[derive(opai_agents::serde::Deserialize, opai_agents::schemars::JsonSchema, ToolMeta)]
+#[derive(opai_agents::serde::Deserialize, opai_agents::schemars::JsonSchema)]
 #[serde(crate = "opai_agents::serde")]
 #[schemars(crate = "opai_agents::schemars")]
-#[tool(
-    name = "refund_order",
-    timeout = 5,
-    requires(Ledger),
-    needs_approval_if = is_large,
-    on_failure = "The refund was not made: {error}"
-)]
 struct RefundArgs {
     /// Order to refund.
     order_id: String,
@@ -39,32 +33,58 @@ fn is_large(args: &RefundArgs) -> bool {
     args.amount_cents.unwrap_or(2_500) > 10_000
 }
 
+/// Refund an order. Large refunds wait for a person.
+#[derive(ToolMeta)]
+#[tool(
+    name = "refund_order",
+    timeout = 5,
+    requires(Ledger),
+    needs_approval_if = is_large,
+    on_failure = "The refund was not made: {error}"
+)]
+struct RefundTool {
+    /// State of the tool itself: it lives as long as the tool, across calls and runs.
+    served: Arc<AtomicUsize>,
+}
+
 #[async_trait]
-impl TypedTool for RefundArgs {
+impl TypedTool for RefundTool {
+    type Args = RefundArgs;
     type Output = Value;
 
-    async fn run(self, ctx: &ToolContext) -> Result<Value, AgentsError> {
-        let cents = self.amount_cents.unwrap_or(2_500);
+    async fn run(&self, args: RefundArgs, ctx: &ToolContext) -> Result<Value, AgentsError> {
+        let cents = args.amount_cents.unwrap_or(2_500);
+        let n = self.served.fetch_add(1, Ordering::SeqCst) + 1;
         ctx.require::<Ledger>()?
             .0
             .lock()
             .unwrap()
-            .push((self.order_id.clone(), cents));
-        Ok(json!({"order_id": self.order_id, "refunded_cents": cents}))
+            .push((args.order_id.clone(), cents));
+        Ok(json!({"order_id": args.order_id, "refunded_cents": cents, "served": n}))
     }
 }
 
-/// Answer pong. Only `name` and `needs_approval` are set; the rest takes the defaults.
-#[derive(opai_agents::serde::Deserialize, opai_agents::schemars::JsonSchema, ToolMeta)]
+fn refund_tool() -> RefundTool {
+    RefundTool {
+        served: Arc::new(AtomicUsize::new(0)),
+    }
+}
+
+#[derive(opai_agents::serde::Deserialize, opai_agents::schemars::JsonSchema)]
 #[serde(crate = "opai_agents::serde")]
 #[schemars(crate = "opai_agents::schemars")]
+struct NoArgs {}
+
+/// Answer pong. Only `name` and `needs_approval` are set; the rest takes the defaults.
+#[derive(ToolMeta)]
 #[tool(name = "ping", needs_approval)]
-struct Ping {}
+struct Ping;
 
 #[async_trait]
 impl TypedTool for Ping {
+    type Args = NoArgs;
     type Output = &'static str;
-    async fn run(self, _ctx: &ToolContext) -> Result<&'static str, AgentsError> {
+    async fn run(&self, _args: NoArgs, _ctx: &ToolContext) -> Result<&'static str, AgentsError> {
         Ok("pong")
     }
 }
@@ -92,13 +112,13 @@ fn text(s: &str) -> ModelStep {
 }
 
 fn agent(model: Arc<ScriptedModel>, calls: Arc<AtomicUsize>) -> Agent {
-    let tool = FunctionTool::from_typed::<RefundArgs>().with_middleware(CountCalls(calls));
+    let tool = FunctionTool::from_typed(refund_tool()).with_middleware(CountCalls(calls));
     Agent::new("support").model(model).tools(vec![tool])
 }
 
 #[test]
 fn the_annotations_become_the_tool_definition() {
-    let tool = FunctionTool::from_typed::<RefundArgs>();
+    let tool = FunctionTool::from_typed(refund_tool());
     assert_eq!(tool.name, "refund_order");
     // The struct's doc comment, joined into one line.
     assert_eq!(
@@ -108,6 +128,9 @@ fn the_annotations_become_the_tool_definition() {
     assert_eq!(tool.timeout_seconds, Some(5.0));
     assert_eq!(tool.requires.len(), 1);
     assert!(tool.strict_json_schema);
+    // The tool's identity is not repeated inside `parameters`.
+    assert!(tool.params_json_schema.get("title").is_none());
+    assert!(tool.params_json_schema.get("description").is_none());
     // A field's doc comment is the description the model reads.
     assert_eq!(
         tool.params_json_schema["properties"]["order_id"]["description"],
@@ -117,7 +140,7 @@ fn the_annotations_become_the_tool_definition() {
 
 #[test]
 fn a_bare_attribute_gets_the_defaults() {
-    let tool = FunctionTool::from_typed::<Ping>();
+    let tool = FunctionTool::from_typed(Ping);
     assert_eq!(tool.name, "ping");
     assert!(tool.timeout_seconds.is_none());
     assert!(tool.requires.is_empty());
@@ -245,11 +268,9 @@ enum Reason {
     ChangedMind,
 }
 
-/// A tool whose fields carry constraints.
-#[derive(opai_agents::serde::Deserialize, opai_agents::schemars::JsonSchema, ToolMeta)]
+#[derive(opai_agents::serde::Deserialize, opai_agents::schemars::JsonSchema)]
 #[serde(crate = "opai_agents::serde")]
 #[schemars(crate = "opai_agents::schemars")]
-#[tool(name = "constrained")]
 #[allow(dead_code)]
 struct Constrained {
     /// Why the customer is being refunded.
@@ -262,17 +283,23 @@ struct Constrained {
     note: String,
 }
 
+/// A tool whose arguments carry constraints.
+#[derive(ToolMeta)]
+#[tool(name = "constrained")]
+struct ConstrainedTool;
+
 #[async_trait]
-impl TypedTool for Constrained {
+impl TypedTool for ConstrainedTool {
+    type Args = Constrained;
     type Output = u8;
-    async fn run(self, _ctx: &ToolContext) -> Result<u8, AgentsError> {
+    async fn run(&self, _args: Constrained, _ctx: &ToolContext) -> Result<u8, AgentsError> {
         Ok(1)
     }
 }
 
 #[test]
 fn field_constraints_reach_the_schema_the_model_reads() {
-    let schema = FunctionTool::from_typed::<Constrained>().params_json_schema;
+    let schema = FunctionTool::from_typed(ConstrainedTool).params_json_schema;
     let props = &schema["properties"];
 
     // An enum is a closed set of values, each with its own description from the variant's doc.
@@ -305,4 +332,35 @@ fn an_enum_is_enforced_on_parse_but_a_range_is_only_advertised() {
         parse(json!({"reason": "damaged", "amount_cents": 0, "note": ""})).is_ok(),
         "serde does not check `range` or `length`"
     );
+}
+
+/// The point of splitting the tool from its arguments: the tool is a value, so what it holds
+/// survives from one call to the next.
+#[tokio::test]
+async fn the_tool_keeps_its_own_state_across_calls() {
+    let served = Arc::new(AtomicUsize::new(0));
+    let tool = FunctionTool::from_typed(RefundTool {
+        served: Arc::clone(&served),
+    });
+    let model = Arc::new(ScriptedModel::new([
+        call(json!({"order_id": "A-7", "amount_cents": 100})),
+        ModelStep::from(ItemHelpers::function_tool_call(
+            "refund_order",
+            json!({"order_id": "A-8", "amount_cents": 100}).to_string(),
+            "c2",
+        )),
+        text("done"),
+    ]));
+    let agent = Agent::new("support").model(model.clone()).tools(vec![tool]);
+    Runner::run(
+        &agent,
+        "refund both",
+        RunOptions::new().with(Ledger::default()),
+    )
+    .await
+    .expect("run");
+
+    assert_eq!(served.load(Ordering::SeqCst), 2);
+    let sent = model.calls()[2].input.to_string();
+    assert!(sent.contains("served"), "{sent}");
 }

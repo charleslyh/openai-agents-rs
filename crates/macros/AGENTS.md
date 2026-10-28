@@ -1,6 +1,6 @@
 # opai-agents-macros
 
-The `#[function_tool]` procedural macro (Python's `@function_tool` decorator) and `#[derive(ToolMeta)]` (a tool declared on its argument struct, X-024).
+The `#[function_tool]` procedural macro (Python's `@function_tool` decorator) and `#[derive(ToolMeta)]` (a tool declared on the tool type, arguments in a separate struct, X-024).
 
 ## The re-export problem (C11)
 

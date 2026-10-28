@@ -1,4 +1,4 @@
-//! `#[derive(ToolMeta)]`: a tool's name, description and policy, declared on its argument struct.
+//! `#[derive(ToolMeta)]`: a tool's name, description and policy, declared on the tool type.
 
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -102,7 +102,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         if seen {
             return Err(syn::Error::new_spanned(
                 attr,
-                "declare one `#[tool(...)]` per struct; merge the options into it",
+                "declare one `#[tool(...)]` per type; merge the options into it",
             ));
         }
         seen = true;
@@ -131,7 +131,10 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
             .needs_resolution(opai_agents::NeedsResolution::dynamic(
                 |__params, _call_id| async move {
                     // Arguments that do not parse never run, so they never need a person.
-                    match opai_agents::serde_json::from_value::<Self>(__params) {
+                    match opai_agents::serde_json::from_value::<
+                        <Self as opai_agents::TypedTool>::Args,
+                    >(__params)
+                    {
                         Ok(__args) => (#function)(&__args),
                         Err(_) => false,
                     }
@@ -158,17 +161,22 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     Ok(quote! {
         impl #impl_generics opai_agents::ToolMeta for #ident #ty_generics #where_clause {
-            const NAME: &'static str = #name;
-            const DESCRIPTION: &'static str = #description;
+            fn name(&self) -> &str {
+                #name
+            }
 
-            fn policy() -> opai_agents::ToolPolicy {
+            fn description(&self) -> &str {
+                #description
+            }
+
+            fn policy(&self) -> opai_agents::ToolPolicy {
                 opai_agents::ToolPolicy::new()
                     #needs_resolution
                     #timeout
                     #on_failure
             }
 
-            fn requires() -> ::std::vec::Vec<opai_agents::TypeRequirement> {
+            fn requires(&self) -> ::std::vec::Vec<opai_agents::TypeRequirement> {
                 ::std::vec![ #(opai_agents::TypeRequirement::of::<#requires>()),* ]
             }
         }

@@ -62,7 +62,13 @@ fn macro_generates_nested_strict_schema() {
     assert_eq!(address["properties"]["city"]["description"], "City name.");
 
     assert_eq!(schema["additionalProperties"], false);
-    assert_eq!(schema["title"], "summarize_args");
+    // The tool's identity lives beside `parameters`; inside it the Rust type name and the repeated
+    // description would only be noise for the model.
+    assert!(schema.get("title").is_none(), "no `title` in parameters");
+    assert!(
+        schema.get("description").is_none(),
+        "no `description` in parameters"
+    );
     let required = schema["required"].as_array().expect("required");
     assert!(required.iter().any(|r| r == "names"));
     assert!(required.iter().any(|r| r == "address"));

@@ -280,46 +280,69 @@ impl FunctionTool {
         }
     }
 
-    /// Build the tool a [`TypedTool`] describes: schema from the struct, name, description,
-    /// policy and requirements from its [`ToolMeta`].
+    /// The strict `parameters` schema every typed constructor and `#[function_tool]` advertises
+    /// for `Args`. Public for the macro's expansion; not part of the stable API.
+    #[doc(hidden)]
+    pub fn parameters_schema<Args: schemars::JsonSchema>(
+        tool_name: &str,
+    ) -> Result<Value, AgentsError> {
+        typed_params_schema::<Args>(tool_name)
+    }
+
+    /// Build the tool a [`TypedTool`] describes: schema from its `Args`, name, description,
+    /// policy and requirements from its [`ToolMeta`]. The tool value is kept and shared by every
+    /// call, so state it holds lives as long as the `FunctionTool`.
     ///
     /// # Panics
     ///
-    /// When `T` has no strict JSON schema; use [`FunctionTool::try_from_typed`] for an error.
-    pub fn from_typed<T: TypedTool>() -> Self {
-        Self::try_from_typed::<T>().unwrap_or_else(|e| panic!("{e}"))
+    /// When `T::Args` has no strict JSON schema; use [`FunctionTool::try_from_typed`] for an error.
+    pub fn from_typed<T: TypedTool>(tool: T) -> Self {
+        Self::try_from_typed(tool).unwrap_or_else(|e| panic!("{e}"))
     }
 
-    /// [`FunctionTool::from_typed`] that returns an error instead of panicking when `T` has no
-    /// strict JSON schema.
-    pub fn try_from_typed<T: TypedTool>() -> Result<Self, AgentsError> {
-        let schema = typed_params_schema::<T>(T::NAME)?;
-        let policy = T::policy();
-        let mut tool =
-            Self::new_with_result(T::NAME, T::DESCRIPTION, schema, |ctx, args| async move {
-                let parsed: T = serde_json::from_str(&args).map_err(|e| {
-                    AgentsError::tool_with_source(
-                        format!("invalid arguments for tool `{}`", T::NAME),
-                        e,
-                    )
-                })?;
-                let out = parsed.run(&ctx).await?;
-                let value = serde_json::to_value(out).map_err(|e| {
-                    AgentsError::tool_with_source(
-                        format!("could not serialize the result of tool `{}`", T::NAME),
-                        e,
-                    )
-                })?;
-                Ok(ToolOutput::output(value))
-            });
-        tool.is_enabled = policy.is_enabled;
-        tool.needs_resolution = policy.needs_resolution;
-        tool.failure_error_function = policy.failure_error_function;
-        tool.timeout_seconds = policy.timeout_seconds;
-        tool.timeout_behavior = policy.timeout_behavior;
-        tool.timeout_error_function = policy.timeout_error_function;
-        tool.requires = T::requires();
-        Ok(tool)
+    /// [`FunctionTool::from_typed`] that returns an error instead of panicking when `T::Args` has
+    /// no strict JSON schema.
+    pub fn try_from_typed<T: TypedTool>(tool: T) -> Result<Self, AgentsError> {
+        let tool = Arc::new(tool);
+        let name = tool.name().to_string();
+        let schema = typed_params_schema::<T::Args>(&name)?;
+        let policy = tool.policy();
+        let requires = tool.requires();
+        let call_name = name.clone();
+        let call_tool = Arc::clone(&tool);
+        let mut built = Self::new_with_result(
+            name,
+            tool.description().to_string(),
+            schema,
+            move |ctx, args| {
+                let tool = Arc::clone(&call_tool);
+                let name = call_name.clone();
+                async move {
+                    let parsed: T::Args = serde_json::from_str(&args).map_err(|e| {
+                        AgentsError::tool_with_source(
+                            format!("invalid arguments for tool `{name}`"),
+                            e,
+                        )
+                    })?;
+                    let out = tool.run(parsed, &ctx).await?;
+                    let value = serde_json::to_value(out).map_err(|e| {
+                        AgentsError::tool_with_source(
+                            format!("could not serialize the result of tool `{name}`"),
+                            e,
+                        )
+                    })?;
+                    Ok(ToolOutput::output(value))
+                }
+            },
+        );
+        built.is_enabled = policy.is_enabled;
+        built.needs_resolution = policy.needs_resolution;
+        built.failure_error_function = policy.failure_error_function;
+        built.timeout_seconds = policy.timeout_seconds;
+        built.timeout_behavior = policy.timeout_behavior;
+        built.timeout_error_function = policy.timeout_error_function;
+        built.requires = requires;
+        Ok(built)
     }
 
     /// Create a tool whose parameters are a typed `Deserialize` + `JsonSchema` struct, instead of
@@ -462,10 +485,32 @@ pub(super) fn typed_params_schema<Args: schemars::JsonSchema>(
             "tool `{tool_name}`: parameters cannot be converted to a strict JSON schema: {e}"
         ))
     })?;
-    // Python's pydantic schemas do not carry a `$schema` keyword; drop it so the advertised tool
-    // schema matches the macro-generated one byte for byte.
     if let Some(root) = schema.as_object_mut() {
+        // Python's pydantic schemas do not carry a `$schema` keyword.
         root.remove("$schema");
+        // `title` is the Rust type name and `description` repeats the tool's own description
+        // (schemars copies the struct's doc comment into both). The tool carries its identity
+        // beside `parameters`; inside it the model needs only the properties.
+        root.remove("title");
+        root.remove("description");
+        // `$defs` is dead weight once every `$ref` has been inlined.
+        let defs = root.remove("$defs");
+        if let Some(defs) = defs {
+            if contains_ref(root.values()) {
+                root.insert("$defs".to_string(), defs);
+            }
+        }
     }
     Ok(schema)
+}
+
+fn contains_ref<'a>(mut values: impl Iterator<Item = &'a Value>) -> bool {
+    fn walk(value: &Value) -> bool {
+        match value {
+            Value::Object(map) => map.contains_key("$ref") || map.values().any(walk),
+            Value::Array(items) => items.iter().any(walk),
+            _ => false,
+        }
+    }
+    values.any(walk)
 }

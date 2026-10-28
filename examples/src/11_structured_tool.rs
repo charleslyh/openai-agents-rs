@@ -1,23 +1,23 @@
-//! A structured tool: the argument struct *is* the tool (Rust-only)
+//! A structured tool: a tool type with typed arguments (Rust-only)
 //!
-//! `#[function_tool]` is the shortest path for a function. This example is the shape for a tool that
-//! is a real component: typed arguments *and* a typed result, a declared dependency, and a
-//! scheduling policy. All of it is written next to the fields, as annotations:
+//! `#[function_tool]` is the shortest path for a stateless function. This example is the shape for
+//! a tool that is a real component. Two types, two roles:
 //!
-//! - field doc comments become the parameter descriptions the model reads; an `enum` field becomes
-//!   a closed set of values (each variant's doc comment describes it), and
-//!   `#[schemars(range(..))]` / `#[schemars(length(..))]` add bounds;
-//! - the struct's doc comment becomes the tool description;
-//! - `#[tool(..)]` carries the name, the timeout, the dependency (`requires`), the per-call pause
-//!   for a human (`needs_approval_if`) and the text the model sees when the call fails;
+//! - `RefundArgs` is the shape of one call. Field doc comments become the parameter descriptions
+//!   the model reads; an `enum` field becomes a closed set of values (each variant's doc comment
+//!   describes it), and `#[schemars(range(..))]` / `#[schemars(length(..))]` add bounds.
+//! - `RefundTool` is the tool. Its doc comment is the tool description, `#[tool(..)]` carries the
+//!   name, the timeout, the dependency (`requires`), the per-call pause for a human
+//!   (`needs_approval_if`) and the text the model sees when the call fails, and its fields are the
+//!   tool's own state (here a call counter) which lives as long as the tool does.
 //! - `impl TypedTool` is the body: it receives the parsed arguments and returns a typed result.
 //!
 //! An enum is enforced when the arguments are parsed; a range or a length is only advice to the
 //! model, so the body checks the one that matters (the amount).
 //!
-//! A tool with state of its own (a client, a counter) implements `Tool` instead; see
-//! `docs/DEVIATIONS.md` X-023. `ToolMiddleware` wraps either kind: audit logging around the call,
-//! not inside it.
+//! What a tool needs from the *run* rather than from itself (here the payment system) is declared
+//! with `requires` and read with `ctx.require`. `ToolMiddleware` wraps the tool: audit logging
+//! around the call, not inside it.
 //!
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
@@ -45,23 +45,16 @@ const WHOLE_ORDER_CENTS: u64 = 2_500;
 // The tool: arguments, annotations, body.
 // ---------------------------------------------------------------------------------------------
 
-/// Refund an order, whole or in part. Large refunds wait for human approval.
-#[derive(opai_agents::serde::Deserialize, opai_agents::schemars::JsonSchema, ToolMeta)]
+/// The arguments of one `refund_order` call.
+#[derive(opai_agents::serde::Deserialize, opai_agents::schemars::JsonSchema)]
 #[serde(crate = "opai_agents::serde")]
 #[schemars(crate = "opai_agents::schemars")]
-#[tool(
-    name = "refund_order",
-    timeout = 5,
-    requires(Payments),
-    needs_approval_if = is_large,
-    on_failure = "The refund was not made: {error}"
-)]
 struct RefundArgs {
     /// Order to refund, as shown to the customer ("A-1001").
     order_id: String,
     /// Why the customer is being refunded; kept with the refund.
     reason: RefundReason,
-    /// Amount in cents, at least 1. Omit to refund the whole order.
+    /// Amount in cents, at least 1. Use null to refund the whole order.
     #[schemars(range(min = 1))]
     #[serde(default)]
     amount_cents: Option<u64>,
@@ -84,6 +77,20 @@ enum RefundReason {
     ChangedMind,
 }
 
+/// Refund an order, whole or in part. Large refunds wait for human approval.
+#[derive(ToolMeta)]
+#[tool(
+    name = "refund_order",
+    timeout = 5,
+    requires(Payments),
+    needs_approval_if = is_large,
+    on_failure = "The refund was not made: {error}"
+)]
+struct RefundTool {
+    /// The tool's own state: how many refunds it has issued since it was built.
+    issued: AtomicUsize,
+}
+
 /// Decided per call from the parsed arguments: a small refund runs, a large one waits for a person.
 fn is_large(args: &RefundArgs) -> bool {
     args.amount_cents.unwrap_or(WHOLE_ORDER_CENTS) > APPROVAL_THRESHOLD_CENTS
@@ -104,18 +111,24 @@ struct Refund {
 }
 
 #[async_trait]
-impl TypedTool for RefundArgs {
+impl TypedTool for RefundTool {
+    type Args = RefundArgs;
     type Output = Refund;
 
-    async fn run(self, ctx: &ToolContext) -> Result<Refund, AgentsError> {
+    async fn run(&self, args: RefundArgs, ctx: &ToolContext) -> Result<Refund, AgentsError> {
         // `requires(Payments)` above means the run would not have started without it.
         let payments = ctx.require::<Payments>()?;
-        let cents = self.amount_cents.unwrap_or(WHOLE_ORDER_CENTS);
+        let cents = args.amount_cents.unwrap_or(WHOLE_ORDER_CENTS);
         // The schema says "at least 1", but only the model reads that; this is what holds the line.
         if cents == 0 {
             return Err(AgentsError::tool("the amount must be at least 1 cent"));
         }
-        Ok(payments.refund(&self.order_id, cents, self.reason))
+        let refund = payments.refund(&args.order_id, cents, args.reason);
+        if refund.executed {
+            let n = self.issued.fetch_add(1, Ordering::Relaxed) + 1;
+            println!("[tool] refunds issued by this tool so far: {n}");
+        }
+        Ok(refund)
     }
 }
 
@@ -181,9 +194,12 @@ impl ToolMiddleware for Audit {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // The struct becomes the SDK's own tool type once; from here on it is indistinguishable from
+    // The tool becomes the SDK's own tool type once; from here on it is indistinguishable from
     // one built with `FunctionTool::new` or `#[function_tool]`.
-    let refund = FunctionTool::from_typed::<RefundArgs>().with_middleware(Audit {
+    let refund = FunctionTool::from_typed(RefundTool {
+        issued: AtomicUsize::new(0),
+    })
+    .with_middleware(Audit {
         calls: AtomicUsize::new(0),
     });
 

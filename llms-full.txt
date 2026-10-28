@@ -184,7 +184,7 @@ Ordered like the web demo's capability checklist, one knowledge point per exampl
 | 08 | `parallel_tools` | Tools | Parallel tool calls |
 | 09 | `tool_timeout` | Tools | Tool timeout (`ErrorAsResult` / `RaiseException`) |
 | 10 | `tool_recovery` | Tools | Model retries after a tool failure |
-| 11 | `structured_tool` | Tools | `#[derive(ToolMeta)]` + `TypedTool`: parameter descriptions, enum and range constraints, per-call approval, timeout and dependency as annotations on the argument struct; middleware (Rust-only) |
+| 11 | `structured_tool` | Tools | `#[derive(ToolMeta)]` + `TypedTool`: a stateful tool type plus a separate `Args` struct; parameter descriptions, enum and range constraints, per-call approval, timeout and dependency as annotations; middleware (Rust-only) |
 | 12 | `capability` | Tools | A named bundle of tools, instructions and guardrails (Rust-only) |
 | 13 | `deferred_capability` | Tools | `CapabilityParts::deferred`: tools stay out of the prompt until the model loads them (Rust-only) |
 | 14 | `mcp` | Tools | Local stdio MCP server with a `ToolFilter` |
