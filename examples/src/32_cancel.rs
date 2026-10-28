@@ -14,10 +14,7 @@
 
 mod common;
 
-use std::io::{self, Write};
-
-use opai_agents::model::wire_events::{self, WireEvent};
-use opai_agents::{Agent, CancelMode, RunOptions, Runner, StreamEvent};
+use opai_agents::{Agent, CancelMode, RunOptions, Runner};
 
 /// Stop after this many streamed text deltas.
 const STOP_AFTER_DELTAS: usize = 25;
@@ -35,20 +32,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .cancel_on_drop(true);
 
-    let mut deltas = 0usize;
+    let mut printer = common::stream::Printer::text_only();
     while let Some(event) = streamed.next_event().await {
-        if let StreamEvent::RawResponse { data } = event? {
-            if let WireEvent::OutputTextDelta { delta, .. } = wire_events::parse(&data) {
-                print!("{delta}");
-                io::stdout().flush()?;
-                deltas += 1;
-                if deltas == STOP_AFTER_DELTAS {
-                    streamed.cancel(CancelMode::Immediate);
-                }
-            }
+        printer.feed(&event?)?;
+        if printer.text_deltas == STOP_AFTER_DELTAS {
+            streamed.cancel(CancelMode::Immediate);
         }
     }
-    println!();
+    printer.finish()?;
+    let deltas = printer.text_deltas;
     println!(
         "cancelled={} complete={} (after {deltas} deltas)",
         streamed.is_cancelled(),

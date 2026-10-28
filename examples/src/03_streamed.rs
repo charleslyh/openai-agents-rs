@@ -1,6 +1,6 @@
 //! Streaming run events
 //!
-//! Prints assistant text as token deltas (typewriter). Both OpenAI APIs emit the standard
+//! Prints assistant text as token deltas (typewriter); `common::stream::Printer` does the printing. Both OpenAI APIs emit the standard
 //! Responses wire events (D-011): `response.output_text.delta` for visible tokens, and
 //! `response.reasoning_summary_text.delta` / `response.reasoning_text.delta` for thinking.
 //!
@@ -12,12 +12,7 @@
 
 mod common;
 
-use std::io::{self, Write};
-
-use opai_agents::model::wire_events::{self, WireEvent};
-use opai_agents::{
-    function_tool, Agent, ItemHelpers, RunItem, RunItemStreamName, RunOptions, Runner, StreamEvent,
-};
+use opai_agents::{function_tool, Agent, RunOptions, Runner};
 
 /// Return how many jokes to tell (1-5).
 #[function_tool]
@@ -34,96 +29,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("=== Run starting ===");
     let mut streamed = Runner::run_streamed(agent, "Hello", RunOptions::default());
-    let mut saw_text_delta = false;
-    let mut section: Section = Section::None;
-
-    while let Some(ev) = streamed.next_event().await {
-        match ev? {
-            StreamEvent::RawResponse { data } => match wire_events::parse(&data) {
-                WireEvent::ReasoningSummaryTextDelta { delta, .. }
-                | WireEvent::ReasoningTextDelta { delta, .. } => {
-                    open_section(&mut section, Section::Reasoning)?;
-                    print!("{delta}");
-                    io::stdout().flush()?;
-                }
-                WireEvent::OutputTextDelta { delta, .. } => {
-                    open_section(&mut section, Section::Message)?;
-                    print!("{delta}");
-                    io::stdout().flush()?;
-                    saw_text_delta = true;
-                }
-                _ => {}
-            },
-            StreamEvent::AgentUpdated { agent_name } => {
-                end_section(&mut section)?;
-                println!("Agent updated: {agent_name}");
-            }
-            StreamEvent::RunItem { name, item } => {
-                end_section(&mut section)?;
-                match name {
-                    RunItemStreamName::ToolCalled => {
-                        let tool = item
-                            .raw_item()
-                            .get("name")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("?");
-                        println!("-- Tool was called: {tool}");
-                    }
-                    RunItemStreamName::ToolOutput => {
-                        if let RunItem::ToolCallOutput(o) = &item {
-                            println!("-- Tool output: {}", o.output);
-                        }
-                    }
-                    RunItemStreamName::MessageOutputCreated => {
-                        if !saw_text_delta {
-                            if let RunItem::Message(m) = &item {
-                                println!(
-                                    "-- Message output:\n{}",
-                                    ItemHelpers::text_message_output(m)
-                                );
-                            }
-                        }
-                        // Reset so a later turn can still stream deltas.
-                        saw_text_delta = false;
-                    }
-                    _ => {}
-                }
-            }
-            _ => {}
-        }
+    let mut printer = common::stream::Printer::new();
+    while let Some(event) = streamed.next_event().await {
+        printer.feed(&event?)?;
     }
-    end_section(&mut section)?;
+    printer.finish()?;
     println!("=== Run complete ===");
-    Ok(())
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Section {
-    None,
-    Reasoning,
-    Message,
-}
-
-fn open_section(current: &mut Section, next: Section) -> io::Result<()> {
-    if *current == next {
-        return Ok(());
-    }
-    end_section(current)?;
-    match next {
-        Section::Reasoning => println!("-- Reasoning:"),
-        Section::Message => println!("-- Message output:"),
-        Section::None => {}
-    }
-    io::stdout().flush()?;
-    *current = next;
-    Ok(())
-}
-
-fn end_section(current: &mut Section) -> io::Result<()> {
-    if *current != Section::None {
-        println!();
-        io::stdout().flush()?;
-        *current = Section::None;
-    }
     Ok(())
 }

@@ -23,12 +23,7 @@
 
 mod common;
 
-use std::io::{self, Write};
-
-use opai_agents::model::wire_events::{self, WireEvent};
-use opai_agents::{
-    Agent, Reasoning, ReasoningEffort, ReasoningSummary, RunOptions, Runner, StreamEvent,
-};
+use opai_agents::{Agent, Reasoning, ReasoningEffort, ReasoningSummary, RunOptions, Runner};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -51,48 +46,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let mut streamed = Runner::run_streamed(agent, input, options);
-    let mut thinking = false;
-    let mut answering = false;
-    let mut reasoning_chars = 0usize;
-
-    while let Some(ev) = streamed.next_event().await {
-        let StreamEvent::RawResponse { data } = ev? else {
-            continue;
-        };
-        match wire_events::parse(&data) {
-            WireEvent::ReasoningSummaryTextDelta { delta, .. }
-            | WireEvent::ReasoningTextDelta { delta, .. } => {
-                if !thinking {
-                    println!("-- Thinking:");
-                    thinking = true;
-                }
-                reasoning_chars += delta.chars().count();
-                print!("{delta}");
-                io::stdout().flush()?;
-            }
-            WireEvent::OutputTextDelta { delta, .. } => {
-                if !answering {
-                    if thinking {
-                        println!();
-                    }
-                    println!("-- Answer:");
-                    answering = true;
-                }
-                print!("{delta}");
-                io::stdout().flush()?;
-            }
-            _ => {}
-        }
+    let mut printer = common::stream::Printer::text_only();
+    while let Some(event) = streamed.next_event().await {
+        printer.feed(&event?)?;
     }
-    println!();
+    printer.finish()?;
 
-    if reasoning_chars == 0 {
+    if printer.reasoning_chars == 0 {
         eprintln!(
             "(no reasoning text was streamed: use a reasoning model, and with the Responses API \
              an organization allowed to receive reasoning summaries)"
         );
     } else {
-        eprintln!("({reasoning_chars} characters of thinking)");
+        eprintln!("({} characters of thinking)", printer.reasoning_chars);
     }
     Ok(())
 }

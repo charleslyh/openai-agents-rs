@@ -9,6 +9,8 @@
 
 #![allow(dead_code)]
 
+pub mod stream;
+
 use std::io::{self, Write};
 use std::sync::Arc;
 
