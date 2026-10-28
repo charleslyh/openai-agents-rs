@@ -12,6 +12,19 @@
 //! `opai_agents::run` picks the provider from the environment: a preset whose key is set, an
 //! endpoint declared with `AGENTS_PROVIDER_1_ENDPOINT`, or the offline model with
 //! `AGENTS_OFFLINE=1`.
+//!
+//! This example does not read `OPENAI_BASE_URL` (the `openai` preset is always the official
+//! endpoint). For your own OpenAI-compatible server, declare a custom endpoint, which speaks Chat
+//! Completions:
+//!
+//! ```bash
+//! env -u OPENAI_API_KEY AGENTS_PROVIDER_1_ENDPOINT=http://HOST:PORT/v1 \
+//!   AGENTS_PROVIDER_1_API_KEY=local AGENTS_MODEL=your-model \
+//!   cargo run -p opai-agents-examples --example zero_config
+//! ```
+//!
+//! Plain `http://` to a non-loopback host also needs `AGENTS_PROVIDER_INSECURE_HTTP=1`, because
+//! the key and the conversation cross the network in clear text: use it on a trusted network only.
 
 use opai_agents::prelude::*;
 
