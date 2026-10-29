@@ -211,6 +211,10 @@ path = "src/41_model_retry.rs"
 name = "handoff_advanced"
 path = "src/42_handoff_advanced.rs"
 
+[[example]]
+name = "tool_use_behavior"
+path = "src/43_tool_use_behavior.rs"
+
 # The sources are user-facing code, so they live at the repository root rather than inside
 # `crates/facade`. They depend on the facade the way a user's project would.
 #
