@@ -191,6 +191,10 @@ path = "src/36_sqlite_session.rs"
 name = "run_state_store"
 path = "src/37_run_state_store.rs"
 
+[[example]]
+name = "model_middleware"
+path = "src/38_model_middleware.rs"
+
 # The sources are user-facing code, so they live at the repository root rather than inside
 # `crates/facade`. They depend on the facade the way a user's project would.
 #
