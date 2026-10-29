@@ -215,6 +215,10 @@ path = "src/42_handoff_advanced.rs"
 name = "tool_use_behavior"
 path = "src/43_tool_use_behavior.rs"
 
+[[example]]
+name = "dynamic_instructions"
+path = "src/44_dynamic_instructions.rs"
+
 # The sources are user-facing code, so they live at the repository root rather than inside
 # `crates/facade`. They depend on the facade the way a user's project would.
 #
