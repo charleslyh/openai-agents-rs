@@ -86,7 +86,7 @@ published version.
 
 ## Examples
 
-Numbered from core path → extended usage. Most examples call a live OpenAI-compatible API; the ones marked offline, and `sqlite_session`, `run_state_store`, `model_middleware`, `builtin_tools`, `providers`, `model_retry`, `handoff_advanced`, `tool_use_behavior`, `dynamic_instructions`, `extensions` and `strict_schema` use a scripted or offline model and need no key.
+Numbered by topic. Most examples call a live OpenAI-compatible API. These run offline on a scripted model and need no key: `run_state_store`, `model_middleware`, `builtin_tools`, `providers`, `model_retry`, `handoff_advanced`, `tool_use_behavior`, `dynamic_instructions`, `extensions`, `strict_schema`; `sqlite_session` falls back to the offline model.
 
 Required env: `OPENAI_API_KEY`, `OPENAI_MODEL`.  
 Optional: `OPENAI_BASE_URL`, `OPENAI_API` (`chat_completions` | `responses`).
@@ -157,7 +157,7 @@ Ordered like the web demo's capability checklist, one knowledge point per exampl
 | 46 | `reasoning` | Run control | Typed `Reasoning` effort/summary for either API |
 | 47 | `providers` | Run control | `ProviderRegistry`: route model names to several providers (Rust-only) |
 
-The examples that use a scripted model need no key (`sqlite_session` falls back to the offline model). The others need `OPENAI_API_KEY` and `OPENAI_MODEL` in the environment; `OPENAI_BASE_URL` and
+The rest need `OPENAI_API_KEY` and `OPENAI_MODEL` in the environment; `OPENAI_BASE_URL` and
 `OPENAI_API` (`chat_completions` | `responses`) are optional.
 
 ```bash
