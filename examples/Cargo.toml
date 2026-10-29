@@ -219,6 +219,10 @@ path = "src/43_tool_use_behavior.rs"
 name = "dynamic_instructions"
 path = "src/44_dynamic_instructions.rs"
 
+[[example]]
+name = "extensions"
+path = "src/45_extensions.rs"
+
 # The sources are user-facing code, so they live at the repository root rather than inside
 # `crates/facade`. They depend on the facade the way a user's project would.
 #
