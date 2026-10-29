@@ -58,7 +58,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // The same parts, handed over by hand.
     let by_hand = Agent::new("Support")
-        .instructions("You are a helpful assistant.")
+        .instructions(format!(
+            "You are a helpful assistant.\n\n{}",
+            MathCapability.parts().instructions.unwrap_or_default()
+        ))
         .model(Arc::clone(&model))
         .tools(MathCapability.parts().tools.clone())
         .output_guardrails(MathCapability.parts().output_guardrails.clone());
