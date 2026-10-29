@@ -183,6 +183,9 @@ path = "src/34_reasoning.rs"
 name = "teams"
 path = "src/35_teams.rs"
 
+# 36 and up: added after the groups above were numbered, so they follow `teams` instead of
+# sitting in their group (renumbering would break links to the older ones). Most run offline on a
+# scripted model.
 [[example]]
 name = "sqlite_session"
 path = "src/36_sqlite_session.rs"

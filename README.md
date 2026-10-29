@@ -86,7 +86,7 @@ published version.
 
 ## Examples
 
-Numbered from core path → extended usage. Live OpenAI-compatible API (not `ScriptedModel`).
+Numbered from core path → extended usage. Examples 01 to 35 call a live OpenAI-compatible API; 36 to 46 use a scripted model or the offline model.
 
 Required env: `OPENAI_API_KEY`, `OPENAI_MODEL`.  
 Optional: `OPENAI_BASE_URL`, `OPENAI_API` (`chat_completions` | `responses`).
@@ -144,8 +144,19 @@ Ordered like the web demo's capability checklist, one knowledge point per exampl
 | 33 | `settings` | Run control | `ModelSettings` temperature + retry, `max_turns` |
 | 34 | `reasoning` | Run control | Typed `Reasoning` effort/summary for either API |
 | 35 | `teams` | Multi-agent | A lead and two parallel teammates with a shared task list (Rust-only) |
+| 36 | `sqlite_session` | Conversation and memory | `SqliteSession`: several conversations in one database file (Rust-only) |
+| 37 | `run_state_store` | Safety and governance | `FileRunStateStore`: park a paused run, resume it in another process; signing and expiry (Rust-only) |
+| 38 | `model_middleware` | Output and observability | `ModelMiddleware`: redact and rewrite what is sent to the model (Rust-only) |
+| 39 | `builtin_tools` | Tools | `opai_agents::tools`: calculator, clock, `file_read`, `web_fetch` and their built-in limits (Rust-only) |
+| 40 | `providers` | Run control | `ProviderRegistry`: route model names to several providers (Rust-only) |
+| 41 | `model_retry` | Run control | `ModelRetrySettings`: policies, backoff and `retry-after` (offline) |
+| 42 | `handoff_advanced` | Multi-agent | Handoff arguments, input filter, custom tool name and per-run availability |
+| 43 | `tool_use_behavior` | Tools | `ToolUseBehavior` and `ToolChoice`: end the run on a tool, force a tool |
+| 44 | `dynamic_instructions` | Output and observability | Instructions generated from the run context |
+| 45 | `extensions` | Tools | `RunOptions::with` and `FunctionTool::require`: typed dependencies checked before the first turn (Rust-only) |
+| 46 | `strict_schema` | Output and observability | Strict JSON schemas: the rewrite, what it refuses and the ways out |
 
-They need `OPENAI_API_KEY` and `OPENAI_MODEL` in the environment; `OPENAI_BASE_URL` and
+Examples 36 to 46 run offline with a scripted model and need no key (`sqlite_session` falls back to the offline model). The others need `OPENAI_API_KEY` and `OPENAI_MODEL` in the environment; `OPENAI_BASE_URL` and
 `OPENAI_API` (`chat_completions` | `responses`) are optional.
 
 ```bash
