@@ -195,6 +195,10 @@ path = "src/37_run_state_store.rs"
 name = "model_middleware"
 path = "src/38_model_middleware.rs"
 
+[[example]]
+name = "builtin_tools"
+path = "src/39_builtin_tools.rs"
+
 # The sources are user-facing code, so they live at the repository root rather than inside
 # `crates/facade`. They depend on the facade the way a user's project would.
 #
@@ -209,7 +213,7 @@ async-trait = { workspace = true }
 # `mcp` is needed by the `mcp` example only (a real MCP server over stdio: the example's own
 # binary re-executed with `--mcp-server`). Every example in this package compiles the
 # `opai-agents-mcp` crate too because of it.
-opai-agents = { workspace = true, features = ["openai", "mcp", "providers", "sessions", "observability", "tools", "guardrails", "teams", "sqlite"] }
+opai-agents = { workspace = true, features = ["openai", "mcp", "providers", "sessions", "observability", "tools", "guardrails", "teams", "sqlite", "webfetch"] }
 serde = { workspace = true }
 schemars = { workspace = true }
 serde_json = { workspace = true }
