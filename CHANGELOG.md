@@ -27,6 +27,9 @@ Collects the changes for 0.2.0. Breaking changes are marked **breaking**.
 - **breaking**: large error variants are boxed (`AgentsError` 264 to 48 bytes, `ModelError` 128 to
   32), and the `result_large_err` lint allow is gone.
 
+- **breaking**: `AsToolConfig` has a new public field `on_stream`; a struct literal that does not end in
+  `..Default::default()` needs it.
+
 ### Changed
 
 - Every crate shares one version and one copy of each shared third-party dependency, declared in the
@@ -35,6 +38,9 @@ Collects the changes for 0.2.0. Breaking changes are marked **breaking**.
 
 ### Added
 
+- `AsToolConfig::on_stream`: an agent used as a tool streams its nested run's events (`AgentToolStreamEvent`:
+  the event, the nested agent's name, the tool name and call id) to a handler, including its
+  handoffs and the leg after a nested approval. The tool's result is unchanged.
 - MCP protocol 2026-07-28 (stateless): the client tries `server/discover` first and falls back to the
   `initialize` handshake for older servers. Requests carry the version, capabilities and client
   info in `_meta`; HTTP requests carry `Mcp-Method` and `Mcp-Name`; a server's `ttlMs` is honoured

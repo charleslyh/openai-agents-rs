@@ -101,13 +101,13 @@ pub use retry::{
 };
 pub use run::{default_provider, set_default_model_provider_factory};
 pub use run::{
-    default_trace_include_sensitive_data, AsToolConfig, HandoffOptions, ModelOptions,
-    OutputGuardrailBlockedMessage, OutputGuardrailBlockedMessageArgs, RunConfig, RunErrorData,
-    RunErrorHandler, RunErrorHandlerInput, RunErrorHandlerResult, RunErrorHandlers,
-    RunHandledError, RunOptions, Runner, SessionOptions, ToolErrorFormatter,
-    ToolErrorFormatterArgs, ToolErrorKind, ToolExecutionConfig, ToolNameCollisionPolicy,
-    ToolNotFoundBehavior, ToolOptions, ToolResolver, TracingOptions, DEFAULT_MAX_TURNS,
-    OUTPUT_GUARDRAIL_BLOCKED_TOOL_OUTPUT,
+    default_trace_include_sensitive_data, AgentToolStreamEvent, AgentToolStreamHandler,
+    AsToolConfig, HandoffOptions, ModelOptions, OutputGuardrailBlockedMessage,
+    OutputGuardrailBlockedMessageArgs, RunConfig, RunErrorData, RunErrorHandler,
+    RunErrorHandlerInput, RunErrorHandlerResult, RunErrorHandlers, RunHandledError, RunOptions,
+    Runner, SessionOptions, ToolErrorFormatter, ToolErrorFormatterArgs, ToolErrorKind,
+    ToolExecutionConfig, ToolNameCollisionPolicy, ToolNotFoundBehavior, ToolOptions, ToolResolver,
+    TracingOptions, DEFAULT_MAX_TURNS, OUTPUT_GUARDRAIL_BLOCKED_TOOL_OUTPUT,
 };
 pub use run_context::{ContextValue, RunContextWrapper};
 pub use run_state::{

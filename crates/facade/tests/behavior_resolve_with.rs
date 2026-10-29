@@ -121,6 +121,7 @@ async fn later_and_nested_pauses_are_resolved_as_well() {
         description: Some("Call helper".into()),
         needs_resolution: false,
         max_turns: Some(5),
+        ..Default::default()
     });
 
     let outer_runs = Arc::new(AtomicUsize::new(0));

@@ -35,7 +35,7 @@ pub use errors::{
 pub use options::{HandoffOptions, ModelOptions, SessionOptions, ToolOptions, TracingOptions};
 pub use resolve::{default_provider, set_default_model_provider_factory};
 
-pub use as_tool::AsToolConfig;
+pub use as_tool::{AgentToolStreamEvent, AgentToolStreamHandler, AsToolConfig};
 pub use hitl::ToolResolver;
 
 use std::sync::{Arc, Mutex};

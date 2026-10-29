@@ -392,6 +392,7 @@ async fn agent_as_tool_nested_approval_bubbles_to_outer() {
         description: Some("Call helper".into()),
         needs_resolution: false,
         max_turns: Some(5),
+        ..Default::default()
     });
 
     let outer_model = Arc::new(ScriptedModel::new([

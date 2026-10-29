@@ -195,6 +195,7 @@ async fn nested_agent_tool_call_takes_a_provided_output() {
             description: None,
             needs_resolution: false,
             max_turns: Some(5),
+            ..Default::default()
         })]);
 
     let paused = Runner::run(&outer, "delegate", RunOptions::default())
