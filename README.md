@@ -86,7 +86,7 @@ published version.
 
 ## Examples
 
-Numbered from core path → extended usage. Examples 01 to 35 call a live OpenAI-compatible API; 36 to 46 use a scripted model or the offline model.
+Numbered from core path → extended usage. Most examples call a live OpenAI-compatible API; the ones marked offline, and `sqlite_session`, `run_state_store`, `model_middleware`, `builtin_tools`, `providers`, `model_retry`, `handoff_advanced`, `tool_use_behavior`, `dynamic_instructions`, `extensions` and `strict_schema` use a scripted or offline model and need no key.
 
 Required env: `OPENAI_API_KEY`, `OPENAI_MODEL`.  
 Optional: `OPENAI_BASE_URL`, `OPENAI_API` (`chat_completions` | `responses`).
@@ -115,48 +115,48 @@ Ordered like the web demo's capability checklist, one knowledge point per exampl
 | 04 | `memory` | Conversation and memory | `Session` multi-turn memory |
 | 05 | `compaction` | Conversation and memory | `CompactingSession` context compaction |
 | 06 | `file_session` | Conversation and memory | `FileSession`: a conversation in a JSONL file (Rust-only) |
-| 07 | `tools` | Tools | `#[function_tool]` tool loop |
-| 08 | `parallel_tools` | Tools | Parallel tool calls |
-| 09 | `tool_timeout` | Tools | Tool timeout (`ErrorAsResult` / `RaiseException`) |
-| 10 | `tool_recovery` | Tools | Model retries after a tool failure |
-| 11 | `structured_tool` | Tools | `#[derive(ToolMeta)]` + `TypedTool`: a stateful tool type plus a separate `Args` struct; parameter descriptions, enum and range constraints, per-call approval, timeout and dependency as annotations; middleware (Rust-only) |
-| 12 | `capability` | Tools | A named bundle of tools, instructions and guardrails (Rust-only) |
-| 13 | `deferred_capability` | Tools | `CapabilityParts::deferred`: tools stay out of the prompt until the model loads them (Rust-only) |
-| 14 | `mcp` | Tools | Local stdio MCP server with a `ToolFilter` |
-| 15 | `handoff` | Multi-agent | Multi-agent handoff |
-| 16 | `agents_as_tools` | Multi-agent | `Agent.as_tool` orchestration |
-| 17 | `hitl` | Safety and governance | `RunOptions::resolve_with` approvals, or the explicit `RunState` JSON resume |
-| 18 | `always_approve` | Safety and governance | Sticky `always_approve` |
-| 19 | `input_guardrail` | Safety and governance | Input guardrail tripwire |
-| 20 | `output_guardrail` | Safety and governance | Output guardrail tripwire |
-| 21 | `tool_input_guardrail` | Safety and governance | Tool input guardrail (reject a call) |
-| 22 | `tool_output_guardrail` | Safety and governance | Tool output guardrail (redact a result) |
-| 23 | `verdict_transform` | Safety and governance | `Verdict::Transform`: redact the user's input and keep going (Rust-only) |
-| 24 | `builtin_guardrails` | Safety and governance | Ready-made guardrails from `opai-agents-guardrails` (Rust-only) |
-| 25 | `structured_output` | Output and observability | `output_type` + typed `final_output_as::<T>()` |
-| 26 | `run_context` | Output and observability | `RunOptions::context` read inside a tool |
-| 27 | `hooks` | Output and observability | `RunHooks` / `AgentHooks` |
-| 28 | `usage` | Output and observability | `RunResult::usage` |
-| 29 | `tracing` | Output and observability | Custom `TracingProcessor` |
-| 30 | `trace_export` | Output and observability | Batched console/JSONL export and metrics (Rust-only) |
-| 31 | `console` | Output and observability | Live console: spans and the conversation, in a browser (Rust-only) |
-| 32 | `cancel` | Run control | `RunResultStreaming::cancel` |
-| 33 | `settings` | Run control | `ModelSettings` temperature + retry, `max_turns` |
-| 34 | `reasoning` | Run control | Typed `Reasoning` effort/summary for either API |
-| 35 | `teams` | Multi-agent | A lead and two parallel teammates with a shared task list (Rust-only) |
-| 36 | `sqlite_session` | Conversation and memory | `SqliteSession`: several conversations in one database file (Rust-only) |
-| 37 | `run_state_store` | Safety and governance | `FileRunStateStore`: park a paused run, resume it in another process; signing and expiry (Rust-only) |
-| 38 | `model_middleware` | Output and observability | `ModelMiddleware`: redact and rewrite what is sent to the model (Rust-only) |
-| 39 | `builtin_tools` | Tools | `opai_agents::tools`: calculator, clock, `file_read`, `web_fetch` and their built-in limits (Rust-only) |
-| 40 | `providers` | Run control | `ProviderRegistry`: route model names to several providers (Rust-only) |
-| 41 | `model_retry` | Run control | `ModelRetrySettings`: policies, backoff and `retry-after` (offline) |
-| 42 | `handoff_advanced` | Multi-agent | Handoff arguments, input filter, custom tool name and per-run availability |
-| 43 | `tool_use_behavior` | Tools | `ToolUseBehavior` and `ToolChoice`: end the run on a tool, force a tool |
-| 44 | `dynamic_instructions` | Output and observability | Instructions generated from the run context |
-| 45 | `extensions` | Tools | `RunOptions::with` and `FunctionTool::require`: typed dependencies checked before the first turn (Rust-only) |
-| 46 | `strict_schema` | Output and observability | Strict JSON schemas: the rewrite, what it refuses and the ways out |
+| 07 | `sqlite_session` | Conversation and memory | `SqliteSession`: several conversations in one database file (Rust-only) |
+| 08 | `tools` | Tools | `#[function_tool]` tool loop |
+| 09 | `parallel_tools` | Tools | Parallel tool calls |
+| 10 | `tool_timeout` | Tools | Tool timeout (`ErrorAsResult` / `RaiseException`) |
+| 11 | `tool_recovery` | Tools | Model retries after a tool failure |
+| 12 | `structured_tool` | Tools | `#[derive(ToolMeta)]` + `TypedTool`: a stateful tool type plus a separate `Args` struct; parameter descriptions, enum and range constraints, per-call approval, timeout and dependency as annotations; middleware (Rust-only) |
+| 13 | `capability` | Tools | A named bundle of tools, instructions and guardrails (Rust-only) |
+| 14 | `deferred_capability` | Tools | `CapabilityParts::deferred`: tools stay out of the prompt until the model loads them (Rust-only) |
+| 15 | `mcp` | Tools | Local stdio MCP server with a `ToolFilter` |
+| 16 | `builtin_tools` | Tools | `opai_agents::tools`: calculator, clock, `file_read`, `web_fetch` and their built-in limits (Rust-only) |
+| 17 | `tool_use_behavior` | Tools | `ToolUseBehavior` and `ToolChoice`: end the run on a tool, force a tool |
+| 18 | `extensions` | Tools | `RunOptions::with` and `FunctionTool::require`: typed dependencies checked before the first turn (Rust-only) |
+| 19 | `handoff` | Multi-agent | Multi-agent handoff |
+| 20 | `handoff_advanced` | Multi-agent | Handoff arguments, input filter, custom tool name and per-run availability |
+| 21 | `agents_as_tools` | Multi-agent | `Agent.as_tool` orchestration |
+| 22 | `teams` | Multi-agent | A lead and two parallel teammates with a shared task list (Rust-only) |
+| 23 | `hitl` | Safety and governance | `RunOptions::resolve_with` approvals, or the explicit `RunState` JSON resume |
+| 24 | `run_state_store` | Safety and governance | `FileRunStateStore`: park a paused run, resume it in another process; signing and expiry (Rust-only) |
+| 25 | `always_approve` | Safety and governance | Sticky `always_approve` |
+| 26 | `input_guardrail` | Safety and governance | Input guardrail tripwire |
+| 27 | `output_guardrail` | Safety and governance | Output guardrail tripwire |
+| 28 | `tool_input_guardrail` | Safety and governance | Tool input guardrail (reject a call) |
+| 29 | `tool_output_guardrail` | Safety and governance | Tool output guardrail (redact a result) |
+| 30 | `verdict_transform` | Safety and governance | `Verdict::Transform`: redact the user's input and keep going (Rust-only) |
+| 31 | `builtin_guardrails` | Safety and governance | Ready-made guardrails from `opai-agents-guardrails` (Rust-only) |
+| 32 | `structured_output` | Output and observability | `output_type` + typed `final_output_as::<T>()` |
+| 33 | `strict_schema` | Output and observability | Strict JSON schemas: the rewrite, what it refuses and the ways out |
+| 34 | `run_context` | Output and observability | `RunOptions::context` read inside a tool |
+| 35 | `dynamic_instructions` | Output and observability | Instructions generated from the run context |
+| 36 | `hooks` | Output and observability | `RunHooks` / `AgentHooks` |
+| 37 | `model_middleware` | Output and observability | `ModelMiddleware`: redact and rewrite what is sent to the model (Rust-only) |
+| 38 | `usage` | Output and observability | `RunResult::usage` |
+| 39 | `tracing` | Output and observability | Custom `TracingProcessor` |
+| 40 | `trace_export` | Output and observability | Batched console/JSONL export and metrics (Rust-only) |
+| 41 | `console` | Output and observability | Live console: spans and the conversation, in a browser (Rust-only) |
+| 42 | `cancel` | Run control | `RunResultStreaming::cancel` |
+| 43 | `settings` | Run control | `ModelSettings` temperature + retry, `max_turns` |
+| 44 | `model_retry` | Run control | `ModelRetrySettings`: policies, backoff and `retry-after` (offline) |
+| 45 | `reasoning` | Run control | Typed `Reasoning` effort/summary for either API |
+| 46 | `providers` | Run control | `ProviderRegistry`: route model names to several providers (Rust-only) |
 
-Examples 36 to 46 run offline with a scripted model and need no key (`sqlite_session` falls back to the offline model). The others need `OPENAI_API_KEY` and `OPENAI_MODEL` in the environment; `OPENAI_BASE_URL` and
+The examples that use a scripted model need no key (`sqlite_session` falls back to the offline model). The others need `OPENAI_API_KEY` and `OPENAI_MODEL` in the environment; `OPENAI_BASE_URL` and
 `OPENAI_API` (`chat_completions` | `responses`) are optional.
 
 ```bash
