@@ -124,107 +124,111 @@ name = "agents_as_tools"
 path = "src/21_agents_as_tools.rs"
 
 [[example]]
+name = "agents_as_tools_stream"
+path = "src/22_agents_as_tools_stream.rs"
+
+[[example]]
 name = "teams"
-path = "src/22_teams.rs"
+path = "src/23_teams.rs"
 
 # Safety and governance
 [[example]]
 name = "hitl"
-path = "src/23_hitl.rs"
+path = "src/24_hitl.rs"
 
 [[example]]
 name = "run_state_store"
-path = "src/24_run_state_store.rs"
+path = "src/25_run_state_store.rs"
 
 [[example]]
 name = "always_approve"
-path = "src/25_always_approve.rs"
+path = "src/26_always_approve.rs"
 
 [[example]]
 name = "input_guardrail"
-path = "src/26_input_guardrail.rs"
+path = "src/27_input_guardrail.rs"
 
 [[example]]
 name = "output_guardrail"
-path = "src/27_output_guardrail.rs"
+path = "src/28_output_guardrail.rs"
 
 [[example]]
 name = "tool_input_guardrail"
-path = "src/28_tool_input_guardrail.rs"
+path = "src/29_tool_input_guardrail.rs"
 
 [[example]]
 name = "tool_output_guardrail"
-path = "src/29_tool_output_guardrail.rs"
+path = "src/30_tool_output_guardrail.rs"
 
 [[example]]
 name = "verdict_transform"
-path = "src/30_verdict_transform.rs"
+path = "src/31_verdict_transform.rs"
 
 [[example]]
 name = "builtin_guardrails"
-path = "src/31_builtin_guardrails.rs"
+path = "src/32_builtin_guardrails.rs"
 
 # Output and observability
 [[example]]
 name = "structured_output"
-path = "src/32_structured_output.rs"
+path = "src/33_structured_output.rs"
 
 [[example]]
 name = "strict_schema"
-path = "src/33_strict_schema.rs"
+path = "src/34_strict_schema.rs"
 
 [[example]]
 name = "run_context"
-path = "src/34_run_context.rs"
+path = "src/35_run_context.rs"
 
 [[example]]
 name = "dynamic_instructions"
-path = "src/35_dynamic_instructions.rs"
+path = "src/36_dynamic_instructions.rs"
 
 [[example]]
 name = "hooks"
-path = "src/36_hooks.rs"
+path = "src/37_hooks.rs"
 
 [[example]]
 name = "model_middleware"
-path = "src/37_model_middleware.rs"
+path = "src/38_model_middleware.rs"
 
 [[example]]
 name = "usage"
-path = "src/38_usage.rs"
+path = "src/39_usage.rs"
 
 [[example]]
 name = "tracing"
-path = "src/39_tracing.rs"
+path = "src/40_tracing.rs"
 
 [[example]]
 name = "trace_export"
-path = "src/40_trace_export.rs"
+path = "src/41_trace_export.rs"
 
 [[example]]
 name = "console"
-path = "src/41_console.rs"
+path = "src/42_console.rs"
 
 # Run control
 [[example]]
 name = "cancel"
-path = "src/42_cancel.rs"
+path = "src/43_cancel.rs"
 
 [[example]]
 name = "settings"
-path = "src/43_settings.rs"
+path = "src/44_settings.rs"
 
 [[example]]
 name = "model_retry"
-path = "src/44_model_retry.rs"
+path = "src/45_model_retry.rs"
 
 [[example]]
 name = "reasoning"
-path = "src/45_reasoning.rs"
+path = "src/46_reasoning.rs"
 
 [[example]]
 name = "providers"
-path = "src/46_providers.rs"
+path = "src/47_providers.rs"
 
 # The sources are user-facing code, so they live at the repository root rather than inside
 # `crates/facade`. They depend on the facade the way a user's project would.
@@ -235,7 +239,7 @@ path = "src/46_providers.rs"
 # is why the root manifest sets `default-members = ["crates/*"]` — `cargo test --no-default-features`
 # must keep verifying that the SDK builds without an HTTP client.
 [dependencies]
-# `36_hooks.rs` implements `AgentHooks`, whose methods are `async_trait`.
+# `37_hooks.rs` implements `AgentHooks`, whose methods are `async_trait`.
 async-trait = { workspace = true }
 # `mcp` is needed by the `mcp` example only (a real MCP server over stdio: the example's own
 # binary re-executed with `--mcp-server`). Every example in this package compiles the
