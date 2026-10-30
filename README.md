@@ -86,7 +86,7 @@ published version.
 
 ## Examples
 
-Numbered by topic. Most examples call a live OpenAI-compatible API. These run offline on a scripted model and need no key: `run_state_store`, `model_middleware`, `builtin_tools`, `providers`, `model_retry`, `handoff_advanced`, `tool_use_behavior`, `dynamic_instructions`, `extensions`, `strict_schema`; `sqlite_session` falls back to the offline model.
+Numbered by topic. Most examples call a live OpenAI-compatible API. These run offline on a scripted model and need no key: `run_state_store`, `model_middleware`, `builtin_tools`, `providers`, `model_retry`, `handoff_advanced`, `tool_use_behavior`, `dynamic_instructions`, `extensions`, `strict_schema`; `session_resume` and `multi_session` fall back to the offline model.
 
 Required env: `OPENAI_API_KEY`, `OPENAI_MODEL`.  
 Optional: `OPENAI_BASE_URL`, `OPENAI_API` (`chat_completions` | `responses`).
@@ -114,8 +114,8 @@ Ordered like the web demo's capability checklist, one knowledge point per exampl
 | 03 | `streamed` | Conversation and memory | `Runner::run_streamed` events (streaming output) |
 | 04 | `memory` | Conversation and memory | `Session` multi-turn memory |
 | 05 | `compaction` | Conversation and memory | `CompactingSession` context compaction |
-| 06 | `file_session` | Conversation and memory | `FileSession`: a conversation in a JSONL file (Rust-only) |
-| 07 | `sqlite_session` | Conversation and memory | `SqliteSession`: several conversations in one database file (Rust-only) |
+| 06 | `session_resume` | Conversation and memory | Create a session (`file` / `sqlite` / `memory`), talk, terminate, reopen and continue (Rust-only) |
+| 07 | `multi_session` | Conversation and memory | One SQLite database hosting many isolated conversations (Rust-only) |
 | 08 | `tools` | Tools | `#[function_tool]` tool loop |
 | 09 | `parallel_tools` | Tools | Parallel tool calls |
 | 10 | `tool_timeout` | Tools | Tool timeout (`ErrorAsResult` / `RaiseException`) |

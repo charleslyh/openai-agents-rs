@@ -9,6 +9,7 @@
 
 #![allow(dead_code)]
 
+pub mod chat;
 pub mod stream;
 
 use std::io::{self, Write};

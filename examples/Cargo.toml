@@ -58,12 +58,12 @@ name = "compaction"
 path = "src/05_compaction.rs"
 
 [[example]]
-name = "file_session"
-path = "src/06_file_session.rs"
+name = "session_resume"
+path = "src/06_session_resume.rs"
 
 [[example]]
-name = "sqlite_session"
-path = "src/07_sqlite_session.rs"
+name = "multi_session"
+path = "src/07_multi_session.rs"
 
 # Tools
 [[example]]
