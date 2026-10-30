@@ -44,13 +44,6 @@ impl ExampleApi {
             .into()),
         }
     }
-
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::ChatCompletions => "chat_completions",
-            Self::Responses => "responses",
-        }
-    }
 }
 
 /// Build a model from env. Default API is **chat completions**.
@@ -62,7 +55,7 @@ impl ExampleApi {
 /// - `OPENAI_API` = `chat_completions` (default) | `responses`
 pub fn model() -> Result<Arc<dyn Model>, Box<dyn std::error::Error>> {
     let api = ExampleApi::from_env()?;
-    let (api_key, model_name, base_url) = openai_env(api)?;
+    let (api_key, model_name, base_url) = openai_env()?;
     match api {
         ExampleApi::ChatCompletions => {
             set_default_openai_api(DefaultOpenAiApi::ChatCompletions);
@@ -97,18 +90,11 @@ pub fn model_or_offline() -> Result<Arc<dyn Model>, Box<dyn std::error::Error>> 
     }
 }
 
-fn openai_env(
-    api: ExampleApi,
-) -> Result<(String, String, Option<String>), Box<dyn std::error::Error>> {
+fn openai_env() -> Result<(String, String, Option<String>), Box<dyn std::error::Error>> {
     let api_key = std::env::var("OPENAI_API_KEY").map_err(|_| "OPENAI_API_KEY is required")?;
     let model_name = std::env::var("OPENAI_MODEL")
         .map_err(|_| "OPENAI_MODEL is required (e.g. deepseek-v4-pro)")?;
     let base_url = std::env::var("OPENAI_BASE_URL").ok();
-    eprintln!(
-        "using api={} model={model_name} base={}",
-        api.as_str(),
-        base_url.as_deref().unwrap_or("(openai default)")
-    );
     Ok((api_key, model_name, base_url))
 }
 
