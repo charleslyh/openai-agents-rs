@@ -68,7 +68,7 @@ path = "src/07_sqlite_session.rs"
 # Tools
 [[example]]
 name = "tools"
-path = "src/08_tools.rs"
+path = "src/08_function_tool.rs"
 
 [[example]]
 name = "parallel_tools"
