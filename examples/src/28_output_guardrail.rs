@@ -31,8 +31,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .model(common::model()?)
         // An output guardrail inspects the final answer before it is returned to the caller.
-        // It is for what the *model said* (secrets, policy, format); `input_guardrail` is for
-        // what the *user sent*. The prompt above is deliberately careless, to give it a reason.
+        // It is for what the *model said* (secrets, policy, format). The prompt above is
+        // deliberately careless, to give it a reason.
         .output_guardrails(vec![output_guardrail(
             "no-secrets",
             |_ctx, _agent, output| async move {

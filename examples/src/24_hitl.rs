@@ -44,7 +44,6 @@ fn get_temperature_tool() -> FunctionTool {
         },
     )
     // Approval can depend on the call: return true to pause for a human, false to run at once.
-    // (`needs_approval` on the macro, see `always_approve`, is the unconditional version.)
     .with_needs_resolution_fn(|params, _call_id| async move {
         // Dynamic approval: only Oakland (matches Python example). The predicate sees the raw
         // arguments, as it does before the call is made.
@@ -70,7 +69,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Two ways to handle the same pause. The default answers inside the run with a callback.
     // `HITL_MODE=persist` stops the run, saves it to a file and resumes it, which is the shape of
-    // a real approval flow (see `run_state_store` for the supported store).
+    // a real approval flow.
     let result = if std::env::var("HITL_MODE").as_deref() == Ok("persist") {
         run_with_saved_state(&agent, input).await?
     } else {

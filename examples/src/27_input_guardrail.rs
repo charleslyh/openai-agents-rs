@@ -39,8 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let agent = Agent::new("Guarded")
         .instructions("Answer briefly.")
         .model(common::model()?)
-        // An input guardrail inspects what the *user sent*; `output_guardrail` inspects what the
-        // model said. Guardrails on the first agent run alongside the first model call, so a
+        // An input guardrail inspects what the *user sent*. It runs alongside the first model call, so a
         // blocked request costs little latency. A real one would call a classifier or a small
         // model; a keyword check keeps the example readable.
         .input_guardrails(vec![input_guardrail(

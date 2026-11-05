@@ -36,8 +36,8 @@ impl Capability for MathCapability {
                 FunctionTool::constant("multiply", "Multiply two numbers", "0"),
             ])
             .instructions("Answer with a number only.")
-            // A guardrail that runs on the agent's final output. `fail` makes the run return an
-            // error instead of the answer (see the guardrail examples for the details).
+            // A check on the agent's final output. `fail` makes the run return an error instead of
+            // the answer.
             .output_guardrail(output_guardrail(
                 "numeric",
                 |_ctx, _agent, output| async move {

@@ -58,7 +58,7 @@ fn translator(
                         *last = update.tool_call_id.clone();
                         println!("\n[{} via {}]", update.agent_name, update.tool_name);
                     }
-                    // The same printer as in `streamed`: nested events are ordinary stream events.
+                    // Nested events are ordinary stream events, so the usual printer works on them.
                     let _ = printer.feed(&update.event);
                 }
             }),

@@ -39,7 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .model(Arc::clone(&model))
         // `as_tool` wraps an agent as a tool. The orchestrator calls it, the translator runs a
         // full nested run on the given text, and its final output returns as the tool result.
-        // The orchestrator stays in charge (unlike a handoff, where control moves away).
+        // The orchestrator stays in charge: it gets the result back and decides what to do next.
         .tools(vec![
             spanish.as_tool(AsToolConfig {
                 // Name and description are what the orchestrator's model sees: write them as a

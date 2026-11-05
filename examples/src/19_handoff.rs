@@ -31,7 +31,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .model(model)
         // `handoff(agent)` exposes the agent to the model as a tool named `transfer_to_billing`.
         // Calling it transfers the conversation: Billing answers the user directly from then on.
-        // (Contrast with `agents_as_tools`, where the caller keeps control and gets a result back.)
         .handoffs(vec![handoff(billing)]);
 
     let input = common::example_input("What do I owe on my last invoice?");

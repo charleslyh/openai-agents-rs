@@ -22,8 +22,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .instructions("Answer in one short sentence.")
         .model(common::model()?);
 
-    // A session stores the conversation. It lives in the process only; `session_resume` shows
-    // the backends that survive a restart. The agent itself stays stateless.
+    // A session stores the conversation. This one lives in memory, so it is gone when the program
+    // exits. The agent itself stays stateless.
     let session: Arc<dyn Session> = InMemorySession::shared("memory-demo");
 
     for input in [

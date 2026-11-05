@@ -20,8 +20,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .instructions("You only respond in haikus.")
         .model(common::model()?);
 
-    // `Runner::run` drives the loop (model call, tools, handoffs) until the agent produces a
-    // final output. `RunOptions` carries everything per run: session, context, limits, hooks.
+    // `Runner::run` calls the model and returns once the agent has produced its final output.
+    // `RunOptions` holds per-run settings; the defaults are enough here.
     let result = Runner::run(
         &agent,
         "Tell me about recursion in programming.",

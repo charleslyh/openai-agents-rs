@@ -30,8 +30,7 @@ async fn get_city_metrics(city: String) -> String {
 /// Prints each span as it ends.
 // A trace is the record of one run: a tree of spans, one per agent, model call, tool call,
 // guardrail or handoff. A `TracingProcessor` receives them as they start and end. Implement one
-// to send spans to your own backend. `trace_export` and `console` show the ready-made ones.
-// (Uploading to the OpenAI traces dashboard is not supported by this SDK.)
+// to send spans to your own backend.
 struct PrintSpans;
 
 impl TracingProcessor for PrintSpans {

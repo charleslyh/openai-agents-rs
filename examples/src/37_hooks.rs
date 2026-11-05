@@ -29,7 +29,7 @@ impl RunHooks for PrintRunHooks {
     }
 
     // Called before each model call, with the system prompt and input about to be sent. A run with
-    // tools or handoffs makes several model calls, so this fires more than once.
+    // tools makes several model calls, so this fires more than once.
     async fn on_llm_start(
         &self,
         _context: RunContextWrapper,
@@ -51,7 +51,7 @@ impl RunHooks for PrintRunHooks {
 }
 
 // Agent-level hooks are the same idea scoped to one agent: they fire only while that agent is
-// active, which matters once handoffs put several agents in one run.
+// active.
 struct PrintAgentHooks;
 
 #[async_trait::async_trait]

@@ -35,8 +35,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // as the model produces them instead of after the whole run.
     let mut streamed = Runner::run_streamed(agent, "Hello", RunOptions::default());
 
-    // The printer (see `common/stream.rs`) shows which event kinds exist: raw text deltas, tool
-    // calls and results, agent switches. Match on `StreamEvent` to build your own UI instead.
+    // The printer (see `common/stream.rs`) shows which event kinds exist: raw text deltas and
+    // tool calls and results. Match on `StreamEvent` to build your own UI instead.
     let mut printer = common::stream::Printer::new();
 
     // The stream ends when the run does; an error ends it with `Err`.

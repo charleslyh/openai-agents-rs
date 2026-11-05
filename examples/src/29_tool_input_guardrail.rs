@@ -21,9 +21,8 @@ use serde_json::{json, Value};
 
 const KNOWN_CITIES: [&str; 4] = ["paris", "tokyo", "london", "berlin"];
 
-// Unlike an agent-level input guardrail (which sees the user's message), a *tool* input guardrail
-// sees the arguments the model chose for one specific tool call, before the tool runs. Use it to
-// validate or block what the model is about to do.
+// A *tool* input guardrail sees the arguments the model chose for one specific tool call, before
+// the tool runs. Use it to validate or block what the model is about to do.
 fn known_city() -> ToolInputGuardrail {
     ToolInputGuardrail::new("known-city", |data| async move {
         let args: Value = serde_json::from_str(&data.context.tool_arguments).unwrap_or(Value::Null);

@@ -14,8 +14,7 @@ use opai_agents::{function_tool, Agent, RunOptions, Runner};
 
 /// Charge a payment for an invoice id.
 // `needs_approval` makes every call to this tool pause the run until a human decides. Use it
-// for actions with side effects (money, deletes, e-mail). `hitl` shows approvals that depend on
-// the arguments; this example is the simple always-ask case.
+// for actions with side effects (money, deletes, e-mail).
 #[function_tool(needs_approval)]
 async fn pay(invoice_id: String) -> String {
     println!("[tool] pay invoice_id={invoice_id}");
