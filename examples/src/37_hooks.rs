@@ -17,6 +17,9 @@ use std::sync::Arc;
 
 use opai_agents::{Agent, AgentHooks, RunContextWrapper, RunHooks, RunOptions, Runner};
 
+// Hooks observe a run without changing it, which makes them the place for logging, metrics and
+// progress display. `RunHooks` sees every agent in the run (set per run); `AgentHooks` sees
+// one agent only (set on the agent). Every method has a default, so implement only what you need.
 struct PrintRunHooks;
 
 #[async_trait::async_trait]
@@ -25,6 +28,8 @@ impl RunHooks for PrintRunHooks {
         println!("[run] agent_start {}", agent.name);
     }
 
+    // Called before each model call, with the system prompt and input about to be sent. A run with
+    // tools or handoffs makes several model calls, so this fires more than once.
     async fn on_llm_start(
         &self,
         _context: RunContextWrapper,
@@ -45,6 +50,8 @@ impl RunHooks for PrintRunHooks {
     }
 }
 
+// Agent-level hooks are the same idea scoped to one agent: they fire only while that agent is
+// active, which matters once handoffs put several agents in one run.
 struct PrintAgentHooks;
 
 #[async_trait::async_trait]
@@ -66,6 +73,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .model(common::model()?)
         .hooks(Arc::new(PrintAgentHooks));
 
+    // Run-level hooks go in the options, so each call can choose its own (for example one per
+    // request, carrying a request id).
     let options = RunOptions::new().hooks(Arc::new(PrintRunHooks));
 
     let input = "Say hello.";

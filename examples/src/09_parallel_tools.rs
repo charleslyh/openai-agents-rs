@@ -32,6 +32,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .model(common::model()?)
         .tools(vec![get_weather()]);
 
+    // Two separate switches. `parallel_tool_calls` lets the *model* ask for several calls in one
+    // turn; `concurrency` is how many of them the *runner* executes at once. Without both, the
+    // calls would be requested or executed one by one.
     let options = RunOptions::new()
         .tune(|s| s.parallel_tool_calls = Some(true))
         .tools(|t| {
@@ -40,6 +43,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .execution(ToolExecutionConfig::new().concurrency(4))
         });
 
+    // Each tool sleeps 500 ms: with concurrency 4 the two calls overlap, so the tool phase takes
+    // about 0.5 s instead of 1 s.
     let input = "Compare the weather in Paris and Tokyo.";
     let result = Runner::run(&agent, input, options).await?;
     println!("{}", result.final_output_as_str().unwrap_or_default());

@@ -21,12 +21,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .instructions("Answer briefly.")
         .model(common::model()?);
 
+    // Asks the provider to report token counts. Some APIs omit them unless requested, in which
+    // case the numbers below would stay at zero. `tune` edits the model settings for this run.
     let options = RunOptions::new().tune(|s| s.include_usage = Some(true));
 
     let input = "Summarise what an agent SDK does.";
     let result = Runner::run(&agent, input, options).await?;
     println!("{}", result.final_output_as_str().unwrap_or_default());
 
+    // `usage` adds up every model call of the run. A run with tools makes several, so
+    // `requests` can be more than one. Cached tokens are input the provider billed at a discount.
     let usage = &result.usage;
     println!(
         "usage: {} requests, {} input tokens ({} cached), {} output tokens, {} total",

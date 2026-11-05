@@ -21,6 +21,9 @@ use serde_json::{json, Value};
 
 const KNOWN_CITIES: [&str; 4] = ["paris", "tokyo", "london", "berlin"];
 
+// Unlike an agent-level input guardrail (which sees the user's message), a *tool* input guardrail
+// sees the arguments the model chose for one specific tool call, before the tool runs. Use it to
+// validate or block what the model is about to do.
 fn known_city() -> ToolInputGuardrail {
     ToolInputGuardrail::new("known-city", |data| async move {
         let args: Value = serde_json::from_str(&data.context.tool_arguments).unwrap_or(Value::Null);
@@ -30,6 +33,9 @@ fn known_city() -> ToolInputGuardrail {
             .unwrap_or("")
             .trim()
             .to_ascii_lowercase();
+        // Three outcomes are possible: `allow` runs the tool, `reject_content` skips the tool and
+        // gives the model this message as the tool result (the run goes on), and
+        // `raise_exception` aborts the run. Rejecting lets the model correct itself.
         if KNOWN_CITIES.contains(&city.as_str()) {
             ToolGuardrailFunctionOutput::allow(json!({"city": city}))
         } else {
@@ -61,6 +67,7 @@ fn get_weather() -> FunctionTool {
             Ok(json!(format!("The weather in {city} is sunny, 18C.")))
         },
     )
+    // Guardrails are attached to the tool, so they travel with it wherever it is used.
     .with_tool_input_guardrails(vec![known_city()])
 }
 
@@ -71,9 +78,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .model(common::model()?)
         .tools(vec![get_weather()]);
 
+    // "Atlantis" is not in the list, so the guardrail rejects the call and the model has to
+    // relay the error. Ask about Paris instead and the tool runs normally.
     let input = "What is the weather in Atlantis?";
     let result = Runner::run(&agent, input, RunOptions::default()).await?;
     println!("{}", result.final_output_as_str().unwrap_or_default());
+    // Every guardrail decision is recorded on the result, for audit or tests.
     println!(
         "tool input guardrail results: {}",
         result.tool_input_guardrail_results.len()

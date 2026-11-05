@@ -54,6 +54,7 @@ fn scene(triage_steps: Vec<ModelStep>) -> Scene {
 
     let reasons = Arc::new(Mutex::new(Vec::new()));
     let sink = Arc::clone(&reasons);
+    // Each `.with_*` below changes one aspect of the handoff; none are required.
     let to_refunds = handoff(refunds)
         .with_tool_name("escalate_to_refunds")
         .with_on_handoff_input(
@@ -78,6 +79,8 @@ fn scene(triage_steps: Vec<ModelStep>) -> Scene {
             Ok(data)
         }));
 
+    // Availability is decided per run from the context. When it returns false the handoff is
+    // not in the tool list at all, so the model cannot pick it.
     let to_legal = handoff(legal).with_is_enabled(ToolEnabled::dynamic(|ctx, _agent| async move {
         ctx.context::<Customer>()
             .is_some_and(|c| c.plan == "enterprise")
@@ -87,6 +90,7 @@ fn scene(triage_steps: Vec<ModelStep>) -> Scene {
     let triage = Agent::new("Triage")
         .instructions("Route the customer to the right team.")
         .model(Arc::clone(&triage_model) as Arc<dyn Model>)
+        // Handoffs built with `handoff(..)` and plain agents can be mixed here.
         .handoffs(vec![to_refunds, to_legal]);
     Scene {
         triage,
@@ -107,6 +111,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result = Runner::run(
         &free.triage,
         "I was charged twice for order A-1001.",
+        // The plan travels in the run context; the model never sees it, only its effect.
         RunOptions::new().context(Customer { plan: "free" }),
     )
     .await?;

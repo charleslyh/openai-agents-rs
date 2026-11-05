@@ -22,12 +22,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .instructions("Answer in one short sentence.")
         .model(common::model()?);
 
+    // A session stores the conversation. It lives in the process only; `session_resume` shows
+    // the backends that survive a restart. The agent itself stays stateless.
     let session: Arc<dyn Session> = InMemorySession::shared("memory-demo");
 
     for input in [
         "My favourite colour is teal. Remember that.",
         "What is my favourite colour?",
     ] {
+        // Passing the same session to each run is all it takes: the run loads the earlier turns
+        // into the model input and appends this turn when it finishes.
         let options = RunOptions::new().session(Arc::clone(&session));
         let result = Runner::run(&agent, input, options).await?;
         println!("user> {input}");

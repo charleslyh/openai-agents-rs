@@ -28,6 +28,10 @@ async fn get_city_metrics(city: String) -> String {
 }
 
 /// Prints each span as it ends.
+// A trace is the record of one run: a tree of spans, one per agent, model call, tool call,
+// guardrail or handoff. A `TracingProcessor` receives them as they start and end. Implement one
+// to send spans to your own backend. `trace_export` and `console` show the ready-made ones.
+// (Uploading to the OpenAI traces dashboard is not supported by this SDK.)
 struct PrintSpans;
 
 impl TracingProcessor for PrintSpans {
@@ -38,6 +42,8 @@ impl TracingProcessor for PrintSpans {
     fn on_span_start(&self, _span: &Span) {}
 
     fn on_span_end(&self, span: &Span) {
+        // `SpanData` says what the span measured; the `_` arm keeps this compiling when new
+        // kinds are added.
         let (kind, name) = match &span.data {
             SpanData::Agent { name } => ("agent", name.clone()),
             SpanData::Function { name } => ("function", name.clone()),
@@ -69,6 +75,8 @@ impl TracingProcessor for PrintSpans {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Registers the processors that receive spans: here `PrintSpans` only. This is global and
+    // meant to be called once, at start-up.
     set_trace_processors(vec![Arc::new(PrintSpans)]);
 
     let agent = Agent::new("Ops")
@@ -76,6 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .model(common::model()?)
         .tools(vec![get_city_metrics()]);
 
+    // The workflow name groups runs of the same kind in a tracing UI.
     let options = RunOptions::new().workflow_name("tracing-example");
 
     let input = "Give me the city metrics for Berlin.";

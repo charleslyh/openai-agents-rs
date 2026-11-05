@@ -38,10 +38,15 @@ async fn get_city_metrics(city: String) -> String {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dir = std::env::var("TRACE_DIR").unwrap_or_else(|_| "/tmp/agents-traces".into());
     let path = std::path::PathBuf::from(&dir).join("traces.jsonl");
+    // A sink is where events end up. `JsonlSink` appends one JSON object per line, which `jq`,
+    // a log shipper or a notebook can read. Other sinks plug in the same way.
     let sink = JsonlSink::open(&path)?;
     println!("writing spans to {}", sink.path().display());
 
     // 1024 events may be waiting; a lone event sits at most 200 ms.
+    // `BatchedProcessor` moves the sink's I/O off the agent's path: the run only drops events
+    // in a queue, and a background task writes them. When the queue is full, events are dropped
+    // and counted rather than slowing the run.
     let processor = BatchedProcessor::spawn(sink, 1024, Duration::from_millis(200));
     set_trace_processors(vec![processor.clone()]);
 
@@ -70,7 +75,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // The same events, counted instead of written: an operator's numbers, not a log.
+    // Same pipeline, different sink: `MetricsSink` turns spans into counters and a running cost.
     let metrics = Arc::new(Metrics::new());
+    // Cost needs prices, which differ by model and change over time, so you supply them (here
+    // dollars per million tokens, input then output). Without an entry for the model the cost
+    // stays at zero.
     let mut prices = PriceTable::new();
     prices.set(
         std::env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-4o".into()),

@@ -27,6 +27,8 @@ use opai_agents::{Agent, Reasoning, ReasoningEffort, ReasoningSummary, RunOption
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Reasoning models think before they answer, and the effort setting trades quality for
+    // latency and cost. Try `REASONING_EFFORT=low` against the default to compare.
     let effort = std::env::var("REASONING_EFFORT").unwrap_or_else(|_| "high".into());
 
     let agent = Agent::new("Thinker")
@@ -45,6 +47,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
          How much does the ball cost?",
     );
 
+    // Streaming is where the thinking shows up: reasoning text arrives as its own events,
+    // before the answer, and the printer shows it apart from the answer text.
     let mut streamed = Runner::run_streamed(agent, input, options);
     let mut printer = common::stream::Printer::text_only();
     while let Some(event) = streamed.next_event().await {

@@ -63,6 +63,8 @@ async fn main() {
     report("RunLlmAgain (default): the model writes the answer", &a, &m).await;
 
     let (a, m) = agent(vec![call("lookup", "c1"), text("never needed")]);
+    // `tool_use_behavior` is a property of the agent: it decides what the runner does with a
+    // tool result before asking the model again.
     let a = a.tool_use_behavior(ToolUseBehavior::StopOnFirstTool);
     report("StopOnFirstTool: the tool's result is the answer", &a, &m).await;
 
@@ -82,6 +84,8 @@ async fn main() {
     .await;
 
     let (a, m) = agent(vec![call("lookup", "c1"), text("never needed")]);
+    // `Custom` sees every tool result of the turn and returns either a final output (stop) or
+    // `run_llm_again` (go back to the model). Use it when only some results should end the run.
     let a = a.tool_use_behavior(ToolUseBehavior::Custom(Arc::new(
         |_ctx, results| match results.iter().find(|r| r.output == "shipped") {
             Some(r) => ToolsToFinalOutputResult::final_output(serde_json::json!({
@@ -100,6 +104,7 @@ async fn main() {
 
     println!("\n-- ToolChoice --\n");
 
+    // `ToolChoice` goes in `ModelSettings` and is sent to the provider with each model call.
     let forced = ModelSettings {
         tool_choice: Some(ToolChoice::Function("lookup".into())),
         ..Default::default()

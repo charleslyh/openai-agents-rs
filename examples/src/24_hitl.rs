@@ -20,6 +20,7 @@ use std::path::Path;
 use opai_agents::prelude::*;
 
 /// Get the weather for a given city.
+// No approval needed: this tool runs freely. Only `get_temperature` below can pause the run.
 #[function_tool]
 async fn get_weather(city: String) -> String {
     format!("The weather in {city} is sunny")
@@ -42,6 +43,8 @@ fn get_temperature_tool() -> FunctionTool {
             )))
         },
     )
+    // Approval can depend on the call: return true to pause for a human, false to run at once.
+    // (`needs_approval` on the macro, see `always_approve`, is the unconditional version.)
     .with_needs_resolution_fn(|params, _call_id| async move {
         // Dynamic approval: only Oakland (matches Python example). The predicate sees the raw
         // arguments, as it does before the call is made.
@@ -65,9 +68,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let input = "What is the weather and temperature in Oakland?";
 
+    // Two ways to handle the same pause. The default answers inside the run with a callback.
+    // `HITL_MODE=persist` stops the run, saves it to a file and resumes it, which is the shape of
+    // a real approval flow (see `run_state_store` for the supported store).
     let result = if std::env::var("HITL_MODE").as_deref() == Ok("persist") {
         run_with_saved_state(&agent, input).await?
     } else {
+        // `resolve_with` is called for every call that needs approval, and its answer decides
+        // the call: `Run` executes it, `reject(..)` skips it and tells the model why.
         let options = RunOptions::new().resolve_with(|call| async move {
             println!("\nTool call: {} {}", call.tool_name, call.arguments);
             match common::confirm("Do you approve this tool call?") {
@@ -98,6 +106,7 @@ async fn run_with_saved_state(
         println!("Run interrupted - tool approval required");
         println!("{}\n", "=".repeat(80));
 
+        // `to_state` captures the paused run. It is plain data, so it can be written to disk.
         let mut state = result.to_state()?;
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -107,6 +116,8 @@ async fn run_with_saved_state(
 
         println!("Loading state from {}", path.display());
         let stored: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path)?)?;
+        // Rebuilding the state needs the agent, because the state refers to it by name and the
+        // agent's tools and model are not stored.
         state = RunState::from_json(&agent.name, stored)?;
 
         for interruption in result.interruptions.clone() {

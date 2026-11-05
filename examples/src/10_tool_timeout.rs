@@ -32,12 +32,18 @@ fn slow_report(behavior: ToolTimeoutBehavior) -> FunctionTool {
             Ok(json!("report ready"))
         },
     )
+    // A tool that hangs would hang the whole run. The timeout (in seconds) cuts it off; what
+    // happens next is the behavior.
     .with_timeout(1.0)
     .with_timeout_behavior(behavior)
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Two ways to react to a timeout:
+    // - `ErrorAsResult` (default): the model gets an error message as the tool result and can
+    //   tell the user or try something else. The run continues.
+    // - `RaiseException`: the run stops and `Runner::run` returns `AgentsError::ToolTimeout`.
     let behavior = if std::env::var("TOOL_TIMEOUT_RAISE").is_ok_and(|v| v == "1") {
         ToolTimeoutBehavior::RaiseException
     } else {
@@ -51,6 +57,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let input = "Build the quarterly report.";
     match Runner::run(&agent, input, RunOptions::default()).await {
         Ok(result) => println!("{}", result.final_output_as_str().unwrap_or_default()),
+        // Only reachable with `RaiseException`; match the variant to handle it separately.
         Err(AgentsError::ToolTimeout(e)) => println!("run aborted by tool timeout: {e}"),
         Err(e) => return Err(e.into()),
     }

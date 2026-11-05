@@ -20,7 +20,13 @@ use std::sync::Arc;
 use opai_agents::{Agent, McpClient, McpServer, RunOptions, Runner, StdioParams, ToolFilter};
 use serde_json::{json, Value};
 
+// MCP (Model Context Protocol) lets an agent use tools that live in another process. To keep this
+// example self-contained, the same binary plays both roles: started with this flag it is a tiny
+// MCP server speaking JSON-RPC on stdin/stdout; started normally it is the agent that connects
+// to it. In a real project the server would be someone else's program (`npx some-mcp-server`).
 const SERVER_FLAG: &str = "--mcp-server";
+
+// ---- The server half: what a real MCP server implements. ----
 
 fn tools() -> Value {
     json!([
@@ -129,6 +135,7 @@ fn serve() -> io::Result<()> {
     Ok(())
 }
 
+// ---- The client half: the part you write when you *use* an MCP server. ----
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Server mode first: the child process has no API key and must not read the model env.
@@ -139,18 +146,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let model = common::model()?;
     let exe = std::env::current_exe()?;
+    // `McpClient::stdio` runs the server as a child process and talks to it over its pipes.
+    // (`McpClient::streamable_http` connects to a remote server instead.)
     let server: Arc<dyn McpServer> =
         McpClient::stdio(StdioParams::new(exe.to_string_lossy()).args([SERVER_FLAG]))
+            // You do not control what a third-party server offers. Filter the tools the model may
+            // see: block the dangerous ones, or use an allow-list instead.
             .tool_filter(ToolFilter::block(["mcp_admin_reset"]))
             .shared();
 
     let agent = Agent::new("Assistant")
         .instructions("Use the MCP tools to answer questions about cities and temperatures.")
         .model(model)
+        // The server's tools are listed at run start and offered to the model next to the agent's
+        // own tools; calls are forwarded to the server.
         .mcp_servers(vec![Arc::clone(&server)]);
 
     let input = "What do you know about Paris? Also convert 20 celsius to fahrenheit.";
     let outcome = Runner::run(&agent, input, RunOptions::default()).await;
+    // Close the connection and stop the child process, whether or not the run succeeded.
     let _ = server.cleanup().await;
     println!("{}", outcome?.final_output_as_str().unwrap_or_default());
     Ok(())

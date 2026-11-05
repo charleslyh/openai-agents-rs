@@ -34,6 +34,9 @@ use opai_agents::{
 };
 use serde_json::json;
 
+// The two helpers below build the errors a provider would raise, so the scenarios are
+// repeatable. Retry decisions look at exactly these fields: the status code, the headers
+// and the error kind.
 fn status(code: u16, headers: &[(&str, &str)]) -> ModelError {
     ModelError::Status(Box::new(ModelStatusError {
         status_code: code,
@@ -55,11 +58,14 @@ fn dropped_connection() -> ModelError {
 
 /// Retry rate limits, server errors and network failures, honouring `retry-after`.
 fn settings() -> ModelSettings {
+    // Policies are small predicates. `any` retries when at least one matches; `all` needs every
+    // one. Anything not matched (a 400, say) fails at once, as it should: retrying cannot fix it.
     let policy = retry_policies::any(vec![
         retry_policies::http_status([429, 500, 502, 503]),
         retry_policies::network_error(),
         retry_policies::retry_after(),
     ]);
+    // The wait before retry n grows geometrically. A server's `retry-after` always wins over this.
     let backoff = ModelRetryBackoffSettings {
         initial_delay: Some(0.1), // seconds; 0.1, 0.2, 0.4 ... up to `max_delay`
         max_delay: Some(2.0),
@@ -67,6 +73,7 @@ fn settings() -> ModelSettings {
         jitter: Some(false), // keep the demo's timings readable; leave jitter on in production
     };
     ModelSettings {
+        // 3 = retries after the first attempt, so a call is made at most 4 times.
         retry: Some(ModelRetrySettings::new(3, policy).with_backoff(backoff)),
         ..Default::default()
     }

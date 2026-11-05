@@ -15,6 +15,8 @@ mod common;
 use opai_agents::{function_tool, Agent, RunOptions, Runner};
 
 /// Return how many jokes to tell (1-5).
+// `#[function_tool]` turns a plain function into a tool: the doc comment becomes the tool
+// description and the parameters become its JSON schema.
 #[function_tool]
 fn how_many_jokes() -> i64 {
     3
@@ -28,12 +30,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .tools(vec![how_many_jokes()]);
 
     println!("=== Run starting ===");
+
+    // `run_streamed` starts the run in the background and returns a handle at once; events arrive
+    // as the model produces them instead of after the whole run.
     let mut streamed = Runner::run_streamed(agent, "Hello", RunOptions::default());
+
+    // The printer (see `common/stream.rs`) shows which event kinds exist: raw text deltas, tool
+    // calls and results, agent switches. Match on `StreamEvent` to build your own UI instead.
     let mut printer = common::stream::Printer::new();
+
+    // The stream ends when the run does; an error ends it with `Err`.
     while let Some(event) = streamed.next_event().await {
         printer.feed(&event?)?;
     }
     printer.finish()?;
+
     println!("=== Run complete ===");
     Ok(())
 }

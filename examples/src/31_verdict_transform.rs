@@ -47,6 +47,7 @@ fn redactor() -> InputGuardrail {
         if redacted == text {
             GuardrailFunctionOutput::pass(serde_json::Value::Null)
         } else {
+            // A third verdict besides `pass` and `trip`: carry on, but with this text instead.
             GuardrailFunctionOutput::transform(redacted)
         }
     })
@@ -55,10 +56,13 @@ fn redactor() -> InputGuardrail {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // The session is here only to prove a point at the end: what gets *stored* is redacted too.
     let session = Arc::new(InMemorySession::new("verdict-transform"));
     let agent = Agent::new("Billing")
         .instructions("Repeat the card number back to the user.")
         .model(common::model()?)
+        // Because the guardrail is blocking (not parallel), it finishes before the model call
+        // starts, so the model only ever receives the rewritten text.
         .input_guardrails(vec![redactor()]);
 
     let input = "My card is 4111 1111 1111 1111, please confirm it.";

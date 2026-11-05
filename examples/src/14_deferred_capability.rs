@@ -22,6 +22,9 @@ use opai_agents::prelude::*;
 use opai_agents::{ModelError, ModelRequest, ModelResponse, NamedCapability};
 
 /// A bundle that is only worth its context when the model actually needs SQL.
+// `deferred(..)` keeps the bundle's tools and instructions out of the prompt. The model sees one
+// line (the description) in a catalog, and a loader tool it can call to pull the bundle in.
+// This saves tokens when an agent has many capabilities and most runs use few of them.
 fn database() -> NamedCapability {
     CapabilityParts::new()
         .tool(FunctionTool::constant(
@@ -35,6 +38,7 @@ fn database() -> NamedCapability {
 }
 
 /// Prints what each model call is offered, then asks the real model.
+// A `Model` wrapper is the simplest way to observe a request. Here it only logs the tool names.
 struct TraceTools {
     inner: Arc<dyn Model>,
 }
@@ -58,6 +62,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .model(Arc::clone(&model) as Arc<dyn Model>)
         .capability(database());
 
+    // Watch the "tools offered" lines across the model calls: `query` is only offered once the
+    // model has asked to load the `database` capability.
     println!("First run: the model sees the catalog, loads `database`, then queries.");
     let result = Runner::run(
         &agent,

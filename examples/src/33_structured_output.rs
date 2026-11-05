@@ -21,6 +21,8 @@ use serde::Deserialize;
 /// The shape the model must answer with.
 ///
 /// `JsonSchema` produces the schema; `Deserialize` lets the SDK validate the reply.
+// The doc comments on the fields end up in the schema, so the model reads them as the meaning of
+// each field. Write them for the model.
 #[derive(Debug, Deserialize, opai_agents::schemars::JsonSchema)]
 struct WeatherReport {
     /// City the report is about.
@@ -36,13 +38,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let agent = Agent::new("Weather")
         .instructions("Always answer with the requested JSON object.")
         .model(common::model()?)
+        // Without `output_type` the agent answers in free text. With it, the provider is asked for
+        // JSON in this shape, and the reply is checked against the schema before it is returned.
         .output_type(Arc::new(AgentOutputSchema::of::<WeatherReport>()?));
 
     let question = "What is the weather in Paris right now? Answer in JSON.";
 
     let result = Runner::run(&agent, question, RunOptions::default()).await?;
+    // `final_output` is the validated JSON as a `serde_json::Value`.
     println!("raw final_output: {}", result.final_output);
 
+    // `final_output_as` turns it into your type. This is why the example needs no parsing code.
     let report: WeatherReport = result.final_output_as::<WeatherReport>()?;
     println!("{}: {}°C — {}", report.city, report.celsius, report.summary);
     Ok(())

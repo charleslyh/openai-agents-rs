@@ -30,6 +30,8 @@ use opai_agents::prelude::*;
 
 #[tokio::main]
 async fn main() -> Result<(), AgentsError> {
+    // `opai_agents::run` builds an agent and picks a provider from the environment: whichever
+    // known API key is set, or the offline model when `AGENTS_OFFLINE=1`.
     match opai_agents::run("You answer in one short sentence.", "What is Rust?").await {
         Ok(result) => println!("{}", result.final_output_as_str().unwrap_or_default()),
         Err(e) => {

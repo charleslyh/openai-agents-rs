@@ -53,6 +53,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // ---- Process 1: run until the approval is needed, park the run, exit. ----
     {
+        // A store keeps paused runs under a key you choose. `from_env` signs them when
+        // `AGENTS_STATE_KEY` is set, so a tampered file is rejected on load.
         let store = FileRunStateStore::from_env(&dir)?;
         let result = Runner::run(
             &new_agent(vec![ModelStep::from(ItemHelpers::function_tool_call(
@@ -88,6 +90,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // ---- Process 2: a fresh agent, the stored run, a decision. ----
     let store = FileRunStateStore::from_env(&dir)?;
+    // `None` means there is nothing to resume: the key never existed, expired, or was already
+    // resumed and deleted.
     let Some(mut state) = store.load(KEY).await? else {
         return Err(format!("no paused run under `{KEY}` (expired or already resumed)").into());
     };
@@ -98,6 +102,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for call in state.interruptions.clone() {
         println!("[process 2] a human approves {}", call.tool_name);
+        // This is where a human's decision would be applied; the state records it.
         state.approve(&call, false);
     }
 
@@ -109,6 +114,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         RunOptions::new(),
     )
     .await?;
+    // Delete once resumed, so the same approval cannot be replayed.
     store.delete(KEY).await?;
     println!(
         "[process 2] resumed and finished: {}",

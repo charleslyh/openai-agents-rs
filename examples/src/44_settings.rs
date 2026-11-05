@@ -21,8 +21,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .instructions("Answer briefly.")
         .model(common::model()?);
 
+    // `RunOptions` collects per-run settings; the agent stays unchanged.
     let options = RunOptions::new()
+        // Safety net: a run that keeps calling tools without finishing fails after this many
+        // model turns instead of looping forever.
         .max_turns(5)
+        // Model parameters are shortcuts; `tune` below reaches any other field of the settings.
         .temperature(0.2)
         // Up to two retries when the connection fails; never for other errors.
         .tune(|s| s.retry = Some(ModelRetrySettings::new(2, retry_policies::network_error())));

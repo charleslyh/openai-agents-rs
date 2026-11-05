@@ -30,17 +30,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Write a 200 word story about a lighthouse.",
         RunOptions::default(),
     )
+    // Without this, dropping the handle would leave the run going in the background (and
+    // billing you). With it, abandoning the handle stops the run too.
     .cancel_on_drop(true);
 
     let mut printer = common::stream::Printer::text_only();
     while let Some(event) = streamed.next_event().await {
         printer.feed(&event?)?;
         if printer.text_deltas == STOP_AFTER_DELTAS {
+            // `Immediate` stops now, mid-response, and closes the event stream. `AfterTurn` lets
+            // the current turn (the model call and its tools) finish, then stops before the next.
             streamed.cancel(CancelMode::Immediate);
         }
     }
     printer.finish()?;
     let deltas = printer.text_deltas;
+    // A cancelled run is not an error: it ends normally and reports that it was cancelled.
     println!(
         "cancelled={} complete={} (after {deltas} deltas)",
         streamed.is_cancelled(),

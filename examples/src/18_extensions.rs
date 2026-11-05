@@ -29,6 +29,8 @@ use opai_agents::{Agent, FunctionTool, Model, RunOptions, Runner};
 use serde_json::json;
 
 /// A stand-in for a database handle.
+// Any `Send + Sync + 'static` type can be a dependency. The type is its key, so wrap plain
+// values (like the id below) in your own struct.
 struct Orders(HashMap<&'static str, &'static str>);
 
 /// Who is calling; the tool uses it to scope the lookup.
@@ -40,6 +42,8 @@ fn order_status_tool() -> FunctionTool {
         "Look up the status of the caller's order.",
         |ctx, ()| async move {
             // Declared with `.require::<Orders>()` below, so this cannot fail in a started run.
+            // `require` fails with a clear error if the dependency is missing; `context` returns
+            // an `Option` for dependencies that are optional.
             let orders = ctx.require::<Orders>()?;
             // Optional: a missing caller id degrades instead of failing.
             let caller = ctx.context::<CallerId>().map_or("anonymous", |c| c.0);
@@ -47,6 +51,8 @@ fn order_status_tool() -> FunctionTool {
             Ok(json!({"caller": caller, "status": status}))
         },
     )
+    // Declares the dependency up front, so a missing `Orders` is reported before the first
+    // model call instead of in the middle of a conversation.
     .require::<Orders>()
 }
 
@@ -76,6 +82,8 @@ async fn main() {
     );
 
     // ---- With it: one value per type, added with `.with`. ----
+    // `RunOptions::with` is where the application supplies its dependencies, per run. A server
+    // would build these from the request (the user, a database handle) and keep the agent shared.
     let (agent_with, model) = agent();
     let options = RunOptions::new()
         .with(Orders(HashMap::from([

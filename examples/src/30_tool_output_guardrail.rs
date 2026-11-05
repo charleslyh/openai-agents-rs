@@ -18,6 +18,9 @@ use opai_agents::{
 };
 use serde_json::{json, Value};
 
+// A tool *output* guardrail sees what a tool returned, before the model reads it. Use it to keep
+// data out of the conversation: here, personal data in a record the tool legitimately fetched.
+// The model never sees the original, so it cannot repeat it to the user.
 fn pii_redactor() -> ToolOutputGuardrail {
     ToolOutputGuardrail::new("pii-redactor", |data| async move {
         let text = match &data.output {
@@ -39,6 +42,8 @@ fn pii_redactor() -> ToolOutputGuardrail {
                 }
             })
             .collect();
+        // `reject_content` replaces the tool result with the given text. `allow` passes the
+        // original through unchanged.
         if changed {
             println!("[guardrail] pii-redactor redacted the tool result");
             ToolGuardrailFunctionOutput::reject_content(
@@ -69,12 +74,16 @@ fn lookup_customer() -> FunctionTool {
             ))
         },
     )
+    // The tool returns the real record, PII included; the guardrail is the only thing between
+    // the tool and the model.
     .with_tool_output_guardrails(vec![pii_redactor()])
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let agent = Agent::new("Billing")
+        // The prompt asks for an exact quote on purpose: without the guardrail the e-mail and
+        // phone number would appear in the answer.
         .instructions("Use lookup_customer and quote the record exactly as the tool returned it.")
         .model(common::model()?)
         .tools(vec![lookup_customer()]);

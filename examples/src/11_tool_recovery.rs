@@ -37,6 +37,8 @@ fn flaky_inventory() -> FunctionTool {
             async move {
                 let n = calls.fetch_add(1, Ordering::SeqCst) + 1;
                 println!("[tool] flaky_inventory call #{n} for `{item}`");
+                // A tool error does not end the run: the message goes back to the model as the
+                // tool result, so it can read the cause and decide to retry or give up.
                 if n == 1 {
                     return Err(AgentsError::tool(
                         "inventory backend unavailable, try again",
@@ -51,6 +53,7 @@ fn flaky_inventory() -> FunctionTool {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let agent = Agent::new("Ops")
+        // Recovery is the model's job, so the instructions say how to react to a failure.
         .instructions("Use flaky_inventory. If it fails, read the error and retry the call once.")
         .model(common::model()?)
         .tools(vec![flaky_inventory()]);

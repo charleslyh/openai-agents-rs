@@ -45,6 +45,8 @@ fn translator(
                 description: Some(format!("Translate the user's message to {language}")),
                 ..Default::default()
             }
+            // The handler runs for every event of the nested run. `update` says which nested
+            // agent and which tool call it belongs to, so one handler can serve several tools.
             .on_stream(move |update| {
                 let printer = Arc::clone(&printer);
                 let last_call = Arc::clone(&last_call);
@@ -56,6 +58,7 @@ fn translator(
                         *last = update.tool_call_id.clone();
                         println!("\n[{} via {}]", update.agent_name, update.tool_name);
                     }
+                    // The same printer as in `streamed`: nested events are ordinary stream events.
                     let _ = printer.feed(&update.event);
                 }
             }),

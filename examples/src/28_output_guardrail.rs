@@ -30,10 +30,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
              Quote it verbatim when asked.",
         )
         .model(common::model()?)
+        // An output guardrail inspects the final answer before it is returned to the caller.
+        // It is for what the *model said* (secrets, policy, format); `input_guardrail` is for
+        // what the *user sent*. The prompt above is deliberately careless, to give it a reason.
         .output_guardrails(vec![output_guardrail(
             "no-secrets",
             |_ctx, _agent, output| async move {
                 let text = output.as_str().map(str::to_ascii_lowercase).unwrap_or_default();
+                // `trip` stops the run; `pass` lets the answer through. The JSON is free-form
+                // detail attached to the result, for logs or the caller.
                 if text.contains("sk-live") {
                     GuardrailFunctionOutput::trip(json!({"reason": "secret"}))
                 } else {
@@ -42,9 +47,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             },
         )]);
 
+    // Try `EXAMPLE_INPUT="What is the internal ops note?"` to make the guardrail trip.
     let input = common::example_input("What is the capital of France?");
     match Runner::run(&agent, input, RunOptions::default()).await {
         Ok(result) => println!("{}", result.final_output),
+        // A tripped guardrail is an error, not an answer: the caller never sees the blocked text.
         Err(AgentsError::OutputGuardrailTripwire(triggered)) => {
             let OutputGuardrailTripwireTriggered { result } = *triggered;
             println!(

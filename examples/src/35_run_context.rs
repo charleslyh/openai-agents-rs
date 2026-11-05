@@ -16,6 +16,8 @@ mod common;
 use opai_agents::{Agent, FunctionTool, RunOptions, Runner};
 
 /// The user context carried through the run.
+// The run context is your own data (the user, a tenant, a database handle) made available to
+// tools, hooks and guardrails. It is **not** sent to the model: only what a tool returns is.
 struct Tenant {
     id: String,
 }
@@ -27,6 +29,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "tenant_id",
         "Return the current tenant id from the run context.",
         |ctx, ()| async move {
+            // Look the value up by its type. It is an `Option`, because nothing guarantees that
+            // this run was started with a `Tenant`. See `extensions` for requiring it.
             let id = ctx
                 .run_context
                 .context::<Tenant>()
@@ -41,6 +45,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .model(common::model()?)
         .tools(vec![tool]);
 
+    // The context is supplied per run, so the same agent serves every tenant: build the options
+    // from the request and keep the agent around.
     let options = RunOptions::new().context(Tenant { id: "acme".into() });
 
     let input = "Which tenant am I?";

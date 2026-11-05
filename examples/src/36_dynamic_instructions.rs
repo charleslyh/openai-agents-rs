@@ -69,6 +69,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None,
     ];
 
+    // One agent definition per user here only because the scripted model records one run each;
+    // in a service you would build `support_agent` once and vary just the `RunOptions`.
     for user in users {
         let model = Arc::new(ScriptedModel::new([ModelStep::from(
             ItemHelpers::text_message("(reply)"),

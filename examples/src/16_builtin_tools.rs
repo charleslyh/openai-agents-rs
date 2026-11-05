@@ -39,6 +39,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::fs::create_dir_all(&dir)?;
     std::fs::write(dir.join("notes.txt"), "Remember to water the plants.\n")?;
 
+    // The constructors take the limits: the directory is the only place `file_read` and
+    // `file_list` can reach, and `web_fetch` takes no setting because its restrictions are fixed.
     let tools = vec![
         calculator(),
         clock(),
@@ -47,6 +49,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         web_fetch(),
     ];
 
+    // Live mode: hand the same tools to a real model and let it decide what to call.
     if std::env::var_os("LIVE").is_some() {
         let agent = Agent::new("Assistant")
             .instructions("Use the tools to answer. Be brief.")
@@ -88,6 +91,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "loopback",
         ),
     ];
+    // Offline mode: a scripted model plays the LLM. Its first reply asks for all the calls above
+    // at once (several tool calls in one turn); its second reply is the final answer.
     let items: Vec<_> = calls
         .iter()
         .enumerate()
@@ -101,6 +106,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ]));
     let agent = Agent::new("Assistant").model(model).tools(tools);
 
+    // The runner executes the calls exactly as it would for a real model. Refused calls do not
+    // fail the run: they come back as tool results.
     let result = Runner::run(&agent, "Try everything.", RunOptions::new()).await?;
 
     let outputs: Vec<_> = result

@@ -21,16 +21,22 @@ use opai_agents::{
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // The same model serves two roles here: it answers the user and it writes the summaries.
+    // Use a cheaper model for `ModelSummarizer` if you like.
     let model = common::model()?;
     let agent = Agent::new("Assistant")
         .instructions("Answer in one short sentence.")
         .model(Arc::clone(&model));
 
+    // `CompactingSession` wraps any other session (the `store`) and shrinks it: when the history
+    // grows past a limit, older turns are replaced by a model-written summary. The agent code
+    // does not change; it just receives a different `Session`.
     let store = InMemorySession::shared("compaction-demo");
     // Kept low so the compaction shows up within a few turns.
     let session: Arc<dyn Session> =
         CompactingSession::new(store.clone(), Arc::new(ModelSummarizer::new(model)))
             .trigger_items(6)
+            // The newest turn(s) stay verbatim, so the model keeps exact wording where it matters.
             .keep_recent_turns(1)
             .shared();
 
@@ -48,6 +54,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             result.final_output_as_str().unwrap_or_default()
         );
 
+        // Read the wrapped store directly to see what is really kept. The summary is stored as
+        // an ordinary message that starts with `<conversation_summary>`.
         let items = store.get_items(None).await?;
         let compacted = items.iter().any(|item| {
             item.get("content")

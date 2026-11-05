@@ -18,6 +18,8 @@ use opai_agents::prelude::*;
 use opai_agents::{Capability, CapabilityParts, FunctionTool};
 
 /// A named bundle: two tools, a paragraph of instructions and an output guardrail.
+// A capability packages everything one feature needs, so an agent gets all of it with one
+// `.capability(..)` call instead of wiring tools, prompt text and guardrails separately.
 struct MathCapability;
 
 impl Capability for MathCapability {
@@ -25,6 +27,8 @@ impl Capability for MathCapability {
         "math"
     }
 
+    // `parts` lists what the capability contributes. The agent merges them into its own tools,
+    // instructions and guardrails when the capability is mounted.
     fn parts(&self) -> CapabilityParts {
         CapabilityParts::new()
             .tools(vec![
@@ -32,6 +36,8 @@ impl Capability for MathCapability {
                 FunctionTool::constant("multiply", "Multiply two numbers", "0"),
             ])
             .instructions("Answer with a number only.")
+            // A guardrail that runs on the agent's final output. `fail` makes the run return an
+            // error instead of the answer (see the guardrail examples for the details).
             .output_guardrail(output_guardrail(
                 "numeric",
                 |_ctx, _agent, output| async move {
@@ -56,7 +62,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .model(Arc::clone(&model))
         .capability(MathCapability);
 
-    // The same parts, handed over by hand.
+    // The same parts, handed over by hand. This is what `.capability(..)` saves you from writing:
+    // the instructions are appended, the tools and guardrails are added to the agent's own.
     let by_hand = Agent::new("Support")
         .instructions(format!(
             "You are a helpful assistant.\n\n{}",

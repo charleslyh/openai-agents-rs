@@ -32,12 +32,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .instructions("You help with billing questions. Answer in one short sentence.")
         .model(common::model_or_offline()?)
         .tools(vec![opai_agents::tools::calculator()])
+        // Ready-made guardrails, so common checks need no code of your own. The `.input()` /
+        // `.output()` call chooses which side of the model a guard watches.
         .input_guardrails(vec![
             MaxLength::chars(2_000)?.input(),
             PromptInjection::new()?.input(),
             BlockedKeywords::new(["project atlas", "internal only"])?.input(),
+            // Redaction does not refuse the request: it rewrites the input, and the model only
+            // sees the redacted text (the example prints `[input was redacted]` for this case).
             PiiRedactor::new()?.input(),
         ])
+        // The same guard on the way out, in case the model produces personal data on its own.
         .output_guardrails(vec![PiiRedactor::new()?.output()]);
 
     let messages = [
@@ -48,10 +53,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &"very long ".repeat(500),
     ];
 
+    // One agent, five messages: one normal, one redacted, and three refused by different guards.
     for message in messages {
         let shown: String = message.chars().take(70).collect();
         match Runner::run(&agent, message, RunOptions::default()).await {
             Ok(result) => {
+                // Guardrail results are kept on the result. A guard that rewrote the input
+                // exposes the new text through `transformed()`.
                 let rewritten = result
                     .input_guardrail_results
                     .iter()
@@ -66,6 +74,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 );
             }
+            // Refusals arrive as an error that names the guard that tripped.
             Err(AgentsError::InputGuardrailTripwire(e)) => {
                 println!(
                     "refused {shown}\n        -> by `{}`",

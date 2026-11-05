@@ -37,8 +37,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
              You never translate on your own, you always use the provided tools.",
         )
         .model(Arc::clone(&model))
+        // `as_tool` wraps an agent as a tool. The orchestrator calls it, the translator runs a
+        // full nested run on the given text, and its final output returns as the tool result.
+        // The orchestrator stays in charge (unlike a handoff, where control moves away).
         .tools(vec![
             spanish.as_tool(AsToolConfig {
+                // Name and description are what the orchestrator's model sees: write them as a
+                // tool, not as an agent.
                 name: Some("translate_to_spanish".into()),
                 description: Some("Translate the user's message to Spanish".into()),
                 ..Default::default()
@@ -55,6 +60,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }),
         ]);
 
+    // A second, separate agent that runs after the first: orchestration here is plain Rust code
+    // (run one agent, feed its result to the next), not an SDK feature.
     let synthesizer = Agent::new("synthesizer_agent")
         .instructions(
             "You inspect translations, correct them if needed, and produce a final concatenated response.",
@@ -64,6 +71,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let msg = common::example_input("Translate 'Hello, world!' to French and Spanish.");
 
     let orchestrator_result = Runner::run(&orchestrator, msg, RunOptions::default()).await?;
+    // `new_items` is everything the run produced, in order: messages, tool calls, tool outputs.
     for item in &orchestrator_result.new_items {
         if let RunItem::Message(m) = item {
             let text = ItemHelpers::text_message_output(m);
@@ -76,6 +84,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // `to_input_list` ends with the orchestrator's assistant message. Some models
     // (notably DeepSeek via TokenHub) then return empty `content` for the synthesizer.
     // Append a user nudge so the synthesizer always has a fresh turn to answer.
+    // `to_input_list` turns a finished run into input for the next one: the original input plus
+    // every item the run produced.
     let mut synth_input = orchestrator_result.to_input_list();
     synth_input.push(serde_json::json!({
         "role": "user",

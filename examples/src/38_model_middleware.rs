@@ -31,6 +31,10 @@ use serde_json::Value;
 /// Replaces every word that looks like an e-mail address.
 struct RedactEmails;
 
+// A middleware is a hook between the run and the model. `prepare` gets the input of the next
+// model call (instructions and items) and returns what to send instead. It is the place for
+// cross-cutting rules that should not live in every agent: redaction, prompt additions, caps.
+
 fn redact(text: &str) -> String {
     text.split(' ')
         .map(|word| if word.contains('@') { "[email]" } else { word })
@@ -106,6 +110,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let options = RunOptions::new().config(
         RunConfig::default().with_model(
             ModelOptions::new()
+                // Order matters: middlewares run in the order they are added, each seeing the previous
+                // one's output.
                 .middleware(RedactEmails)
                 .middleware(AddNote("Never repeat personal data.")),
         ),
@@ -119,6 +125,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         result.final_output_as_str().unwrap_or_default()
     );
 
+    // The scripted model recorded the request, which is how this example can show what the
+    // model really received, as opposed to what the caller passed in.
     let call = model.first_call().expect("the model was called once");
     println!("\nwhat the model received:");
     println!(
