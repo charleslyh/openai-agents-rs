@@ -82,6 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let input = "What is the weather in Atlantis?";
     let result = Runner::run(&agent, input, RunOptions::default()).await?;
     println!("{}", result.final_output_as_str().unwrap_or_default());
+
     // Every guardrail decision is recorded on the result, for audit or tests.
     println!(
         "tool input guardrail results: {}",

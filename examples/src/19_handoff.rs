@@ -35,6 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let input = common::example_input("What do I owe on my last invoice?");
     let result = Runner::run(&triage, input, RunOptions::default()).await?;
+
     // After a handoff, the agent that produced the answer is not the one you started with.
     println!("last_agent={}", result.last_agent_name);
     println!("{}", result.final_output_as_str().unwrap_or_default());

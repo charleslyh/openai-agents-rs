@@ -21,10 +21,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .instructions("You translate the user's message to Spanish")
         .handoff_description("An english to spanish translator")
         .model(Arc::clone(&model));
+
     let french = Agent::new("french_agent")
         .instructions("You translate the user's message to French")
         .handoff_description("An english to french translator")
         .model(Arc::clone(&model));
+
     let italian = Agent::new("italian_agent")
         .instructions("You translate the user's message to Italian")
         .handoff_description("An english to italian translator")
@@ -71,6 +73,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let msg = common::example_input("Translate 'Hello, world!' to French and Spanish.");
 
     let orchestrator_result = Runner::run(&orchestrator, msg, RunOptions::default()).await?;
+
     // `new_items` is everything the run produced, in order: messages, tool calls, tool outputs.
     for item in &orchestrator_result.new_items {
         if let RunItem::Message(m) = item {

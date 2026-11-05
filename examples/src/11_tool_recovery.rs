@@ -28,6 +28,7 @@ struct Item {
 
 fn flaky_inventory() -> FunctionTool {
     let calls = Arc::new(AtomicU32::new(0));
+
     // `FunctionTool::typed` derives the schema from the argument type and parses the arguments.
     FunctionTool::typed(
         "flaky_inventory",
@@ -37,6 +38,7 @@ fn flaky_inventory() -> FunctionTool {
             async move {
                 let n = calls.fetch_add(1, Ordering::SeqCst) + 1;
                 println!("[tool] flaky_inventory call #{n} for `{item}`");
+
                 // A tool error does not end the run: the message goes back to the model as the
                 // tool result, so it can read the cause and decide to retry or give up.
                 if n == 1 {

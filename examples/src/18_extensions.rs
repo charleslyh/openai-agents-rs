@@ -45,6 +45,7 @@ fn order_status_tool() -> FunctionTool {
             // `require` fails with a clear error if the dependency is missing; `context` returns
             // an `Option` for dependencies that are optional.
             let orders = ctx.require::<Orders>()?;
+
             // Optional: a missing caller id degrades instead of failing.
             let caller = ctx.context::<CallerId>().map_or("anonymous", |c| c.0);
             let status = orders.0.get(caller).copied().unwrap_or("no order found");

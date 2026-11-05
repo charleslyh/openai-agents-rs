@@ -119,6 +119,7 @@ impl TypedTool for RefundTool {
         // `requires(Payments)` above means the run would not have started without it.
         let payments = ctx.require::<Payments>()?;
         let cents = args.amount_cents.unwrap_or(WHOLE_ORDER_CENTS);
+
         // The schema says "at least 1", but only the model reads that; this is what holds the line.
         if cents == 0 {
             return Err(AgentsError::tool("the amount must be at least 1 cent"));

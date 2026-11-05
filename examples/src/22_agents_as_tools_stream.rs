@@ -53,11 +53,13 @@ fn translator(
                 async move {
                     let mut printer = printer.lock().unwrap();
                     let mut last = last_call.lock().unwrap();
+
                     // A heading where a nested run starts, then its text as it arrives.
                     if *last != update.tool_call_id {
                         *last = update.tool_call_id.clone();
                         println!("\n[{} via {}]", update.agent_name, update.tool_name);
                     }
+
                     // Nested events are ordinary stream events, so the usual printer works on them.
                     let _ = printer.feed(&update.event);
                 }

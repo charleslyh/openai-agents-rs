@@ -48,12 +48,14 @@ fn scene(triage_steps: Vec<ModelStep>) -> Scene {
     let refunds = Agent::new("Refunds")
         .handoff_description("Issues refunds.")
         .model(Arc::clone(&refunds_model) as Arc<dyn Model>);
+
     let legal = Agent::new("Legal")
         .handoff_description("Handles contracts and disputes.")
         .model(Arc::new(ScriptedModel::new([])));
 
     let reasons = Arc::new(Mutex::new(Vec::new()));
     let sink = Arc::clone(&reasons);
+
     // Each `.with_*` below changes one aspect of the handoff; none are required.
     let to_refunds = handoff(refunds)
         .with_tool_name("escalate_to_refunds")

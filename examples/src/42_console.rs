@@ -51,10 +51,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         ConversationHub::new().metadata_only()
     };
+
     // The link streams spans and conversations to a console server over HTTP, on its own
     // background threads: a slow or absent console never blocks a run (undelivered events are
     // counted, see `dropped()` below).
     let link = ConsoleLink::start(LinkConfig::new(addr.clone()).token(token), &hub)?;
+
     // The link's processor is what receives the spans and forwards them to the console.
     set_trace_processors(vec![link.processor()]);
     println!("sending to the console at http://{addr}/");

@@ -45,6 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let question = "What is the weather in Paris right now? Answer in JSON.";
 
     let result = Runner::run(&agent, question, RunOptions::default()).await?;
+
     // `final_output` is the validated JSON as a `serde_json::Value`.
     println!("raw final_output: {}", result.final_output);
 

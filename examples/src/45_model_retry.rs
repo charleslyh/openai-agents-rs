@@ -65,6 +65,7 @@ fn settings() -> ModelSettings {
         retry_policies::network_error(),
         retry_policies::retry_after(),
     ]);
+
     // The wait before retry n grows geometrically. A server's `retry-after` always wins over this.
     let backoff = ModelRetryBackoffSettings {
         initial_delay: Some(0.1), // seconds; 0.1, 0.2, 0.4 ... up to `max_delay`

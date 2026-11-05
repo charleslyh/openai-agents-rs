@@ -74,6 +74,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 );
             }
+
             // Refusals arrive as an error that names the guard that tripped.
             Err(AgentsError::InputGuardrailTripwire(e)) => {
                 println!(

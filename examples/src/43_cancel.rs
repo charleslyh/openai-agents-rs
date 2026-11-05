@@ -45,6 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     printer.finish()?;
     let deltas = printer.text_deltas;
+
     // A cancelled run is not an error: it ends normally and reports that it was cancelled.
     println!(
         "cancelled={} complete={} (after {deltas} deltas)",

@@ -26,6 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rust = Agent::new("rust_advocate")
         .instructions("You make the strongest honest case for Rust. Be concise.")
         .model(model.clone());
+
     let go = Agent::new("go_advocate")
         .instructions("You make the strongest honest case for Go. Be concise.")
         .model(model.clone());

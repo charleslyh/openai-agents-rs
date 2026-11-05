@@ -114,6 +114,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         RunOptions::new(),
     )
     .await?;
+
     // Delete once resumed, so the same approval cannot be replayed.
     store.delete(KEY).await?;
     println!(

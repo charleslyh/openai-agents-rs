@@ -146,6 +146,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let model = common::model()?;
     let exe = std::env::current_exe()?;
+
     // `McpClient::stdio` runs the server as a child process and talks to it over its pipes.
     // (`McpClient::streamable_http` connects to a remote server instead.)
     let server: Arc<dyn McpServer> =
@@ -164,6 +165,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let input = "What do you know about Paris? Also convert 20 celsius to fahrenheit.";
     let outcome = Runner::run(&agent, input, RunOptions::default()).await;
+
     // Close the connection and stop the child process, whether or not the run succeeded.
     let _ = server.cleanup().await;
     println!("{}", outcome?.final_output_as_str().unwrap_or_default());

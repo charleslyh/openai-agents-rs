@@ -55,6 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .instructions("Use the tools to answer. Be brief.")
             .model(common::model()?)
             .tools(tools);
+
         let input = common::example_input("What is 12.5% of 480, and what time is it in +09:00?");
         let result = Runner::run(&agent, input, RunOptions::new()).await?;
         println!("{}", result.final_output_as_str().unwrap_or_default());
@@ -91,6 +92,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "loopback",
         ),
     ];
+
     // Offline mode: a scripted model plays the LLM. Its first reply asks for all the calls above
     // at once (several tool calls in one turn); its second reply is the final answer.
     let items: Vec<_> = calls
@@ -130,6 +132,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("  {path}: {error}");
         }
     }
+
     // ...and so is the address check behind `web_fetch`.
     println!("\nwhich addresses web_fetch will reach:");
     for ip in ["93.184.216.34", "169.254.169.254", "127.0.0.1", "10.0.0.5"] {

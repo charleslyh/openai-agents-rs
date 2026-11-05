@@ -32,6 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // grows past a limit, older turns are replaced by a model-written summary. The agent code
     // does not change; it just receives a different `Session`.
     let store = InMemorySession::shared("compaction-demo");
+
     // Kept low so the compaction shows up within a few turns.
     let session: Arc<dyn Session> =
         CompactingSession::new(store.clone(), Arc::new(ModelSummarizer::new(model)))

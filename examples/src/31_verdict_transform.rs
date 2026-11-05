@@ -72,6 +72,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "final output: {}",
         result.final_output_as_str().unwrap_or_default()
     );
+
     // What the session stored is redacted too: the input is only saved after the blocking
     // guardrails have run, so there was still something to replace.
     let stored = serde_json::to_string(&session.get_items(None).await?)?;

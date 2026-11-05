@@ -56,6 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 state.reject(&item, false, Some("payment denied"));
             }
         }
+
         // Resume from where it stopped; approved calls now execute.
         result = Runner::run_state(&agent, state, RunOptions::default()).await?;
     }
