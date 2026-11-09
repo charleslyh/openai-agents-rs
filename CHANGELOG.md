@@ -9,6 +9,10 @@ Collects the changes for 0.2.0. Breaking changes are marked **breaking**.
 
 ### Breaking
 
+- **breaking**: in `opai-agents-observability` the `conversation` module is `transcript`, and
+  `ConversationHub`/`Event`/`Recorder`/`Sink`/`QueuedConversationSink` are `TranscriptHub`/`Event`/
+  `Recorder`/`Sink`/`QueuedTranscriptSink`. They record what was said in one run, not a session;
+  see `docs/TERMINOLOGY.md`.
 - **breaking**: `opai-agents-sqlite` is merged into `opai-agents-sessions` behind its `sqlite`
   feature. `opai_agents::SqliteSession` and the facade feature `sqlite` are unchanged; code that
   named `opai_agents_sqlite::SqliteSession` should use `opai_agents_sessions::SqliteSession` with
