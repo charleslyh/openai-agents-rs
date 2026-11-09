@@ -9,6 +9,10 @@ Collects the changes for 0.2.0. Breaking changes are marked **breaking**.
 
 ### Breaking
 
+- **breaking**: `ToolOutputTrimmer::recent_turns`, `ContextWindowTrimmer::max_turns` and
+  `CompactingSession::keep_recent_turns` are `recent_exchanges`, `max_exchanges` and
+  `keep_recent_exchanges`. "Turn" now only means one iteration of the run loop; see
+  `docs/TERMINOLOGY.md`.
 - **breaking**: in `opai-agents-observability` the `conversation` module is `transcript`, and
   `ConversationHub`/`Event`/`Recorder`/`Sink`/`QueuedConversationSink` are `TranscriptHub`/`Event`/
   `Recorder`/`Sink`/`QueuedTranscriptSink`. They record what was said in one run, not a session;
