@@ -464,7 +464,7 @@ async fn compaction_summary_is_a_span_of_the_run_that_triggered_it() {
             Arc::new(ModelSummarizer::new(summary_model)),
         )
         .trigger_items(3)
-        .keep_recent_turns(1),
+        .keep_recent_exchanges(1),
     );
     session
         .add_items(vec![

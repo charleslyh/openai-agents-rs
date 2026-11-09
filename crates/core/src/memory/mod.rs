@@ -38,7 +38,7 @@ impl SessionSettings {
     }
 }
 
-/// Merges stored history with the new turn input (Python: `SessionInputCallback`).
+/// Merges stored history with the input of the current run (Python: `SessionInputCallback`).
 ///
 /// Receives `(history, new_items)` and returns the exact list sent to the model; items of the
 /// result that came from `new_items` are the ones saved to the session afterwards.
@@ -51,10 +51,10 @@ pub type SessionInputCallback = Arc<
         + Sync,
 >;
 
-/// Conversation storage used across runs (Python: `Session` protocol).
+/// Stored history shared across runs (Python: `Session` protocol).
 #[async_trait]
 pub trait Session: Send + Sync {
-    /// Identifier of this conversation.
+    /// Identifier of this session.
     fn session_id(&self) -> &str;
 
     /// Default read settings of this session (Python: `Session.session_settings`).
@@ -65,7 +65,7 @@ pub trait Session: Send + Sync {
     /// Stored items, oldest first. With `limit`, only the latest `limit` items.
     async fn get_items(&self, limit: Option<usize>) -> Result<Vec<Value>, AgentsError>;
 
-    /// Append items to the conversation.
+    /// Append items to the stored history.
     async fn add_items(&self, items: Vec<Value>) -> Result<(), AgentsError>;
 
     /// Remove and return the most recent item.
@@ -74,7 +74,7 @@ pub trait Session: Send + Sync {
     /// Remove every item.
     async fn clear_session(&self) -> Result<(), AgentsError>;
 
-    /// Replace the whole conversation with `items`.
+    /// Replace the whole stored history with `items`.
     ///
     /// Used by context compaction to swap old history for a summary. The default clears and then
     /// appends, so a failure in between loses the history; stores that can do better (the bundled

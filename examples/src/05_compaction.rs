@@ -3,7 +3,7 @@
 //! Web demo checklist: "Context compaction".
 //!
 //! `CompactingSession` wraps a session store. Once the stored history passes a trigger, old
-//! turns are replaced by a model-written summary; the most recent turns stay word for word.
+//! exchanges are replaced by a model-written summary; the most recent exchanges stay word for word.
 //!
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
@@ -29,16 +29,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .model(Arc::clone(&model));
 
     // `CompactingSession` wraps any other session (the `store`) and shrinks it: when the history
-    // grows past a limit, older turns are replaced by a model-written summary. The agent code
+    // grows past a limit, older exchanges are replaced by a model-written summary. The agent code
     // does not change; it just receives a different `Session`.
     let store = InMemorySession::shared("compaction-demo");
 
-    // Kept low so the compaction shows up within a few turns.
+    // Kept low so the compaction shows up within a few runs.
     let session: Arc<dyn Session> =
         CompactingSession::new(store.clone(), Arc::new(ModelSummarizer::new(model)))
             .trigger_items(6)
-            // The newest turn(s) stay verbatim, so the model keeps exact wording where it matters.
-            .keep_recent_turns(1)
+            // The newest exchange(s) stay verbatim, so the model keeps exact wording where it matters.
+            .keep_recent_exchanges(1)
             .shared();
 
     for input in [

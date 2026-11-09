@@ -208,7 +208,7 @@ async fn drive(app: Arc<AppState>, request: RunRequest, emit: Emitter) {
     ));
     let session: Arc<dyn Session> = CompactingSession::new(store, summarizer)
         .trigger_items(COMPACTION_TRIGGER_ITEMS)
-        .keep_recent_turns(2)
+        .keep_recent_exchanges(2)
         .shared();
     let summary_before = conversation.summary().await;
 

@@ -1,13 +1,13 @@
-//! Summarizing compaction of a stored conversation (provider-neutral).
+//! Summarizing compaction of a stored history (provider-neutral).
 //!
 //! [`CompactingSession`] wraps any [`Session`]. After each run is saved, when the stored history
-//! has grown past a trigger, it replaces the oldest turns by a short summary written by a
-//! [`Summarizer`] and keeps the most recent turns word for word. The model only ever sees an
+//! has grown past a trigger, it replaces the oldest exchanges by a short summary written by a
+//! [`Summarizer`] and keeps the most recent exchanges word for word. The model only ever sees an
 //! ordinary user message that starts with `<conversation_summary>`, so any provider can read it.
 //!
 //! Python's counterpart, `OpenAIResponsesCompactionSession`, calls OpenAI's `responses.compact`
 //! endpoint and is not portable; this is a new, provider-neutral feature. It never splits a tool
-//! call from its output (turns are replaced as a whole).
+//! call from its output (exchanges are replaced as a whole).
 
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -18,7 +18,7 @@ use tokio::sync::Mutex as AsyncMutex;
 
 use super::{Session, SessionSettings};
 use crate::context::{
-    default_token_counter, is_summary_item, summary_item, summary_text, Conversation, TokenCounter,
+    default_token_counter, is_summary_item, summary_item, summary_text, SplitHistory, TokenCounter,
 };
 use crate::error::{AgentsError, ModelError};
 use crate::items::extract_message_text;
@@ -38,7 +38,7 @@ pub const DEFAULT_SUMMARIZE_TIMEOUT: Duration = Duration::from_secs(60);
 /// every single run.
 pub const DEFAULT_FAILURE_COOLDOWN: Duration = Duration::from_secs(60);
 
-/// Writes the summary that replaces old turns.
+/// Writes the summary that replaces old exchanges.
 #[async_trait]
 pub trait Summarizer: Send + Sync {
     /// Condense `items` into notes. `previous_summary` holds the notes from an earlier
@@ -234,7 +234,7 @@ impl Summarizer for ModelSummarizer {
     }
 }
 
-/// A [`Session`] that keeps the stored history short by summarizing old turns.
+/// A [`Session`] that keeps the stored history short by summarizing old exchanges.
 ///
 /// ```ignore
 /// let session = CompactingSession::new(
@@ -242,14 +242,14 @@ impl Summarizer for ModelSummarizer {
 ///     Arc::new(ModelSummarizer::new(model)),
 /// )
 /// .trigger_tokens(6_000)
-/// .keep_recent_turns(3)
+/// .keep_recent_exchanges(3)
 /// .shared();
 /// ```
 ///
 /// Compaction runs inside `add_items`, that is when a run finishes. If it fails (for example the
 /// summarizer model is down) a warning is logged and the history stays as it was, so a completed
 /// run is never lost. Writes through one `CompactingSession` are serialized; two sessions over
-/// the same store can still race, so use one per conversation.
+/// the same store can still race, so use one per history.
 ///
 /// A compaction does not count toward `Usage`, because it happens outside the run.
 pub struct CompactingSession {
@@ -257,7 +257,7 @@ pub struct CompactingSession {
     summarizer: Arc<dyn Summarizer>,
     trigger_tokens: Option<usize>,
     trigger_items: Option<usize>,
-    keep_recent_turns: usize,
+    keep_recent_exchanges: usize,
     counter: TokenCounter,
     summarize_timeout: Duration,
     failure_cooldown: Duration,
@@ -272,21 +272,21 @@ impl std::fmt::Debug for CompactingSession {
             .field("session_id", &self.inner.session_id())
             .field("trigger_tokens", &self.trigger_tokens)
             .field("trigger_items", &self.trigger_items)
-            .field("keep_recent_turns", &self.keep_recent_turns)
+            .field("keep_recent_exchanges", &self.keep_recent_exchanges)
             .finish()
     }
 }
 
 impl CompactingSession {
     /// Wrap `inner`. Until a trigger is set, compaction starts above
-    /// [`DEFAULT_TRIGGER_TOKENS`] estimated tokens; the two most recent turns stay verbatim.
+    /// [`DEFAULT_TRIGGER_TOKENS`] estimated tokens; the two most recent exchanges stay verbatim.
     pub fn new(inner: Arc<dyn Session>, summarizer: Arc<dyn Summarizer>) -> Self {
         Self {
             inner,
             summarizer,
             trigger_tokens: None,
             trigger_items: None,
-            keep_recent_turns: 2,
+            keep_recent_exchanges: 2,
             counter: default_token_counter(),
             summarize_timeout: DEFAULT_SUMMARIZE_TIMEOUT,
             failure_cooldown: DEFAULT_FAILURE_COOLDOWN,
@@ -339,9 +339,9 @@ impl CompactingSession {
         self
     }
 
-    /// Number of most recent turns kept word for word (default 2).
-    pub fn keep_recent_turns(mut self, turns: usize) -> Self {
-        self.keep_recent_turns = turns;
+    /// Number of most recent exchanges kept word for word (default 2).
+    pub fn keep_recent_exchanges(mut self, exchanges: usize) -> Self {
+        self.keep_recent_exchanges = exchanges;
         self
     }
 
@@ -365,7 +365,7 @@ impl CompactingSession {
     }
 
     /// Compact now, ignoring the triggers. Returns whether anything was summarized: `false`
-    /// when there are no more turns than `keep_recent_turns`.
+    /// when there are no more exchanges than `keep_recent_exchanges`.
     pub async fn compact(&self) -> Result<bool, AgentsError> {
         let _writes = self.writes.lock().await;
         self.compact_locked(true).await
@@ -390,11 +390,11 @@ impl CompactingSession {
         if !force && !self.should_compact(&items) {
             return Ok(false);
         }
-        let Conversation { pinned, turns } = Conversation::split(&items);
-        if turns.len() <= self.keep_recent_turns {
+        let SplitHistory { pinned, exchanges } = SplitHistory::split(&items);
+        if exchanges.len() <= self.keep_recent_exchanges {
             return Ok(false);
         }
-        let (old, recent) = turns.split_at(turns.len() - self.keep_recent_turns);
+        let (old, recent) = exchanges.split_at(exchanges.len() - self.keep_recent_exchanges);
 
         let earlier: Vec<String> = pinned.iter().filter_map(summary_text).collect();
         let previous = (!earlier.is_empty()).then(|| earlier.join("\n\n"));

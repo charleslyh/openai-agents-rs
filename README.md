@@ -291,12 +291,13 @@ let session = CompactingSession::new(
     Arc::new(ModelSummarizer::new(summary_model)),
 )
 .trigger_tokens(6_000)
-.keep_recent_turns(3)
+.keep_recent_exchanges(3)
 .shared();
 ```
 
 ## Compatibility & deviations
 
+- [`docs/TERMINOLOGY.md`](./docs/TERMINOLOGY.md) — what run, turn, session and exchange mean
 - [`docs/COMPAT.md`](./docs/COMPAT.md) — support matrix
 - [`docs/DEVIATIONS.md`](./docs/DEVIATIONS.md) — intentional differences from Python (must stay current)
 - [`docs/IMPROVEMENT-PLAN.md`](./docs/IMPROVEMENT-PLAN.md) — where the SDK is heading: milestones, design decisions, and the improvement backlog

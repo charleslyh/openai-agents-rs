@@ -121,7 +121,7 @@ proptest! {
             trimmer = trimmer.max_tokens(t);
         }
         if let Some(t) = max_turns {
-            trimmer = trimmer.max_turns(t);
+            trimmer = trimmer.max_exchanges(t);
         }
         let trimmed = trimmer.trim(&items, reserved);
 
@@ -152,7 +152,7 @@ proptest! {
             trimmer = trimmer.max_tokens(t);
         }
         if let Some(t) = max_turns {
-            trimmer = trimmer.max_turns(t);
+            trimmer = trimmer.max_exchanges(t);
         }
         let once = trimmer.trim(&items, 0);
         let twice = trimmer.trim(&once, 0);

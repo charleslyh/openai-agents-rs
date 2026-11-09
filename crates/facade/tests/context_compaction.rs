@@ -69,7 +69,7 @@ async fn session_with(
 ) -> (Arc<InMemorySession>, CompactingSession) {
     let store = InMemorySession::shared("s");
     store.add_items(items).await.unwrap();
-    let session = CompactingSession::new(store.clone(), summarizer).keep_recent_turns(2);
+    let session = CompactingSession::new(store.clone(), summarizer).keep_recent_exchanges(2);
     (store, session)
 }
 
@@ -144,7 +144,8 @@ async fn nothing_happens_without_enough_turns_or_below_the_trigger() {
         ])
         .await
         .unwrap();
-    let session = CompactingSession::new(store.clone(), summarizer.clone()).keep_recent_turns(2);
+    let session =
+        CompactingSession::new(store.clone(), summarizer.clone()).keep_recent_exchanges(2);
     assert!(
         !session.compact().await.unwrap(),
         "only two turns, both kept"
@@ -165,7 +166,7 @@ async fn add_items_compacts_when_a_trigger_fires() {
     let store = InMemorySession::shared("s");
     let session = CompactingSession::new(store.clone(), summarizer.clone())
         .trigger_items(6)
-        .keep_recent_turns(1);
+        .keep_recent_exchanges(1);
     for turn in 1..=4 {
         session
             .add_items(vec![
@@ -191,7 +192,7 @@ async fn add_items_compacts_when_a_trigger_fires() {
     let session = CompactingSession::new(store.clone(), by_tokens.clone())
         .trigger_tokens(5)
         .token_counter(|_| 1)
-        .keep_recent_turns(1);
+        .keep_recent_exchanges(1);
     session
         .add_items(vec![user("a"), assistant("b"), user("c"), assistant("d")])
         .await
@@ -212,7 +213,7 @@ async fn a_failing_summarizer_never_loses_history() {
     let store = InMemorySession::shared("s");
     let session = CompactingSession::new(store.clone(), summarizer.clone())
         .trigger_items(2)
-        .keep_recent_turns(1);
+        .keep_recent_exchanges(1);
     // The run's own write succeeds even though compaction fails behind it.
     session
         .add_items(vec![
@@ -238,7 +239,7 @@ async fn a_failed_compaction_cools_down_instead_of_retrying_every_write() {
     let store = InMemorySession::shared("s");
     let session = CompactingSession::new(store.clone(), summarizer.clone())
         .trigger_items(2)
-        .keep_recent_turns(1);
+        .keep_recent_exchanges(1);
     let turn = |n: usize| vec![user(&format!("t{n}")), assistant(&format!("a{n}"))];
     for n in 0..4 {
         session.add_items(turn(n)).await.expect("add_items");
@@ -266,7 +267,7 @@ async fn a_hanging_summarizer_times_out() {
     let store = InMemorySession::shared("s");
     let session = CompactingSession::new(store.clone(), Arc::new(Hangs))
         .trigger_items(2)
-        .keep_recent_turns(1)
+        .keep_recent_exchanges(1)
         .summarize_timeout(std::time::Duration::from_secs(5));
     session
         .add_items(vec![
@@ -344,7 +345,7 @@ async fn a_long_conversation_stays_short_and_the_model_sees_the_summary() {
     let store = InMemorySession::shared("chat");
     let session = CompactingSession::new(store.clone(), Arc::new(Counting(counter)))
         .trigger_items(5)
-        .keep_recent_turns(1)
+        .keep_recent_exchanges(1)
         .shared();
     for n in 1..=5 {
         let mut options = RunOptions::default();

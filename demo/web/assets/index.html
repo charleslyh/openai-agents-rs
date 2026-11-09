@@ -392,7 +392,7 @@ const clock = () => new Date().toLocaleTimeString([], {hour12:false});
 const CAPS = [
   {g:"Conversation and memory", items:[
     {id:"streaming", name:"Streaming output", note:"tokens arrive one by one", prompt:"Tell me three short facts about Tokyo in one paragraph."},
-    {id:"memory", name:"Multi-turn memory", note:"the agent remembers earlier turns", prompt:"My favourite colour is teal. Remember that."},
+    {id:"memory", name:"Memory across runs", note:"the agent remembers earlier runs", prompt:"My favourite colour is teal. Remember that."},
     {id:"compaction", name:"Context compaction", note:"old turns become a summary", prompt:"Keep answering in one sentence. Then tell me what we discussed."},
   ]},
   {g:"Tools", items:[

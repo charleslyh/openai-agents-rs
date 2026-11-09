@@ -1,6 +1,6 @@
-//! One chat turn against a session, shared by the session examples.
+//! One run against a session, shared by the session examples.
 //!
-//! The examples differ in *which* session they use and *how many*; the turn itself (build an
+//! The examples differ in *which* session they use and *how many*; the run itself (build an
 //! agent, run it with the session, print the exchange) is the same, so it lives here.
 
 use std::sync::Arc;
@@ -8,8 +8,8 @@ use std::sync::Arc;
 use opai_agents::{Agent, RunOptions, Runner, Session};
 use serde_json::Value;
 
-/// A fresh agent. Nothing about it is stored: the conversation lives in the session, so a new
-/// agent given the same session continues the same conversation.
+/// A fresh agent. Nothing about it is stored: the history lives in the session, so a new
+/// agent given the same session continues the same session.
 pub fn agent() -> Result<Agent, Box<dyn std::error::Error>> {
     Ok(Agent::new("Assistant")
         .instructions("Answer in one short sentence, using the conversation so far.")
@@ -18,7 +18,7 @@ pub fn agent() -> Result<Agent, Box<dyn std::error::Error>> {
 
 /// Send `question` through a new agent that uses `session`, and print both sides.
 ///
-/// The session supplies the earlier turns as model input and receives this turn when the run ends.
+/// The session supplies the earlier items as model input and receives this run's items when the run ends.
 pub async fn ask(
     session: &Arc<dyn Session>,
     label: &str,
@@ -40,7 +40,7 @@ pub async fn ask(
 
 /// Print what a session holds: one line per stored item.
 ///
-/// Reading the history back is how to see that a conversation was restored even when the model
+/// Reading the history back is how to see that a session was restored even when the model
 /// is the offline one and its replies say nothing about memory.
 pub async fn show_history(
     session: &Arc<dyn Session>,

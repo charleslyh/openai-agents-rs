@@ -1,8 +1,8 @@
-//! Multi-turn memory
+//! Memory across runs
 //!
-//! Web demo checklist: "Multi-turn memory".
+//! Web demo checklist: "Memory across runs".
 //!
-//! One `Session` carries the history between runs, so the agent remembers earlier turns.
+//! One `Session` carries the history between runs, so the agent remembers earlier runs.
 //!
 //! Requires: `OPENAI_API_KEY`, `OPENAI_MODEL`. Optional: `OPENAI_BASE_URL`.
 //!
@@ -22,7 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .instructions("Answer in one short sentence.")
         .model(common::model()?);
 
-    // A session stores the conversation. This one lives in memory, so it is gone when the program
+    // A session stores the history. This one lives in memory, so it is gone when the program
     // exits. The agent itself stays stateless.
     let session: Arc<dyn Session> = InMemorySession::shared("memory-demo");
 
@@ -30,8 +30,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "My favourite colour is teal. Remember that.",
         "What is my favourite colour?",
     ] {
-        // Passing the same session to each run is all it takes: the run loads the earlier turns
-        // into the model input and appends this turn when it finishes.
+        // Passing the same session to each run is all it takes: the run loads the earlier history
+        // into the model input and appends this run's items when it finishes.
         let options = RunOptions::new().session(Arc::clone(&session));
         let result = Runner::run(&agent, input, options).await?;
         println!("user> {input}");

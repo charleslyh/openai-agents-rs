@@ -23,9 +23,9 @@ mcp = ["dep:opai-agents-mcp"]
 # capability matrix and the offline model. Off by default; it brings the OpenAI adapters with it,
 # because every preset speaks Chat Completions or Responses.
 providers = ["dep:opai-agents-providers"]
-# `SqliteSession`: file or in-memory conversation storage, same schema as the Python SDK.
+# `SqliteSession`: file or in-memory session storage, same schema as the Python SDK.
 sqlite = ["dep:opai-agents-sessions", "opai-agents-sessions/sqlite"]
-# `FileSession` (a conversation in a JSONL file) and `FileRunStateStore` (a run that paused for an
+# `FileSession` (a session in a JSONL file) and `FileRunStateStore` (a run that paused for an
 # approval). Off by default: nothing in the core loop needs a file.
 sessions = ["dep:opai-agents-sessions"]
 # `RedisSession` / `RedisRunStateStore`: a history more than one process shares.

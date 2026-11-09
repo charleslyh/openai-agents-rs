@@ -1,17 +1,17 @@
-//! A conversation that survives being closed (Rust-only)
+//! A session that survives being closed (Rust-only)
 //!
-//! A `Session` is where a conversation lives. The agent keeps nothing: every run loads the stored
-//! history into the model input and appends the new turn when it ends. So a conversation can be
+//! A `Session` is where history lives. The agent keeps nothing: every run loads the stored
+//! history into the model input and appends its own items when it ends. So a session can be
 //! stopped and picked up again by building a *new* session handle on the same storage, and a *new*
 //! agent, which is also what a restart of your service looks like.
 //!
-//! The example walks through the whole life of one conversation:
+//! The example walks through the whole life of one session:
 //!
 //! 1. **Create** a session on a backend and an agent that uses it.
-//! 2. **Talk**: two turns, the second relying on the first.
+//! 2. **Talk**: two runs, the second relying on the first.
 //! 3. **Terminate**: drop the session handle and the agent. Only the storage is left.
 //! 4. **Reopen**: a new handle on the same storage. The stored history is printed, then a question
-//!    that only the earlier turns can answer; a real model replies with the name and the colour.
+//!    that only the earlier runs can answer; a real model replies with the name and the colour.
 //!
 //! The backend is the one function `open` below, picked with `SESSION_BACKEND`:
 //!
@@ -20,14 +20,14 @@
 //! * `sqlite`: rows in a SQLite database at `DB_PATH` (default `/tmp/agents-sessions.db`).
 //!   `SqliteSession`.
 //! * `memory`: `InMemorySession`, which lives and dies with the process. Reopening gives an empty
-//!   conversation, and the example shows exactly that, as the contrast with the other two.
+//!   history, and the example shows exactly that, as the contrast with the other two.
 //!
 //! `RedisSession` and `PostgresSession` (facade features `redis` and `postgres`) implement the same
 //! trait, so they replace `open` and nothing else. They need a server, so this example does not
 //! run them.
 //!
 //! `KEEP=1` skips the reset at the start, so running the binary again continues the stored
-//! conversation across real process restarts.
+//! session across real process restarts.
 //!
 //! ```bash
 //! cargo run -p opai-agents-examples --example session_resume
@@ -77,31 +77,34 @@ fn open(backend: &str) -> Result<Arc<dyn Session>, Box<dyn std::error::Error>> {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let backend = std::env::var("SESSION_BACKEND").unwrap_or_else(|_| "file".into());
 
-    // ---- 1 and 2. Create the session and talk. ----
+    // Create the session and give something to agent to remember.
     {
         let session = open(&backend)?;
         if std::env::var_os("KEEP").is_none() {
             session.clear_session().await?;
         }
-        println!("\n== conversation");
-        common::chat::ask(&session, "turn 1", "My name is Mina. Remember that.").await?;
-        common::chat::ask(&session, "turn 2", "My favourite colour is teal.").await?;
+        println!("\n== session");
+        common::chat::ask(&session, "run 1", "My name is Mina. Remember that.").await?;
+        common::chat::ask(&session, "run 2", "My favourite colour is teal.").await?;
         common::chat::show_history(&session, "stored").await?;
 
-        // ---- 3. Terminate. ----
         println!("\n== terminate: session handle and agent dropped");
     }
 
-    // ---- 4. Reopen: new handle, new agent, same storage. ----
+    // Reopen the same session by creating a new handle on the same storage.
     println!("\n== reopen");
     let session = open(&backend)?;
     common::chat::show_history(&session, "restored").await?;
+
+    // Ask a question that only the earlier runs can answer.
     common::chat::ask(
         &session,
-        "turn 3",
+        "run 3",
         "What is my name and my favourite colour?",
     )
     .await?;
+
     common::chat::show_history(&session, "after").await?;
+
     Ok(())
 }

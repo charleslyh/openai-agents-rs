@@ -1,6 +1,6 @@
-//! One database, many conversations (Rust-only)
+//! One database, many sessions (Rust-only)
 //!
-//! A service rarely has one conversation: it has one per user, per ticket, per chat window.
+//! A service rarely has one session: it has one per user, per ticket, per chat window.
 //! A `Session` is addressed by an id, and a backend can host any number of ids side by side.
 //! `SqliteSession` does it in one database file: every session shares the file and its tables, and
 //! the id keeps their histories apart. (`RedisSession` and `PostgresSession` work the same way:
@@ -10,10 +10,10 @@
 //!
 //! 1. **One handle per id.** `session_for(user)` is all a request handler needs: open the id,
 //!    run, let go.
-//! 2. **No crosstalk.** The turns of the three users are interleaved, yet each session ends up
+//! 2. **No crosstalk.** The runs of the three users are interleaved, yet each session ends up
 //!    holding only its own messages (printed from the stored history, so it shows even offline).
-//! 3. **Independent lifecycle.** Clearing one conversation leaves the others untouched.
-//! 4. **Reopen from the file.** The surviving conversations continue from their own history; a
+//! 3. **Independent lifecycle.** Clearing one session leaves the others untouched.
+//! 4. **Reopen from the file.** The surviving sessions continue from their own history; a
 //!    real model answers each user from what that user said.
 //!
 //! `DB_PATH` chooses the file (default `/tmp/agents-multi-session.db`).
@@ -31,7 +31,7 @@ use std::sync::Arc;
 
 use opai_agents::{Session, SqliteSession};
 
-/// What a request handler does per user: open that user's conversation in the shared database.
+/// What a request handler does per user: open that user's session in the shared database.
 fn session_for(path: &str, user: &str) -> Result<Arc<dyn Session>, Box<dyn std::error::Error>> {
     Ok(SqliteSession::open(user, path)?.shared())
 }
@@ -46,8 +46,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         session_for(&path, user)?.clear_session().await?;
     }
 
-    // ---- 1 and 2. Interleaved turns: each user, then each user again. ----
-    println!("\n== interleaved conversations");
+    // ---- 1 and 2. Interleaved runs: each user, then each user again. ----
+    println!("\n== interleaved sessions");
     for (user, colour) in users {
         let session = session_for(&path, user)?;
         let message = format!("I am {user}. My favourite colour is {colour}.");
@@ -64,14 +64,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // ---- 3. Independent lifecycle. ----
-    println!("\n== clear bob's conversation; the others are untouched");
+    println!("\n== clear bob's session; the others are untouched");
     session_for(&path, "bob")?.clear_session().await?;
     for (user, _) in users {
         let items = session_for(&path, user)?.get_items(None).await?.len();
         println!("[{user}] {items} stored items");
     }
 
-    // ---- 4. Reopen from the file: the surviving conversations continue. ----
+    // ---- 4. Reopen from the file: the surviving sessions continue. ----
     println!("\n== reopen alice and carol from the file");
     for user in ["alice", "carol"] {
         let session = session_for(&path, user)?;

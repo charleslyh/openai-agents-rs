@@ -4,11 +4,11 @@
 //! the model. This module offers two kinds of tools, neither of which depends on a provider:
 //!
 //! * **Trimming** rewrites the input of *one model call* and leaves the stored history alone.
-//!   [`ToolOutputTrimmer`] shortens bulky tool outputs of older turns (a port of Python's
-//!   `ToolOutputTrimmer`); [`ContextWindowTrimmer`] drops the oldest turns to fit a token or turn
-//!   budget. Both turn into a [`CallModelInputFilter`] for `RunConfig.call_model_input_filter`, and
+//!   [`ToolOutputTrimmer`] shortens bulky tool outputs of older exchanges (a port of Python's
+//!   `ToolOutputTrimmer`); [`ContextWindowTrimmer`] drops the oldest exchanges to fit a token or exchange
+//!   budget. Both become a [`CallModelInputFilter`] for `RunConfig.call_model_input_filter`, and
 //!   [`chain_input_filters`] runs several in order.
-//! * **Compaction** rewrites the *stored* history by summarizing old turns; see
+//! * **Compaction** rewrites the *stored* history by summarizing old exchanges; see
 //!   [`crate::memory::CompactingSession`].
 //!
 //! Python only ships the first tool (and `responses.compact`, which needs OpenAI), so everything
@@ -89,55 +89,55 @@ pub(crate) fn summary_text(item: &Value) -> Option<String> {
     )
 }
 
-/// System / developer messages and the summary stay in front of the conversation whatever happens.
+/// System / developer messages and the summary stay in front of the history whatever happens.
 fn is_pinned(item: &Value) -> bool {
     matches!(role_of(item), Some("system" | "developer")) || is_summary_item(item)
 }
 
-fn starts_turn(item: &Value) -> bool {
+fn starts_exchange(item: &Value) -> bool {
     role_of(item) == Some("user") && !is_summary_item(item)
 }
 
-/// History split into the items that always stay and the turns that can be dropped or summarized.
+/// History split into the items that always stay and the exchanges that can be dropped or summarized.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct Conversation {
+pub(crate) struct SplitHistory {
     /// System / developer messages and summaries, in order.
     pub pinned: Vec<Value>,
-    /// Turns, oldest first. A turn begins at a user message and holds everything up to the next
+    /// Exchanges, oldest first. An exchange begins at a user message and holds everything up to the next
     /// one, so a tool call and its output are never separated.
-    pub turns: Vec<Vec<Value>>,
+    pub exchanges: Vec<Vec<Value>>,
 }
 
-impl Conversation {
+impl SplitHistory {
     pub(crate) fn split(items: &[Value]) -> Self {
-        let mut conversation = Conversation::default();
+        let mut history = SplitHistory::default();
         for item in items {
             if is_pinned(item) {
-                conversation.pinned.push(item.clone());
-            } else if starts_turn(item) || conversation.turns.is_empty() {
-                conversation.turns.push(vec![item.clone()]);
-            } else if let Some(turn) = conversation.turns.last_mut() {
-                turn.push(item.clone());
+                history.pinned.push(item.clone());
+            } else if starts_exchange(item) || history.exchanges.is_empty() {
+                history.exchanges.push(vec![item.clone()]);
+            } else if let Some(exchange) = history.exchanges.last_mut() {
+                exchange.push(item.clone());
             }
         }
-        conversation
+        history
     }
 }
 
 // ---------------------------------------------------------------------------------------------
 // Tool output trimming
 
-/// Shortens large tool outputs of older turns (Python: `ToolOutputTrimmer`).
+/// Shortens large tool outputs of older exchanges (Python: `ToolOutputTrimmer`).
 ///
-/// The last `recent_turns` user messages and everything after them are never touched. In older
-/// turns, a `function_call_output` longer than `max_output_chars` is replaced by a preview of its
+/// The last `recent_exchanges` user messages and everything after them are never touched. In older
+/// exchanges, a `function_call_output` longer than `max_output_chars` is replaced by a preview of its
 /// first `preview_chars` characters. Items are copied, never mutated.
 ///
 /// Not ported: Python also shrinks structured (multi-part) outputs and `tool_search_output`
 /// items; those exist only in OpenAI-hosted flows, so such outputs are left as they are.
 #[derive(Debug, Clone)]
 pub struct ToolOutputTrimmer {
-    recent_turns: usize,
+    recent_exchanges: usize,
     max_output_chars: usize,
     preview_chars: usize,
     trimmable_tools: Option<HashSet<String>>,
@@ -146,7 +146,7 @@ pub struct ToolOutputTrimmer {
 impl Default for ToolOutputTrimmer {
     fn default() -> Self {
         Self {
-            recent_turns: 2,
+            recent_exchanges: 2,
             max_output_chars: 500,
             preview_chars: 200,
             trimmable_tools: None,
@@ -155,14 +155,14 @@ impl Default for ToolOutputTrimmer {
 }
 
 impl ToolOutputTrimmer {
-    /// Defaults: 2 recent turns, 500 character limit, 200 character preview, every tool.
+    /// Defaults: 2 recent exchanges, 500 character limit, 200 character preview, every tool.
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Number of recent user messages (with what follows them) that stay intact. At least 1.
-    pub fn recent_turns(mut self, turns: usize) -> Self {
-        self.recent_turns = turns;
+    pub fn recent_exchanges(mut self, exchanges: usize) -> Self {
+        self.recent_exchanges = exchanges;
         self
     }
 
@@ -190,8 +190,8 @@ impl ToolOutputTrimmer {
 
     /// Check the settings (Python raises `ValueError` from `__post_init__`).
     pub fn validate(&self) -> Result<(), AgentsError> {
-        if self.recent_turns < 1 {
-            return Err(UserError::new("recent_turns must be >= 1").into());
+        if self.recent_exchanges < 1 {
+            return Err(UserError::new("recent_exchanges must be >= 1").into());
         }
         if self.max_output_chars < 1 {
             return Err(UserError::new("max_output_chars must be >= 1").into());
@@ -199,14 +199,14 @@ impl ToolOutputTrimmer {
         Ok(())
     }
 
-    /// Index of the `recent_turns`-th user message from the end; items before it are old.
+    /// Index of the `recent_exchanges`-th user message from the end; items before it are old.
     /// 0 when there are fewer user messages than that, meaning nothing is old.
     fn recent_boundary(&self, items: &[Value]) -> usize {
         let mut seen = 0;
         for (index, item) in items.iter().enumerate().rev() {
             if role_of(item) == Some("user") {
                 seen += 1;
-                if seen >= self.recent_turns {
+                if seen >= self.recent_exchanges {
                     return index;
                 }
             }
@@ -287,17 +287,17 @@ impl ToolOutputTrimmer {
 // ---------------------------------------------------------------------------------------------
 // Context window trimming
 
-/// Drops the oldest turns so the input fits a budget.
+/// Drops the oldest exchanges so the input fits a budget.
 ///
-/// Whole turns are dropped, oldest first, so a tool call is never separated from its output. Always
-/// kept: system and developer messages, a conversation summary, and the latest turn (even when it
+/// Whole exchanges are dropped, oldest first, so a tool call is never separated from its output. Always
+/// kept: system and developer messages, a history summary, and the latest exchange (even when it
 /// alone exceeds the budget; shorten tool outputs with [`ToolOutputTrimmer`] first for that case).
-/// Nothing tells the model that turns were dropped, so combine with a
+/// Nothing tells the model that exchanges were dropped, so combine with a
 /// [`crate::memory::CompactingSession`] when earlier context matters.
 #[derive(Clone)]
 pub struct ContextWindowTrimmer {
     max_tokens: Option<usize>,
-    max_turns: Option<usize>,
+    max_exchanges: Option<usize>,
     counter: TokenCounter,
 }
 
@@ -305,7 +305,7 @@ impl std::fmt::Debug for ContextWindowTrimmer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ContextWindowTrimmer")
             .field("max_tokens", &self.max_tokens)
-            .field("max_turns", &self.max_turns)
+            .field("max_exchanges", &self.max_exchanges)
             .finish()
     }
 }
@@ -314,7 +314,7 @@ impl Default for ContextWindowTrimmer {
     fn default() -> Self {
         Self {
             max_tokens: None,
-            max_turns: None,
+            max_exchanges: None,
             counter: default_token_counter(),
         }
     }
@@ -322,7 +322,7 @@ impl Default for ContextWindowTrimmer {
 
 impl ContextWindowTrimmer {
     /// A trimmer without limits; add [`max_tokens`](Self::max_tokens) and/or
-    /// [`max_turns`](Self::max_turns).
+    /// [`max_exchanges`](Self::max_exchanges).
     pub fn new() -> Self {
         Self::default()
     }
@@ -333,9 +333,9 @@ impl ContextWindowTrimmer {
         self
     }
 
-    /// Keep at most this many turns (at least 1).
-    pub fn max_turns(mut self, turns: usize) -> Self {
-        self.max_turns = Some(turns.max(1));
+    /// Keep at most this many exchanges (at least 1).
+    pub fn max_exchanges(mut self, exchanges: usize) -> Self {
+        self.max_exchanges = Some(exchanges.max(1));
         self
     }
 
@@ -350,13 +350,18 @@ impl ContextWindowTrimmer {
 
     /// Trim `items`; `reserved_tokens` is what instructions and tool schemas already use.
     pub fn trim(&self, items: &[Value], reserved_tokens: usize) -> Vec<Value> {
-        let conversation = Conversation::split(items);
-        let Some((latest, earlier)) = conversation.turns.split_last() else {
+        let history = SplitHistory::split(items);
+        let Some((latest, earlier)) = history.exchanges.split_last() else {
             return items.to_vec();
         };
-        let count = |turn: &[Value]| turn.iter().map(|item| (self.counter)(item)).sum::<usize>();
+        let count = |exchange: &[Value]| {
+            exchange
+                .iter()
+                .map(|item| (self.counter)(item))
+                .sum::<usize>()
+        };
         let mut used = reserved_tokens
-            + conversation
+            + history
                 .pinned
                 .iter()
                 .map(|item| (self.counter)(item))
@@ -364,19 +369,19 @@ impl ContextWindowTrimmer {
             + count(latest);
         let mut kept = 1;
         let mut first_kept = earlier.len();
-        for (index, turn) in earlier.iter().enumerate().rev() {
-            let cost = count(turn);
+        for (index, exchange) in earlier.iter().enumerate().rev() {
+            let cost = count(exchange);
             let fits_tokens = self.max_tokens.is_none_or(|max| used + cost <= max);
-            let fits_turns = self.max_turns.is_none_or(|max| kept < max);
-            if !(fits_tokens && fits_turns) {
+            let fits_exchanges = self.max_exchanges.is_none_or(|max| kept < max);
+            if !(fits_tokens && fits_exchanges) {
                 break;
             }
             used += cost;
-            // One turn per admitted index, walking backwards from the end.
+            // One exchange per admitted index, walking backwards from the end.
             kept = 1 + (earlier.len() - index);
             first_kept = index;
         }
-        let mut result = conversation.pinned.clone();
+        let mut result = history.pinned.clone();
         result.extend(earlier[first_kept..].iter().flatten().cloned());
         result.extend(latest.iter().cloned());
         result

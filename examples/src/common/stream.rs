@@ -20,7 +20,7 @@ enum Section {
 /// Prints a stream of events and counts what went by.
 pub struct Printer {
     section: Section,
-    /// Whether the current turn's answer arrived as deltas (so it is not printed again whole).
+    /// Whether the current model call's answer arrived as deltas (so it is not printed again whole).
     streamed_text: bool,
     /// Whether tool calls and agent changes get a line of their own.
     show_steps: bool,
@@ -111,7 +111,7 @@ impl Printer {
                         );
                     }
                 }
-                // A later turn can still stream.
+                // A later model call can still stream.
                 self.streamed_text = false;
             }
             _ => {}

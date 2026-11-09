@@ -53,10 +53,10 @@ fn sample_conversation() -> Vec<Value> {
 }
 
 #[test]
-fn tool_output_trimmer_keeps_recent_turns_and_shrinks_old_outputs() {
+fn tool_output_trimmer_keeps_recent_exchanges_and_shrinks_old_outputs() {
     let items = sample_conversation();
     let trimmed = ToolOutputTrimmer::new()
-        .recent_turns(2)
+        .recent_exchanges(2)
         .max_output_chars(100)
         .preview_chars(40)
         .trim(&items);
@@ -85,15 +85,18 @@ fn tool_output_trimmer_respects_trimmable_tools_and_validates() {
         .unwrap()
         .starts_with("[Trimmed: calc output"));
 
-    assert!(ToolOutputTrimmer::new().recent_turns(0).validate().is_err());
+    assert!(ToolOutputTrimmer::new()
+        .recent_exchanges(0)
+        .validate()
+        .is_err());
     assert!(ToolOutputTrimmer::new()
         .max_output_chars(0)
         .validate()
         .is_err());
-    // Fewer user messages than `recent_turns`: nothing is old.
+    // Fewer user messages than `recent_exchanges`: nothing is old.
     assert_eq!(
         ToolOutputTrimmer::new()
-            .recent_turns(9)
+            .recent_exchanges(9)
             .max_output_chars(1)
             .trim(&items),
         items
@@ -127,7 +130,7 @@ fn tool_output_trimmer_matches_python() {
         (
             json!({"recent_turns": 2, "max_output_chars": 100, "preview_chars": 40}),
             ToolOutputTrimmer::new()
-                .recent_turns(2)
+                .recent_exchanges(2)
                 .max_output_chars(100)
                 .preview_chars(40),
         ),
@@ -135,7 +138,7 @@ fn tool_output_trimmer_matches_python() {
             json!({"recent_turns": 1, "max_output_chars": 50, "preview_chars": 10,
                    "trimmable_tools": ["search"]}),
             ToolOutputTrimmer::new()
-                .recent_turns(1)
+                .recent_exchanges(1)
                 .max_output_chars(50)
                 .preview_chars(10)
                 .trimmable_tools(["search"]),
@@ -143,7 +146,7 @@ fn tool_output_trimmer_matches_python() {
         (
             json!({"recent_turns": 3, "max_output_chars": 100, "preview_chars": 200}),
             ToolOutputTrimmer::new()
-                .recent_turns(3)
+                .recent_exchanges(3)
                 .max_output_chars(100)
                 .preview_chars(200),
         ),
@@ -201,10 +204,10 @@ fn window_trimmer_drops_oldest_turns_whole() {
         assistant("a3"),
     ];
     // Turn limit: the system message plus the latest two turns.
-    let by_turns = ContextWindowTrimmer::new().max_turns(2).trim(&items, 0);
-    assert_eq!(user_texts(&by_turns), ["t2", "t3"]);
-    assert_eq!(by_turns[0]["role"], "system");
-    assert_eq!(by_turns.len(), items.len() - 4, "turn 1 left as a unit");
+    let by_exchanges = ContextWindowTrimmer::new().max_exchanges(2).trim(&items, 0);
+    assert_eq!(user_texts(&by_exchanges), ["t2", "t3"]);
+    assert_eq!(by_exchanges[0]["role"], "system");
+    assert_eq!(by_exchanges.len(), items.len() - 4, "turn 1 left as a unit");
 
     // One token per item: pinned (1) + latest turn (4) leaves room for the 2-item turn only.
     let by_tokens = ContextWindowTrimmer::new()
@@ -228,7 +231,7 @@ fn window_trimmer_drops_oldest_turns_whole() {
     // No limits, no change.
     assert_eq!(ContextWindowTrimmer::new().trim(&items, 0), items);
     assert!(ContextWindowTrimmer::new()
-        .max_turns(1)
+        .max_exchanges(1)
         .trim(&[], 0)
         .is_empty());
 }
@@ -249,10 +252,10 @@ async fn filters_apply_to_the_model_call_only_and_chain() {
             )]);
     let filter = chain_input_filters(vec![
         ToolOutputTrimmer::new()
-            .recent_turns(1)
+            .recent_exchanges(1)
             .max_output_chars(10)
             .into_filter(),
-        ContextWindowTrimmer::new().max_turns(1).into_filter(),
+        ContextWindowTrimmer::new().max_exchanges(1).into_filter(),
     ]);
     let mut options = RunOptions::default();
     options.run_config.model.input_filter = Some(filter);

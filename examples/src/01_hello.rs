@@ -15,7 +15,7 @@ use opai_agents::prelude::*;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // An `Agent` is configuration only: a name, instructions (the system prompt) and a model.
-    // It holds no conversation state, so one agent can serve any number of runs.
+    // It holds no session state, so one agent can serve any number of runs.
     let agent = Agent::new("Assistant")
         .instructions("You only respond in haikus.")
         .model(common::model()?);

@@ -274,7 +274,7 @@ async fn compacting_session_over_sqlite_persists_the_summary() {
         Arc::new(SqliteSession::open("c", &db.0).unwrap()),
         Arc::new(Fixed),
     )
-    .keep_recent_turns(1);
+    .keep_recent_exchanges(1);
     session
         .add_items(vec![
             msg("user", "t1"),
