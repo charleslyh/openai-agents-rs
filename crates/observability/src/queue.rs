@@ -1,6 +1,6 @@
 //! A bounded queue with a writer thread of its own (Rust-only, X-018).
 //!
-//! Trace export and conversation export both run from inside the run loop, so both need the same
+//! Trace export and transcript export both run from inside the run loop, so both need the same
 //! thing: hand the item over without waiting, write it elsewhere, and count what was lost. This is
 //! that, once.
 //!

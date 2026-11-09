@@ -6,7 +6,7 @@ use std::net::TcpStream;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use opai_agents::observability::{ConsoleLink, ConversationHub, LinkConfig};
+use opai_agents::observability::{ConsoleLink, LinkConfig, TranscriptHub};
 use opai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
 use opai_agents::tracing::set_trace_processors;
 use opai_agents::{Agent, FunctionTool, RunOptions, Runner};
@@ -104,7 +104,7 @@ fn lookup_tool() -> FunctionTool {
 #[tokio::test]
 async fn a_real_run_arrives_as_one_run_with_its_spans_and_conversation() {
     let console = start(Some("s3cret")).await;
-    let hub = ConversationHub::new();
+    let hub = TranscriptHub::new();
     let link = ConsoleLink::start(
         LinkConfig::new(console.addr.clone()).token(Some("s3cret".into())),
         &hub,

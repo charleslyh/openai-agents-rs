@@ -1,30 +1,30 @@
 //! What was said in a run: prompts, replies, tool arguments and results (Rust-only, X-018).
 //!
 //! Spans say *what happened and how long it took*; they never hold a request body, a tool argument
-//! or a model output (see [`crate::export`]). A console that shows a conversation needs exactly
+//! or a model output (see [`crate::export`]). A console that shows what was said needs exactly
 //! those, so they travel on a channel of their own, and only when the application asks for it.
 //!
-//! * [`ConversationHub`] is the attachment point. Anything that wants the content calls
-//!   [`ConversationHub::attach`] with a [`ConversationSink`] — a closure is enough — and receives
-//!   every [`ConversationEvent`] of every run that records into the hub.
-//! * [`ConversationRecorder`] is a [`RunHooks`] for one run. It turns the hook callbacks
+//! * [`TranscriptHub`] is the attachment point. Anything that wants the content calls
+//!   [`TranscriptHub::attach`] with a [`TranscriptSink`] — a closure is enough — and receives
+//!   every [`TranscriptEvent`] of every run that records into the hub.
+//! * [`TranscriptRecorder`] is a [`RunHooks`] for one run. It turns the hook callbacks
 //!   (`on_llm_start`, `on_tool_end`, ...) into events and gives them to the hub.
 //!
 //! A sink is called from inside the run loop, so it must not block. For anything slower than a
-//! memory write — a socket, a file — wrap the writer in a [`QueuedConversationSink`], which hands
+//! memory write — a socket, a file — wrap the writer in a [`QueuedTranscriptSink`], which hands
 //! events to a thread of its own and drops them, counted, rather than make the run wait.
 //!
 //! Content is bounded before it leaves the hook: every string is clipped to
 //! [`Limits::max_chars`], and an event that is still larger than [`Limits::max_event_bytes`] is
-//! replaced by a marker. [`ConversationHub::metadata_only`] drops the content altogether and keeps
+//! replaced by a marker. [`TranscriptHub::metadata_only`] drops the content altogether and keeps
 //! names, ids and counts, for runs whose text must not be recorded.
 //!
 //! ```rust
 //! use std::sync::Arc;
-//! use opai_agents_observability::conversation::{ConversationEvent, ConversationHub};
+//! use opai_agents_observability::transcript::{TranscriptEvent, TranscriptHub};
 //!
-//! let hub = ConversationHub::new();
-//! hub.attach(Arc::new(|event: &ConversationEvent| println!("{}", event.to_json())));
+//! let hub = TranscriptHub::new();
+//! hub.attach(Arc::new(|event: &TranscriptEvent| println!("{}", event.to_json())));
 //! // Per run: `RunOptions::new().hooks(hub.recorder("run-1"))`.
 //! let hooks = hub.recorder("run-1");
 //! # let _ = hooks;
@@ -43,7 +43,7 @@ use super::queue::Queue;
 
 /// One thing said or done in a run, with its content.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ConversationEvent {
+pub struct TranscriptEvent {
     /// The run this belongs to; the console groups by it.
     pub run_id: String,
     /// What happened: `agent_start`, `agent_end`, `llm_start`, `llm_end`, `tool_start`,
@@ -59,7 +59,7 @@ pub struct ConversationEvent {
     pub data: Value,
 }
 
-impl ConversationEvent {
+impl TranscriptEvent {
     /// The JSON the console takes in.
     pub fn to_json(&self) -> Value {
         json!({
@@ -76,16 +76,16 @@ impl ConversationEvent {
 /// Receives the events of every run that records into a hub.
 ///
 /// Called from inside the run loop: keep it quick, and never block.
-pub trait ConversationSink: Send + Sync {
+pub trait TranscriptSink: Send + Sync {
     /// One event, in the order it happened within its run.
-    fn emit(&self, event: &ConversationEvent);
+    fn emit(&self, event: &TranscriptEvent);
 }
 
-impl<F> ConversationSink for F
+impl<F> TranscriptSink for F
 where
-    F: Fn(&ConversationEvent) + Send + Sync,
+    F: Fn(&TranscriptEvent) + Send + Sync,
 {
-    fn emit(&self, event: &ConversationEvent) {
+    fn emit(&self, event: &TranscriptEvent) {
         self(event)
     }
 }
@@ -110,15 +110,15 @@ impl Default for Limits {
 
 /// Where the events of a process go. Cheap to clone; clones share their sinks.
 #[derive(Clone)]
-pub struct ConversationHub {
-    sinks: Arc<Mutex<Vec<Arc<dyn ConversationSink>>>>,
+pub struct TranscriptHub {
+    sinks: Arc<Mutex<Vec<Arc<dyn TranscriptSink>>>>,
     content: bool,
     limits: Limits,
 }
 
-impl std::fmt::Debug for ConversationHub {
+impl std::fmt::Debug for TranscriptHub {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ConversationHub")
+        f.debug_struct("TranscriptHub")
             .field("sinks", &self.sink_count())
             .field("content", &self.content)
             .field("limits", &self.limits)
@@ -126,13 +126,13 @@ impl std::fmt::Debug for ConversationHub {
     }
 }
 
-impl Default for ConversationHub {
+impl Default for TranscriptHub {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl ConversationHub {
+impl TranscriptHub {
     /// A hub with no sinks, recording content within the default [`Limits`].
     pub fn new() -> Self {
         Self {
@@ -157,7 +157,7 @@ impl ConversationHub {
     }
 
     /// Start receiving events. Sinks attached to a hub are shared by its clones and recorders.
-    pub fn attach(&self, sink: Arc<dyn ConversationSink>) {
+    pub fn attach(&self, sink: Arc<dyn TranscriptSink>) {
         self.lock().push(sink);
     }
 
@@ -167,14 +167,14 @@ impl ConversationHub {
     }
 
     /// The hooks for one run. Pass them as `RunOptions::hooks`.
-    pub fn recorder(&self, run_id: impl Into<String>) -> Arc<ConversationRecorder> {
-        Arc::new(ConversationRecorder {
+    pub fn recorder(&self, run_id: impl Into<String>) -> Arc<TranscriptRecorder> {
+        Arc::new(TranscriptRecorder {
             run_id: run_id.into(),
             hub: self.clone(),
         })
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, Vec<Arc<dyn ConversationSink>>> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, Vec<Arc<dyn TranscriptSink>>> {
         self.sinks
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -186,7 +186,7 @@ impl ConversationHub {
         if sinks.is_empty() {
             return;
         }
-        let event = ConversationEvent {
+        let event = TranscriptEvent {
             run_id: run_id.to_string(),
             kind,
             agent: agent.to_string(),
@@ -243,14 +243,14 @@ fn parse_arguments(raw: &str) -> Value {
     serde_json::from_str(raw).unwrap_or_else(|_| Value::String(raw.to_string()))
 }
 
-/// [`RunHooks`] that record one run into a [`ConversationHub`].
+/// [`RunHooks`] that record one run into a [`TranscriptHub`].
 #[derive(Debug)]
-pub struct ConversationRecorder {
+pub struct TranscriptRecorder {
     run_id: String,
-    hub: ConversationHub,
+    hub: TranscriptHub,
 }
 
-impl ConversationRecorder {
+impl TranscriptRecorder {
     /// The run this records.
     pub fn run_id(&self) -> &str {
         &self.run_id
@@ -271,7 +271,7 @@ impl ConversationRecorder {
 }
 
 #[async_trait]
-impl RunHooks for ConversationRecorder {
+impl RunHooks for TranscriptRecorder {
     async fn on_agent_start(&self, _context: RunContextWrapper, agent: &Agent) {
         self.record("agent_start", &agent.name, json!({}));
     }
@@ -369,26 +369,26 @@ impl RunHooks for ConversationRecorder {
 /// A sink that hands events to a writer on a thread of its own.
 ///
 /// The run never waits on it: a full queue drops the event and counts it
-/// ([`QueuedConversationSink::dropped`]).
-pub struct QueuedConversationSink {
-    queue: Queue<ConversationEvent>,
+/// ([`QueuedTranscriptSink::dropped`]).
+pub struct QueuedTranscriptSink {
+    queue: Queue<TranscriptEvent>,
 }
 
-impl std::fmt::Debug for QueuedConversationSink {
+impl std::fmt::Debug for QueuedTranscriptSink {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("QueuedConversationSink")
+        f.debug_struct("QueuedTranscriptSink")
             .field("capacity", &self.queue.capacity())
             .field("dropped", &self.dropped())
             .finish()
     }
 }
 
-impl QueuedConversationSink {
+impl QueuedTranscriptSink {
     /// Write batches with `write` on a background thread. `capacity` is how many events may be
     /// waiting; `interval` is how long a lone event may sit in the queue.
     pub fn spawn(
         name: &'static str,
-        write: impl FnMut(&[ConversationEvent]) -> Result<(), String> + Send + 'static,
+        write: impl FnMut(&[TranscriptEvent]) -> Result<(), String> + Send + 'static,
         capacity: usize,
         interval: Duration,
     ) -> Arc<Self> {
@@ -408,8 +408,8 @@ impl QueuedConversationSink {
     }
 }
 
-impl ConversationSink for QueuedConversationSink {
-    fn emit(&self, event: &ConversationEvent) {
+impl TranscriptSink for QueuedTranscriptSink {
+    fn emit(&self, event: &TranscriptEvent) {
         self.queue.send(event.clone());
     }
 }
@@ -418,10 +418,10 @@ impl ConversationSink for QueuedConversationSink {
 mod tests {
     use super::*;
 
-    fn collect(hub: &ConversationHub) -> Arc<Mutex<Vec<ConversationEvent>>> {
+    fn collect(hub: &TranscriptHub) -> Arc<Mutex<Vec<TranscriptEvent>>> {
         let seen = Arc::new(Mutex::new(Vec::new()));
         let sink = Arc::clone(&seen);
-        hub.attach(Arc::new(move |e: &ConversationEvent| {
+        hub.attach(Arc::new(move |e: &TranscriptEvent| {
             sink.lock().unwrap().push(e.clone());
         }));
         seen
@@ -455,7 +455,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_recorder_gives_the_hub_what_the_hooks_see() {
-        let hub = ConversationHub::new();
+        let hub = TranscriptHub::new();
         let seen = collect(&hub);
         let hooks = hub.recorder("run-1");
         let agent = Agent::new("Ops");
@@ -485,7 +485,7 @@ mod tests {
 
     #[tokio::test]
     async fn metadata_only_keeps_counts_and_drops_the_text() {
-        let hub = ConversationHub::new().metadata_only();
+        let hub = TranscriptHub::new().metadata_only();
         let seen = collect(&hub);
         let hooks = hub.recorder("run-1");
         let agent = Agent::new("Ops");
@@ -512,7 +512,7 @@ mod tests {
 
     #[test]
     fn a_hub_without_sinks_records_nothing_and_clones_share_sinks() {
-        let hub = ConversationHub::new();
+        let hub = TranscriptHub::new();
         hub.record("r", "agent_start", "a", json!({}));
         let clone = hub.clone();
         let seen = collect(&clone);
@@ -525,7 +525,7 @@ mod tests {
     fn a_queued_sink_writes_in_order_off_the_calling_thread() {
         let written = Arc::new(Mutex::new(Vec::new()));
         let out = Arc::clone(&written);
-        let sink = QueuedConversationSink::spawn(
+        let sink = QueuedTranscriptSink::spawn(
             "test",
             move |events| {
                 out.lock()
@@ -536,7 +536,7 @@ mod tests {
             16,
             Duration::from_millis(20),
         );
-        let hub = ConversationHub::new();
+        let hub = TranscriptHub::new();
         hub.attach(sink.clone());
         hub.record("r", "agent_start", "a", json!({}));
         hub.record("r", "agent_end", "a", json!({}));

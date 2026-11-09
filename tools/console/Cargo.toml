@@ -3,7 +3,7 @@ name = "opai-agents-console"
 version.workspace = true
 edition.workspace = true
 publish = false
-description = "A live console for agent runs: takes spans and conversation as JSON over HTTP and draws them in a browser"
+description = "A live console for agent runs: takes spans and transcript as JSON over HTTP and draws them in a browser"
 
 # Inherits the lint config (including the tracked clippy backlog) from `[workspace.lints]`.
 [lints]

@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime};
 
 use opai_agents_core::tracing::{Span, SpanData, Trace};
 use opai_agents_core::{Agent, RunContextWrapper, RunHooks};
-use opai_agents_observability::{ConsoleLink, ConversationHub, LinkConfig};
+use opai_agents_observability::{ConsoleLink, LinkConfig, TranscriptHub};
 use serde_json::Value;
 
 /// What a request carried.
@@ -85,7 +85,7 @@ fn lines(request: &Request) -> Vec<Value> {
 #[tokio::test]
 async fn spans_and_conversation_arrive_as_ndjson_with_the_token() {
     let (addr, received) = fake_console("204 No Content");
-    let hub = ConversationHub::new();
+    let hub = TranscriptHub::new();
     let link = ConsoleLink::start(LinkConfig::new(addr).token(Some("s3cret".into())), &hub)
         .expect("start");
 
@@ -142,7 +142,7 @@ fn a_console_that_is_not_there_costs_events_not_the_run() {
         let l = TcpListener::bind("127.0.0.1:0").unwrap();
         l.local_addr().unwrap().to_string()
     };
-    let hub = ConversationHub::new();
+    let hub = TranscriptHub::new();
     let link = ConsoleLink::start(LinkConfig::new(addr), &hub).expect("start");
     let processor = link.processor();
 
@@ -160,7 +160,7 @@ fn a_console_that_is_not_there_costs_events_not_the_run() {
 #[test]
 fn a_console_that_refuses_the_batch_is_counted() {
     let (addr, _received) = fake_console("401 Unauthorized");
-    let hub = ConversationHub::new();
+    let hub = TranscriptHub::new();
     let link = ConsoleLink::start(LinkConfig::new(addr), &hub).expect("start");
     link.processor().on_span_start(&span());
     link.flush();
@@ -169,6 +169,6 @@ fn a_console_that_refuses_the_batch_is_counted() {
 
 #[test]
 fn a_bad_address_is_refused_up_front() {
-    let hub = ConversationHub::new();
+    let hub = TranscriptHub::new();
     assert!(ConsoleLink::start(LinkConfig::new("no-port"), &hub).is_err());
 }

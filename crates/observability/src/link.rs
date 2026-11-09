@@ -1,14 +1,14 @@
-//! Send a run's spans and conversation to a console process (Rust-only, X-018).
+//! Send a run's spans and transcript to a console process (Rust-only, X-018).
 //!
 //! The console is a separate program (`opai-console`) that takes newline-delimited JSON on
 //! `POST /ingest` and draws it live. [`ConsoleLink`] is the client side: it installs nothing by
-//! itself, it hands back a trace processor and attaches to a [`ConversationHub`], and both write to
+//! itself, it hands back a trace processor and attaches to a [`TranscriptHub`], and both write to
 //! the console from threads of their own, so a slow or absent console costs the run nothing.
 //!
 //! ```rust,no_run
-//! use opai_agents_observability::{ConsoleLink, ConversationHub, LinkConfig};
+//! use opai_agents_observability::{ConsoleLink, TranscriptHub, LinkConfig};
 //!
-//! let hub = ConversationHub::new();
+//! let hub = TranscriptHub::new();
 //! let link = ConsoleLink::start(LinkConfig::new("127.0.0.1:7077"), &hub).expect("address");
 //! // opai_agents::tracing::set_trace_processors(vec![link.processor()]);
 //! // Per run: RunOptions::new().workflow_name("run-1").hooks(hub.recorder("run-1"))
@@ -16,7 +16,7 @@
 //! ```
 //!
 //! The console groups spans by the name of the run's root `task` span, which is the workflow name,
-//! and conversation events by their `run_id`. Use the same string for both.
+//! and transcript events by their `run_id`. Use the same string for both.
 //!
 //! The transport is plain HTTP/1.1 over a TCP socket from the standard library: no TLS, no
 //! redirects, one short connection per batch. It is meant for a console on the same machine or a
@@ -31,8 +31,8 @@ use std::time::Duration;
 use opai_agents_core::tracing::TracingProcessor;
 
 use super::batched::{BatchedProcessor, EventSink};
-use super::conversation::{ConversationEvent, ConversationHub, QueuedConversationSink};
 use super::export::ExportEvent;
+use super::transcript::{QueuedTranscriptSink, TranscriptEvent, TranscriptHub};
 
 /// Longest body of one request. The console accepts more; staying well under keeps a batch of large
 /// events from becoming one enormous request.
@@ -100,7 +100,7 @@ impl LinkConfig {
 /// for them.
 pub struct ConsoleLink {
     processor: Arc<BatchedProcessor>,
-    conversation: Arc<QueuedConversationSink>,
+    transcript: Arc<QueuedTranscriptSink>,
 }
 
 impl std::fmt::Debug for ConsoleLink {
@@ -116,7 +116,7 @@ impl ConsoleLink {
     /// follow. Does not need the console to be up: a batch it cannot deliver is counted as dropped.
     ///
     /// Errors when the address or token is malformed.
-    pub fn start(config: LinkConfig, hub: &ConversationHub) -> Result<Self, String> {
+    pub fn start(config: LinkConfig, hub: &TranscriptHub) -> Result<Self, String> {
         config.validate()?;
         let target = Arc::new(Target {
             addr: config.addr.clone(),
@@ -129,19 +129,19 @@ impl ConsoleLink {
             config.interval,
         );
         let writer = Arc::clone(&target);
-        let conversation = QueuedConversationSink::spawn(
+        let transcript = QueuedTranscriptSink::spawn(
             "console",
-            move |events: &[ConversationEvent]| {
+            move |events: &[TranscriptEvent]| {
                 let lines: Vec<String> = events.iter().map(|e| e.to_json().to_string()).collect();
                 writer.post(&lines)
             },
             config.capacity,
             config.interval,
         );
-        hub.attach(conversation.clone());
+        hub.attach(transcript.clone());
         Ok(Self {
             processor,
-            conversation,
+            transcript,
         })
     }
 
@@ -150,15 +150,15 @@ impl ConsoleLink {
         self.processor.clone()
     }
 
-    /// Events lost, spans and conversation together.
+    /// Events lost, spans and transcript together.
     pub fn dropped(&self) -> u64 {
-        self.processor.dropped() + self.conversation.dropped()
+        self.processor.dropped() + self.transcript.dropped()
     }
 
     /// Write what is queued, waiting a little for the writers. Call before the process ends.
     pub fn flush(&self) {
         self.processor.force_flush();
-        self.conversation.flush();
+        self.transcript.flush();
     }
 }
 

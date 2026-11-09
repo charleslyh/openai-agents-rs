@@ -3,7 +3,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use opai_agents::observability::{ConversationEvent, ConversationHub};
+use opai_agents::observability::{TranscriptEvent, TranscriptHub};
 use opai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
 use opai_agents::{Agent, FunctionTool, RunOptions, Runner};
 
@@ -36,10 +36,10 @@ fn scripted_agent() -> Agent {
         .tools(vec![lookup_tool()])
 }
 
-fn attach(hub: &ConversationHub) -> Arc<Mutex<Vec<ConversationEvent>>> {
+fn attach(hub: &TranscriptHub) -> Arc<Mutex<Vec<TranscriptEvent>>> {
     let seen = Arc::new(Mutex::new(Vec::new()));
     let sink = Arc::clone(&seen);
-    hub.attach(Arc::new(move |e: &ConversationEvent| {
+    hub.attach(Arc::new(move |e: &TranscriptEvent| {
         sink.lock().unwrap().push(e.clone());
     }));
     seen
@@ -47,7 +47,7 @@ fn attach(hub: &ConversationHub) -> Arc<Mutex<Vec<ConversationEvent>>> {
 
 #[tokio::test]
 async fn prompts_replies_and_tool_calls_reach_an_attached_sink() {
-    let hub = ConversationHub::new();
+    let hub = TranscriptHub::new();
     let seen = attach(&hub);
 
     let options = RunOptions::new().hooks(hub.recorder("run-a"));
@@ -91,7 +91,7 @@ async fn prompts_replies_and_tool_calls_reach_an_attached_sink() {
 
 #[tokio::test]
 async fn metadata_only_runs_leave_no_text_behind() {
-    let hub = ConversationHub::new().metadata_only();
+    let hub = TranscriptHub::new().metadata_only();
     let seen = attach(&hub);
 
     let options = RunOptions::new().hooks(hub.recorder("run-b"));

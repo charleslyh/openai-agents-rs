@@ -2,7 +2,7 @@
 //!
 //! Spans say what happened and how long it took; they never hold a prompt, a reply or a tool
 //! argument. A console that shows a conversation needs those, so they travel on a channel of their
-//! own: a `ConversationHub` that anything can attach to, filled by a `RunHooks` recorder.
+//! own: a `TranscriptHub` that anything can attach to, filled by a `RunHooks` recorder.
 //!
 //! `ConsoleLink` is one such attachment. It sends the spans and the conversation to `opai-console`,
 //! a separate program that draws them in a browser as they happen.
@@ -21,13 +21,13 @@
 //! * `CONSOLE_CONTENT=0` — send names, ids and counts only; no prompt, reply or tool payload.
 //!
 //! To read the conversation without the console, attach your own sink instead:
-//! `hub.attach(Arc::new(|event: &ConversationEvent| println!("{}", event.to_json())))`.
+//! `hub.attach(Arc::new(|event: &TranscriptEvent| println!("{}", event.to_json())))`.
 
 mod common;
 
 use std::time::Duration;
 
-use opai_agents::observability::{ConsoleLink, ConversationHub, LinkConfig};
+use opai_agents::observability::{ConsoleLink, LinkConfig, TranscriptHub};
 use opai_agents::tracing::set_trace_processors;
 use opai_agents::{function_tool, Agent, RunOptions, Runner};
 
@@ -47,9 +47,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // One hub per process; recorders are per run. `metadata_only` is the switch for text that
     // must not leave the process.
     let hub = if content {
-        ConversationHub::new()
+        TranscriptHub::new()
     } else {
-        ConversationHub::new().metadata_only()
+        TranscriptHub::new().metadata_only()
     };
 
     // The link streams spans and conversations to a console server over HTTP, on its own
