@@ -9,6 +9,13 @@ Collects the changes for 0.2.0. Breaking changes are marked **breaking**.
 
 ### Breaking
 
+- **breaking**: a nested `Agent::as_tool` run now inherits the outer run's user context
+  (`RunOptions::context` / `RunOptions::with`) on the plain, resumed and streamed paths, so tools
+  of the sub-agent can read the same dependencies. `AsToolConfig` has two new public fields:
+  `inherit_context` (default `true`) and `context`. To keep the old isolated behavior, set
+  `inherit_context: false` (or `.inherit_context(false)`); `.context(value)` gives the nested run
+  only that value. The context may hold secrets that the sub-agent's tools can now read. A struct
+  literal that does not end in `..Default::default()` needs the new fields. See D-043.
 - **breaking**: `ToolOutputTrimmer::recent_turns`, `ContextWindowTrimmer::max_turns` and
   `CompactingSession::keep_recent_turns` are `recent_exchanges`, `max_exchanges` and
   `keep_recent_exchanges`. "Turn" now only means one iteration of the run loop; see

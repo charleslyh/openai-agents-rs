@@ -48,7 +48,6 @@ println!("{}", result.final_output_as_str().unwrap_or_default());
 ## Docs
 
 - [README.md](README.md): quick start, crates and features, examples
-- [docs/TERMINOLOGY.md](docs/TERMINOLOGY.md): what run, turn, session and exchange mean
 - [docs/COMPAT.md](docs/COMPAT.md): support matrix: what the Python SDK has and what happens here
 - [docs/DEVIATIONS.md](docs/DEVIATIONS.md): every intentional difference, with an id (D-… / X-…)
 - [docs/MIGRATION-FROM-PYTHON.md](docs/MIGRATION-FROM-PYTHON.md): Python API name → Rust API name
