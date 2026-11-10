@@ -5,7 +5,10 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased]
 
-Collects the changes for 0.2.0. Breaking changes are marked **breaking**.
+## [0.3.0] - 2026-11-10
+
+Collects the changes since 0.1.0; 0.2.0 was published before this section was cut, so it is
+included here. Breaking changes are marked **breaking**.
 
 ### Breaking
 

@@ -35,8 +35,8 @@ INDEX = """# OpenAI Agents SDK for Rust
 ## Install
 
 ```toml
-opai-agents = "0.2"                                                  # core + OpenAI
-opai-agents = { version = "0.2", features = ["providers", "tools"] } # presets, offline model, tools
+opai-agents = "0.3"                                                  # core + OpenAI
+opai-agents = { version = "0.3", features = ["providers", "tools"] } # presets, offline model, tools
 ```
 
 ```rust

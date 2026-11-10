@@ -13,7 +13,7 @@ resolver = "2"
 # series. A release changes this version and the `version` of each `opai-agents*` entry below (they
 # are the version requirements published crates carry); `scripts/check_docs_drift.py` fails when
 # either is left behind or when an install snippet in the docs names another series.
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.89"
 license = "MIT"
@@ -30,18 +30,18 @@ repository = "https://github.com/charleslyh/openai-agents-rs"
 [workspace.dependencies]
 # SDK crates. `default-features = false` only on the facade: the console program uses it without
 # the OpenAI adapters, and the examples and the demo name `openai` explicitly.
-opai-agents = { path = "crates/facade", version = "0.2.0", default-features = false }
-opai-agents-core = { path = "crates/core", version = "0.2.0" }
-opai-agents-guardrails = { path = "crates/guardrails", version = "0.2.0" }
-opai-agents-macros = { path = "crates/macros", version = "0.2.0" }
-opai-agents-mcp = { path = "crates/mcp", version = "0.2.0" }
-opai-agents-observability = { path = "crates/observability", version = "0.2.0" }
-opai-agents-openai = { path = "crates/openai", version = "0.2.0" }
-opai-agents-providers = { path = "crates/providers", version = "0.2.0" }
-opai-agents-sessions = { path = "crates/sessions", version = "0.2.0" }
-opai-agents-teams = { path = "crates/teams", version = "0.2.0" }
-opai-agents-testing = { path = "crates/testing", version = "0.2.0" }
-opai-agents-tools = { path = "crates/tools", version = "0.2.0" }
+opai-agents = { path = "crates/facade", version = "0.3.0", default-features = false }
+opai-agents-core = { path = "crates/core", version = "0.3.0" }
+opai-agents-guardrails = { path = "crates/guardrails", version = "0.3.0" }
+opai-agents-macros = { path = "crates/macros", version = "0.3.0" }
+opai-agents-mcp = { path = "crates/mcp", version = "0.3.0" }
+opai-agents-observability = { path = "crates/observability", version = "0.3.0" }
+opai-agents-openai = { path = "crates/openai", version = "0.3.0" }
+opai-agents-providers = { path = "crates/providers", version = "0.3.0" }
+opai-agents-sessions = { path = "crates/sessions", version = "0.3.0" }
+opai-agents-teams = { path = "crates/teams", version = "0.3.0" }
+opai-agents-testing = { path = "crates/testing", version = "0.3.0" }
+opai-agents-tools = { path = "crates/tools", version = "0.3.0" }
 
 async-trait = "0.1"
 axum = { version = "0.8", default-features = false }
