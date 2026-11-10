@@ -8,6 +8,7 @@ use serde_json::{json, Value};
 
 use crate::agent::Agent;
 use crate::error::AgentsError;
+use crate::extensions::ContextValue;
 use crate::result::RunResultStreaming;
 use crate::stream_events::StreamEvent;
 use crate::tool::{FunctionTool, ToolOutput};
@@ -42,7 +43,30 @@ pub type AgentToolStreamHandler =
 ///
 /// The Python keyword list is much longer (D-043), so fields will be added here: build one with
 /// `AsToolConfig { field, ..Default::default() }` and the tail keeps you compiling.
-#[derive(Clone, Default)]
+///
+/// # Run context
+///
+/// The nested run is an extension of the outer tool call, so by default it sees the same user
+/// context as the outer run: everything given with `RunOptions::context` / `RunOptions::with`.
+/// Precedence: [`AsToolConfig::context`] (explicit value, nothing from the outer run) >
+/// `inherit_context(false)` (no context at all) > inherit (default).
+///
+/// The context may hold secrets (tokens, clients): by default every tool of the nested agent can
+/// read them. Use `inherit_context(false)` for a sub-agent that must not.
+///
+/// ```
+/// use opai_agents_core::{Agent, AsToolConfig};
+///
+/// struct Hub;
+/// let director = Agent::new("director");
+/// // Inherits the outer run's context (default).
+/// let _inherit = director.as_tool(AsToolConfig::default());
+/// // Isolated: the nested run has no context.
+/// let _isolated = director.as_tool(AsToolConfig::default().inherit_context(false));
+/// // Explicit: the nested run sees only this value.
+/// let _explicit = director.as_tool(AsToolConfig::default().context(Hub));
+/// ```
+#[derive(Clone)]
 pub struct AsToolConfig {
     /// Override tool name (default: sanitized agent name).
     pub name: Option<String>,
@@ -60,9 +84,51 @@ pub struct AsToolConfig {
     /// the nested run down instead of queueing events without bound (Python buffers up to
     /// `on_stream_max_pending_events` and then fails the tool; see `docs/DEVIATIONS.md`).
     pub on_stream: Option<AgentToolStreamHandler>,
+    /// Whether the nested run inherits the outer run's user context (default `true`). Ignored
+    /// when [`AsToolConfig::context`] is set.
+    pub inherit_context: bool,
+    /// Explicit context for the nested run. When set, only this value is visible to the nested
+    /// run; nothing is inherited from the outer run.
+    pub context: Option<ContextValue>,
+}
+
+impl Default for AsToolConfig {
+    fn default() -> Self {
+        Self {
+            name: None,
+            description: None,
+            needs_resolution: false,
+            max_turns: None,
+            on_stream: None,
+            inherit_context: true,
+            context: None,
+        }
+    }
+}
+
+/// How a nested run gets its user context; resolved once from [`AsToolConfig`].
+#[derive(Clone)]
+enum ContextPolicy {
+    Inherit,
+    Isolated,
+    Explicit(ContextValue),
 }
 
 impl AsToolConfig {
+    /// Give the nested run exactly this context, instead of the outer run's.
+    #[must_use]
+    pub fn context<T: std::any::Any + Send + Sync>(mut self, value: T) -> Self {
+        self.context = Some(Arc::new(value));
+        self
+    }
+
+    /// Choose whether the nested run inherits the outer run's context (default `true`).
+    #[must_use]
+    pub fn inherit_context(mut self, inherit: bool) -> Self {
+        self.inherit_context = inherit;
+        self
+    }
+
     /// Stream the nested run's events to `handler` (Python: `on_stream`).
     #[must_use]
     pub fn on_stream<F, Fut>(mut self, handler: F) -> Self
@@ -83,6 +149,8 @@ impl std::fmt::Debug for AsToolConfig {
             .field("needs_resolution", &self.needs_resolution)
             .field("max_turns", &self.max_turns)
             .field("on_stream", &self.on_stream.as_ref().map(|_| "set"))
+            .field("inherit_context", &self.inherit_context)
+            .field("context", &self.context.as_ref().map(|_| "set"))
             .finish()
     }
 }
@@ -115,6 +183,11 @@ fn build_agent_as_tool(agent: &Agent, config: AsToolConfig) -> FunctionTool {
     let max_turns = config.max_turns;
     let needs = config.needs_resolution;
     let on_stream = config.on_stream;
+    let policy = match config.context {
+        Some(value) => ContextPolicy::Explicit(value),
+        None if config.inherit_context => ContextPolicy::Inherit,
+        None => ContextPolicy::Isolated,
+    };
 
     FunctionTool::new_with_result(
         tool_name,
@@ -130,18 +203,22 @@ fn build_agent_as_tool(agent: &Agent, config: AsToolConfig) -> FunctionTool {
         move |ctx, args| {
             let nested_agent = Arc::clone(&nested_agent);
             let on_stream = on_stream.clone();
+            let policy = policy.clone();
             async move {
                 let input_text = extract_as_tool_input(&args)?;
                 if let Some(handler) = on_stream {
-                    return run_streamed_nested(nested_agent, input_text, max_turns, handler, &ctx)
-                        .await;
+                    return run_streamed_nested(
+                        nested_agent,
+                        input_text,
+                        max_turns,
+                        handler,
+                        &policy,
+                        &ctx,
+                    )
+                    .await;
                 }
-                let mut opts = RunOptions::default();
                 // The nested run stops with the outer one.
-                opts.cancellation = Some(ctx.cancellation().clone());
-                if let Some(mt) = max_turns {
-                    opts.max_turns = Some(mt);
-                }
+                let opts = nested_run_options(&ctx, max_turns, ctx.cancellation().clone(), &policy);
 
                 let result = if let Some(state) = take_nested_resume_state(&ctx.tool_call_id) {
                     super::run_state_shared(nested_agent, state, opts).await?
@@ -164,6 +241,29 @@ fn build_agent_as_tool(agent: &Agent, config: AsToolConfig) -> FunctionTool {
     .with_needs_resolution(needs)
 }
 
+/// Options of a nested run, shared by the plain, resumed and streamed paths so they agree on
+/// the context.
+fn nested_run_options(
+    ctx: &crate::tool::ToolContext,
+    max_turns: Option<usize>,
+    cancellation: tokio_util::sync::CancellationToken,
+    policy: &ContextPolicy,
+) -> RunOptions {
+    let mut opts = RunOptions::default();
+    opts.cancellation = Some(cancellation);
+    if let Some(mt) = max_turns {
+        opts.max_turns = Some(mt);
+    }
+    match policy {
+        // The outer extensions already include `RunOptions::context`; `opts.context` stays
+        // `None` so the same value is not inserted twice.
+        ContextPolicy::Inherit => opts.extensions = ctx.run_context.extensions().clone(),
+        ContextPolicy::Isolated => {}
+        ContextPolicy::Explicit(value) => opts.context = Some(Arc::clone(value)),
+    }
+    opts
+}
+
 /// The nested run in streaming mode: every event goes to `handler`, then the outcome is turned
 /// into the same [`ToolOutput`] the non-streaming path returns.
 async fn run_streamed_nested(
@@ -171,15 +271,12 @@ async fn run_streamed_nested(
     input_text: String,
     max_turns: Option<usize>,
     handler: AgentToolStreamHandler,
+    policy: &ContextPolicy,
     ctx: &crate::tool::ToolContext,
 ) -> Result<ToolOutput, AgentsError> {
-    let mut opts = RunOptions::default();
     // A child token: the nested run stops with the outer one, but dropping this tool call (a
     // timeout, an outer cancel) cancels only the nested run, never the outer.
-    opts.cancellation = Some(ctx.cancellation().child_token());
-    if let Some(mt) = max_turns {
-        opts.max_turns = Some(mt);
-    }
+    let opts = nested_run_options(ctx, max_turns, ctx.cancellation().child_token(), policy);
 
     let mut stream: RunResultStreaming =
         if let Some(state) = take_nested_resume_state(&ctx.tool_call_id) {
