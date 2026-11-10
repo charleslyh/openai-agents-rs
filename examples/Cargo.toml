@@ -128,6 +128,10 @@ name = "agents_as_tools_stream"
 path = "src/22_agents_as_tools_stream.rs"
 
 [[example]]
+name = "agents_as_tools_context"
+path = "src/23_agents_as_tools_context.rs"
+
+[[example]]
 name = "teams"
 path = "src/24_teams.rs"
 

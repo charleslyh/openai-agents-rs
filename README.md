@@ -131,6 +131,7 @@ Ordered like the web demo's capability checklist, one knowledge point per exampl
 | 20 | `handoff_advanced` | Multi-agent | Handoff arguments, input filter, custom tool name and per-run availability |
 | 21 | `agents_as_tools` | Multi-agent | `Agent.as_tool` orchestration |
 | 22 | `agents_as_tools_stream` | Multi-agent | `AsToolConfig::on_stream`: watch a sub-agent's output while it runs |
+| 23 | `agents_as_tools_context` | Multi-agent | A nested `Agent.as_tool` run inherits the outer run's context; `inherit_context(false)` isolates it |
 | 24 | `teams` | Multi-agent | A lead and two parallel teammates with a shared task list (Rust-only) |
 | 25 | `hitl` | Safety and governance | `RunOptions::resolve_with` approvals, or the explicit `RunState` JSON resume |
 | 26 | `run_state_store` | Safety and governance | `FileRunStateStore`: park a paused run, resume it in another process; signing and expiry (Rust-only) |
