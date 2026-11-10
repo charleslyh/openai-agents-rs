@@ -131,31 +131,31 @@ Ordered like the web demo's capability checklist, one knowledge point per exampl
 | 20 | `handoff_advanced` | Multi-agent | Handoff arguments, input filter, custom tool name and per-run availability |
 | 21 | `agents_as_tools` | Multi-agent | `Agent.as_tool` orchestration |
 | 22 | `agents_as_tools_stream` | Multi-agent | `AsToolConfig::on_stream`: watch a sub-agent's output while it runs |
-| 23 | `teams` | Multi-agent | A lead and two parallel teammates with a shared task list (Rust-only) |
-| 24 | `hitl` | Safety and governance | `RunOptions::resolve_with` approvals, or the explicit `RunState` JSON resume |
-| 25 | `run_state_store` | Safety and governance | `FileRunStateStore`: park a paused run, resume it in another process; signing and expiry (Rust-only) |
-| 26 | `always_approve` | Safety and governance | Sticky `always_approve` |
-| 27 | `input_guardrail` | Safety and governance | Input guardrail tripwire |
-| 28 | `output_guardrail` | Safety and governance | Output guardrail tripwire |
-| 29 | `tool_input_guardrail` | Safety and governance | Tool input guardrail (reject a call) |
-| 30 | `tool_output_guardrail` | Safety and governance | Tool output guardrail (redact a result) |
-| 31 | `verdict_transform` | Safety and governance | `Verdict::Transform`: redact the user's input and keep going (Rust-only) |
-| 32 | `builtin_guardrails` | Safety and governance | Ready-made guardrails from `opai-agents-guardrails` (Rust-only) |
-| 33 | `structured_output` | Output and observability | `output_type` + typed `final_output_as::<T>()` |
-| 34 | `strict_schema` | Output and observability | Strict JSON schemas: the rewrite, what it refuses and the ways out |
-| 35 | `run_context` | Output and observability | `RunOptions::context` read inside a tool |
-| 36 | `dynamic_instructions` | Output and observability | Instructions generated from the run context |
-| 37 | `hooks` | Output and observability | `RunHooks` / `AgentHooks` |
-| 38 | `model_middleware` | Output and observability | `ModelMiddleware`: redact and rewrite what is sent to the model (Rust-only) |
-| 39 | `usage` | Output and observability | `RunResult::usage` |
-| 40 | `tracing` | Output and observability | Custom `TracingProcessor` |
-| 41 | `trace_export` | Output and observability | Batched console/JSONL export and metrics (Rust-only) |
-| 42 | `console` | Output and observability | Live console: spans and the conversation, in a browser (Rust-only) |
-| 43 | `cancel` | Run control | `RunResultStreaming::cancel` |
-| 44 | `settings` | Run control | `ModelSettings` temperature + retry, `max_turns` |
-| 45 | `model_retry` | Run control | `ModelRetrySettings`: policies, backoff and `retry-after` (offline) |
-| 46 | `reasoning` | Run control | Typed `Reasoning` effort/summary for either API |
-| 47 | `providers` | Run control | `ProviderRegistry`: route model names to several providers (Rust-only) |
+| 24 | `teams` | Multi-agent | A lead and two parallel teammates with a shared task list (Rust-only) |
+| 25 | `hitl` | Safety and governance | `RunOptions::resolve_with` approvals, or the explicit `RunState` JSON resume |
+| 26 | `run_state_store` | Safety and governance | `FileRunStateStore`: park a paused run, resume it in another process; signing and expiry (Rust-only) |
+| 27 | `always_approve` | Safety and governance | Sticky `always_approve` |
+| 28 | `input_guardrail` | Safety and governance | Input guardrail tripwire |
+| 29 | `output_guardrail` | Safety and governance | Output guardrail tripwire |
+| 30 | `tool_input_guardrail` | Safety and governance | Tool input guardrail (reject a call) |
+| 31 | `tool_output_guardrail` | Safety and governance | Tool output guardrail (redact a result) |
+| 32 | `verdict_transform` | Safety and governance | `Verdict::Transform`: redact the user's input and keep going (Rust-only) |
+| 33 | `builtin_guardrails` | Safety and governance | Ready-made guardrails from `opai-agents-guardrails` (Rust-only) |
+| 34 | `structured_output` | Output and observability | `output_type` + typed `final_output_as::<T>()` |
+| 35 | `strict_schema` | Output and observability | Strict JSON schemas: the rewrite, what it refuses and the ways out |
+| 36 | `run_context` | Output and observability | `RunOptions::context` read inside a tool |
+| 37 | `dynamic_instructions` | Output and observability | Instructions generated from the run context |
+| 38 | `hooks` | Output and observability | `RunHooks` / `AgentHooks` |
+| 39 | `model_middleware` | Output and observability | `ModelMiddleware`: redact and rewrite what is sent to the model (Rust-only) |
+| 40 | `usage` | Output and observability | `RunResult::usage` |
+| 41 | `tracing` | Output and observability | Custom `TracingProcessor` |
+| 42 | `trace_export` | Output and observability | Batched console/JSONL export and metrics (Rust-only) |
+| 43 | `console` | Output and observability | Live console: spans and the conversation, in a browser (Rust-only) |
+| 44 | `cancel` | Run control | `RunResultStreaming::cancel` |
+| 45 | `settings` | Run control | `ModelSettings` temperature + retry, `max_turns` |
+| 46 | `model_retry` | Run control | `ModelRetrySettings`: policies, backoff and `retry-after` (offline) |
+| 47 | `reasoning` | Run control | Typed `Reasoning` effort/summary for either API |
+| 48 | `providers` | Run control | `ProviderRegistry`: route model names to several providers (Rust-only) |
 
 The rest need `OPENAI_API_KEY` and `OPENAI_MODEL` in the environment; `OPENAI_BASE_URL` and
 `OPENAI_API` (`chat_completions` | `responses`) are optional.
