@@ -30,6 +30,8 @@ futures = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# Content-addressed references for offloaded tool outputs. Pure computation, no IO.
+sha2 = "0.10"
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time"] }
 tokio-util = { workspace = true }

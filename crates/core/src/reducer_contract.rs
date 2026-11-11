@@ -251,6 +251,17 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn offload_tool_outputs_meets_the_contract() {
+        let reducer = crate::offload::OffloadToolOutputs::new(
+            crate::offload::InMemoryBlobStore::shared(),
+            "contract",
+        )
+        .recent_exchanges(2)
+        .max_output_chars(300);
+        assert!(assert_reducer_contract(&reducer).await.changed);
+    }
+
+    #[tokio::test]
     async fn a_chain_meets_the_contract() {
         let reducer = ChainReducer::new(vec![
             Arc::new(

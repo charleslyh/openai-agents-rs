@@ -19,6 +19,7 @@ pub mod memory;
 pub mod model;
 pub mod model_middleware;
 pub mod model_settings;
+pub mod offload;
 pub mod prelude;
 pub mod reducer;
 pub mod result;
@@ -99,6 +100,10 @@ pub use result::{CancelMode, RunResult, RunResultStreaming, StreamingSnapshot};
 pub mod reducer_contract;
 #[cfg(feature = "session-contract")]
 pub mod session_contract;
+pub use offload::{
+    is_valid_reference, offload_capability, offload_read_tool, reference_for, BlobStore,
+    InMemoryBlobStore, OffloadToolOutputs, READ_OFFLOADED_TOOL,
+};
 pub use reducer::{
     reducer_filter, reducer_filter_with_counter, ChainReducer, ContextReducer, ReduceInput,
     ReduceOutcome, ReduceReport,
