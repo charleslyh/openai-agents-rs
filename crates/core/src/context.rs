@@ -134,6 +134,37 @@ impl ExchangeView {
 // ---------------------------------------------------------------------------------------------
 // Tool output trimming
 
+/// Index of the `recent`-th user message from the end; items before it are old. 0 when there
+/// are fewer user messages than that, meaning nothing is old.
+pub(crate) fn recent_boundary(items: &[Value], recent: usize) -> usize {
+    let mut seen = 0;
+    for (index, item) in items.iter().enumerate().rev() {
+        if role_of(item) == Some("user") {
+            seen += 1;
+            if seen >= recent {
+                return index;
+            }
+        }
+    }
+    0
+}
+
+/// Maps each `call_id` to the name of the tool that was called.
+pub(crate) fn tool_names(items: &[Value]) -> HashMap<&str, &str> {
+    let mut names = HashMap::new();
+    for item in items {
+        if item.get("type").and_then(Value::as_str) == Some("function_call") {
+            if let (Some(call_id), Some(name)) = (
+                item.get("call_id").and_then(Value::as_str),
+                item.get("name").and_then(Value::as_str),
+            ) {
+                names.insert(call_id, name);
+            }
+        }
+    }
+    names
+}
+
 /// Start of the note that replaces a shortened tool output.
 const TRIMMED_PREFIX: &str = "[Trimmed:";
 
@@ -209,19 +240,8 @@ impl ToolOutputTrimmer {
         Ok(())
     }
 
-    /// Index of the `recent_exchanges`-th user message from the end; items before it are old.
-    /// 0 when there are fewer user messages than that, meaning nothing is old.
     fn recent_boundary(&self, items: &[Value]) -> usize {
-        let mut seen = 0;
-        for (index, item) in items.iter().enumerate().rev() {
-            if role_of(item) == Some("user") {
-                seen += 1;
-                if seen >= self.recent_exchanges {
-                    return index;
-                }
-            }
-        }
-        0
+        recent_boundary(items, self.recent_exchanges)
     }
 
     /// Trim `items`, returning the new list.
@@ -230,17 +250,7 @@ impl ToolOutputTrimmer {
         if boundary == 0 {
             return items.to_vec();
         }
-        let mut tool_names: HashMap<&str, &str> = HashMap::new();
-        for item in items {
-            if item.get("type").and_then(Value::as_str) == Some("function_call") {
-                if let (Some(call_id), Some(name)) = (
-                    item.get("call_id").and_then(Value::as_str),
-                    item.get("name").and_then(Value::as_str),
-                ) {
-                    tool_names.insert(call_id, name);
-                }
-            }
-        }
+        let tool_names = tool_names(items);
         items
             .iter()
             .enumerate()
