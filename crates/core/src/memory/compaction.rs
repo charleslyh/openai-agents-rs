@@ -18,7 +18,7 @@ use tokio::sync::Mutex as AsyncMutex;
 
 use super::{Session, SessionSettings};
 use crate::context::{
-    default_token_counter, is_summary_item, summary_item, summary_text, SplitHistory, TokenCounter,
+    default_token_counter, is_summary_item, summary_item, summary_text, ExchangeView, TokenCounter,
 };
 use crate::error::{AgentsError, ModelError};
 use crate::items::extract_message_text;
@@ -390,7 +390,7 @@ impl CompactingSession {
         if !force && !self.should_compact(&items) {
             return Ok(false);
         }
-        let SplitHistory { pinned, exchanges } = SplitHistory::split(&items);
+        let ExchangeView { pinned, exchanges } = ExchangeView::split(&items);
         if exchanges.len() <= self.keep_recent_exchanges {
             return Ok(false);
         }

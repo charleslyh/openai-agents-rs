@@ -24,11 +24,11 @@ use crate::error::{AgentsError, UserError};
 use crate::model::{CallModelData, CallModelInputFilter, ModelInputData};
 
 /// Opening marker of the item that stands in for summarized history.
-pub(crate) const SUMMARY_OPEN: &str = "<conversation_summary>";
+pub const SUMMARY_OPEN: &str = "<conversation_summary>";
 /// Closing marker of the summary item.
-pub(crate) const SUMMARY_CLOSE: &str = "</conversation_summary>";
+pub const SUMMARY_CLOSE: &str = "</conversation_summary>";
 /// First line inside the summary item, telling the model what it is looking at.
-pub(crate) const SUMMARY_PREAMBLE: &str =
+pub const SUMMARY_PREAMBLE: &str =
     "The earlier part of this conversation was condensed into the notes below.";
 
 /// Counts the tokens of one input item.
@@ -60,13 +60,13 @@ fn plain_content(item: &Value) -> Option<&str> {
 }
 
 /// Whether `item` is the stand-in for summarized history.
-pub(crate) fn is_summary_item(item: &Value) -> bool {
+pub fn is_summary_item(item: &Value) -> bool {
     role_of(item) == Some("user")
         && plain_content(item).is_some_and(|text| text.starts_with(SUMMARY_OPEN))
 }
 
 /// The summary item for `summary` (a plain user message so every provider accepts it).
-pub(crate) fn summary_item(summary: &str) -> Value {
+pub fn summary_item(summary: &str) -> Value {
     serde_json::json!({
         "role": "user",
         "content": format!("{SUMMARY_OPEN}\n{SUMMARY_PREAMBLE}\n{}\n{SUMMARY_CLOSE}", summary.trim()),
@@ -74,7 +74,7 @@ pub(crate) fn summary_item(summary: &str) -> Value {
 }
 
 /// The summary text carried by a summary item.
-pub(crate) fn summary_text(item: &Value) -> Option<String> {
+pub fn summary_text(item: &Value) -> Option<String> {
     let text = plain_content(item)?.strip_prefix(SUMMARY_OPEN)?;
     let text = text
         .trim()
@@ -89,8 +89,9 @@ pub(crate) fn summary_text(item: &Value) -> Option<String> {
     )
 }
 
-/// System / developer messages and the summary stay in front of the history whatever happens.
-fn is_pinned(item: &Value) -> bool {
+/// Whether `item` always stays in front of the history: system / developer messages and the
+/// summary. Reducers must never drop or summarize these.
+pub fn is_pinned(item: &Value) -> bool {
     matches!(role_of(item), Some("system" | "developer")) || is_summary_item(item)
 }
 
@@ -99,8 +100,10 @@ fn starts_exchange(item: &Value) -> bool {
 }
 
 /// History split into the items that always stay and the exchanges that can be dropped or summarized.
+///
+/// Reducing whole exchanges is what keeps a tool call together with its output.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct SplitHistory {
+pub struct ExchangeView {
     /// System / developer messages and summaries, in order.
     pub pinned: Vec<Value>,
     /// Exchanges, oldest first. An exchange begins at a user message and holds everything up to the next
@@ -108,9 +111,10 @@ pub(crate) struct SplitHistory {
     pub exchanges: Vec<Vec<Value>>,
 }
 
-impl SplitHistory {
-    pub(crate) fn split(items: &[Value]) -> Self {
-        let mut history = SplitHistory::default();
+impl ExchangeView {
+    /// Split `items` into pinned items and exchanges.
+    pub fn split(items: &[Value]) -> Self {
+        let mut history = ExchangeView::default();
         for item in items {
             if is_pinned(item) {
                 history.pinned.push(item.clone());
@@ -350,7 +354,7 @@ impl ContextWindowTrimmer {
 
     /// Trim `items`; `reserved_tokens` is what instructions and tool schemas already use.
     pub fn trim(&self, items: &[Value], reserved_tokens: usize) -> Vec<Value> {
-        let history = SplitHistory::split(items);
+        let history = ExchangeView::split(items);
         let Some((latest, earlier)) = history.exchanges.split_last() else {
             return items.to_vec();
         };
