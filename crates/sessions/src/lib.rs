@@ -5,6 +5,8 @@
 //! and ships nothing that writes to disk or talks to a server. This crate is where those live:
 //!
 //! * [`FileSession`]: a conversation in a JSONL file, locked across processes.
+//! * [`FileBlobStore`]: offloaded tool outputs, one file each, for
+//!   [`OffloadToolOutputs`](opai_agents_core::OffloadToolOutputs).
 //! * [`FileRunStateStore`]: a paused run per file, signed so a state edited outside the process is
 //!   refused instead of resumed.
 //! * [`RedisSession`] and [`RedisRunStateStore`] (`redis` feature): the same, in a list and a key,
@@ -20,6 +22,7 @@
 //! The crates that talk to a server sit behind features, so a build that keeps history in memory
 //! or in a file compiles no Redis client and no database driver.
 
+pub mod blob_file;
 pub mod file;
 mod state;
 pub mod state_file;
@@ -31,6 +34,7 @@ pub mod redis;
 #[cfg(feature = "sqlite")]
 pub mod sqlite;
 
+pub use blob_file::FileBlobStore;
 pub use file::FileSession;
 pub use state_file::{FileRunStateStore, STATE_KEY_ENV};
 

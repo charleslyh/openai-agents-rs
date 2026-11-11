@@ -52,7 +52,7 @@ pub use opai_agents_providers as providers;
 
 /// A conversation and a paused run in files (Rust-only, X-016 / X-017).
 #[cfg(feature = "sessions")]
-pub use opai_agents_sessions::{FileRunStateStore, FileSession};
+pub use opai_agents_sessions::{FileBlobStore, FileRunStateStore, FileSession};
 
 /// A conversation and a paused run in Redis (Rust-only, X-016 / X-017).
 #[cfg(feature = "redis")]
