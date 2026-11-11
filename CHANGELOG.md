@@ -5,6 +5,30 @@ All notable changes are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `ContextReducer`: one trait for strategies that shorten a history, with `ReduceInput`,
+  `ReduceOutcome` and `ReduceReport` (tokens before and after, dropped exchanges, summarized),
+  and `ChainReducer` to run several in order.
+- `reducer_filter` mounts a reducer as `call_model_input_filter`;
+  `CompactingSession::with_reducer` mounts one on the stored history.
+- `ExchangeSelector`, `select_exchanges` and `DropExchanges`: a drop strategy only says which
+  exchanges stay, and the skeleton keeps tool call pairs, pinned items and the latest exchange.
+  `ContextWindowTrimmer` and the new `HeadTail` are built on it.
+- `Summarize` (any `Summarizer` as a reducer), `ModelSummarizer::structured` (notes in fixed
+  sections) and `HierarchicalSummarizer` (condenses long notes again).
+- `ToolOutputTrimmer` and `ContextWindowTrimmer` implement `ContextReducer`.
+- `CompactionTrigger` is the trigger of `CompactingSession`, now reusable on its own.
+- `ExchangeView` (was the private `SplitHistory`), `is_pinned`, `is_summary_item`,
+  `summary_item` and `summary_text` are public, for writing a reducer.
+- `reducer_contract` (feature `reducer-contract`): a test suite any reducer can run.
+- Example `context_reducers`.
+
+### Fixed
+
+- `ToolOutputTrimmer` no longer trims an output it already shortened, which nested the notes when
+  it ran twice over the same history.
+
 ## [0.3.0] - 2026-11-10
 
 Collects the changes since 0.1.0; 0.2.0 was published before this section was cut, so it is

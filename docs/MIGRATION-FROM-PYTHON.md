@@ -53,7 +53,7 @@ This is the real cost of migrating, and it is why the README's positioning secti
 | File edits | `ApplyPatchTool` + `apply_diff` | A `FunctionTool` over your own patch application |
 | Computer use | `ComputerTool` + `Computer` | A `FunctionTool` driving your own automation |
 | Trace export to a backend | `add_trace_processor(BatchTraceProcessor(...))`, `set_tracing_export_api_key` | `impl TracingProcessor` for OTLP / Langfuse / whatever you use. Cloud export is not planned (D-004) |
-| Long-context handling via the API | `OpenAIResponsesCompactionSession` (`responses.compact`) | `CompactingSession` + `ModelSummarizer` (any model), or `ContextWindowTrimmer` / `ToolOutputTrimmer` as a `call_model_input_filter`. Provider-neutral, and not OpenAI-only (D-039) |
+| Long-context handling via the API | `OpenAIResponsesCompactionSession` (`responses.compact`) | `CompactingSession` + `ModelSummarizer` (any model), or `ContextWindowTrimmer` / `ToolOutputTrimmer` as a `call_model_input_filter`. All of them are `ContextReducer`s that compose with `ChainReducer`. Provider-neutral, and not OpenAI-only (D-039) |
 | Redis / MongoDB / SQLAlchemy session storage | `agents.extensions.memory.*` | `impl Session` |
 | Realtime / voice | `agents.realtime`, `agents.voice` | Not available |
 | A sandboxed execution runtime | `agents.sandbox` | Not available; isolate at the process/container level |

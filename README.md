@@ -157,6 +157,7 @@ Ordered like the web demo's capability checklist, one knowledge point per exampl
 | 46 | `model_retry` | Run control | `ModelRetrySettings`: policies, backoff and `retry-after` (offline) |
 | 47 | `reasoning` | Run control | Typed `Reasoning` effort/summary for either API |
 | 48 | `providers` | Run control | `ProviderRegistry`: route model names to several providers (Rust-only) |
+| 49 | `context_reducers` | Conversation and memory | `ContextReducer`: rewrite, drop and summarize strategies, `ChainReducer`, your own `ExchangeSelector` (offline, Rust-only) |
 
 The rest need `OPENAI_API_KEY` and `OPENAI_MODEL` in the environment; `OPENAI_BASE_URL` and
 `OPENAI_API` (`chat_completions` | `responses`) are optional.
@@ -278,23 +279,39 @@ only OpenAI accepts, such as `stream_options`, are sent to other servers only wh
 
 ## Keeping context short
 
-Long chats and tool-heavy runs outgrow the model's context. Two provider-neutral tools:
+Long chats and tool-heavy runs outgrow the model's context. Everything below is provider-neutral
+and built on one trait, `ContextReducer`: it turns a history into a shorter one and reports what
+it did. You assemble the strategy, so you also decide what it costs.
 
-- **Per call (history untouched):** `ToolOutputTrimmer` shortens old tool outputs and
-  `ContextWindowTrimmer` drops the oldest turns; set one as `RunConfig.model.input_filter`
-  (combine with `chain_input_filters`).
-- **Stored history:** wrap a session in `CompactingSession` with a `ModelSummarizer` (any model).
-  Old turns become a short summary once the history passes a token or item trigger.
+| Family | Ready-made | Cost |
+|---|---|---|
+| Rewrite | `ToolOutputTrimmer` (shorten old tool outputs) | none |
+| Drop whole exchanges | `ContextWindowTrimmer` (token / exchange budget), `HeadTail` (first and latest); your own rule is a small `ExchangeSelector` run by `DropExchanges` | none |
+| Summarize | `Summarize` over any `Summarizer`: `ModelSummarizer` (free text), `ModelSummarizer::structured` (fixed sections), `HierarchicalSummarizer` (condenses long notes again) | one model call per use |
+
+`ChainReducer` runs several in order; put the free ones first. Dropping reducers never separate a
+tool call from its output, and always keep system messages, the summary and the latest exchange.
+A custom reducer can be checked with `reducer_contract` (feature `reducer-contract`).
+
+Where it runs is a separate choice:
+
+- **Per call (history untouched):** `reducer_filter(reducer)` as `RunConfig.model.input_filter`.
+  The older `into_filter()` of each trimmer and `chain_input_filters` still work.
+- **Stored history:** `CompactingSession`. `CompactingSession::new` summarizes with a
+  `Summarizer` once the history passes a token or item trigger; `CompactingSession::with_reducer`
+  rewrites it with any reducer.
 
 ```rust
 let session = CompactingSession::new(
     InMemorySession::shared("chat"),
-    Arc::new(ModelSummarizer::new(summary_model)),
+    Arc::new(ModelSummarizer::structured(summary_model)),
 )
 .trigger_tokens(6_000)
 .keep_recent_exchanges(3)
 .shared();
 ```
+
+See the `context_reducers` example for the pieces side by side (no key needed).
 
 ## Compatibility & deviations
 
