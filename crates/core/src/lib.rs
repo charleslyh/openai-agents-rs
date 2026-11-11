@@ -94,6 +94,8 @@ pub use model_settings::{
     ModelSettings, Reasoning, ReasoningEffort, ReasoningSummary, ToolChoice, Truncation, Verbosity,
 };
 pub use result::{CancelMode, RunResult, RunResultStreaming, StreamingSnapshot};
+#[cfg(any(test, feature = "reducer-contract"))]
+pub mod reducer_contract;
 #[cfg(feature = "session-contract")]
 pub mod session_contract;
 pub use reducer::{

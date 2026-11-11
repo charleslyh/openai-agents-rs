@@ -20,6 +20,9 @@ default = []
 # that only runs agents compiles none of it. The bundled backends turn it on in their dev
 # dependencies; a backend outside this workspace turns it on in its own.
 session-contract = []
+# `reducer_contract`: the test suite every `ContextReducer` runs; off unless a custom reducer
+# turns it on in its own dev dependencies.
+reducer-contract = []
 
 [dependencies]
 async-trait = { workspace = true }
