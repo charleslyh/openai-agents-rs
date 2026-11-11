@@ -18,10 +18,12 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use serde_json::Value;
 
 use crate::error::{AgentsError, UserError};
 use crate::model::{CallModelData, CallModelInputFilter, ModelInputData};
+use crate::reducer::{ContextReducer, ReduceInput, ReduceOutcome};
 
 /// Opening marker of the item that stands in for summarized history.
 pub const SUMMARY_OPEN: &str = "<conversation_summary>";
@@ -413,6 +415,93 @@ impl ContextWindowTrimmer {
     }
 }
 
+#[async_trait]
+impl ContextReducer for ToolOutputTrimmer {
+    fn name(&self) -> &str {
+        "tool_output_trimmer"
+    }
+
+    async fn reduce(&self, input: ReduceInput<'_>) -> Result<ReduceOutcome, AgentsError> {
+        let trimmed = self.trim(input.items);
+        Ok(ReduceOutcome::new(&input, trimmed))
+    }
+}
+
+#[async_trait]
+impl ContextReducer for ContextWindowTrimmer {
+    fn name(&self) -> &str {
+        "context_window"
+    }
+
+    async fn reduce(&self, input: ReduceInput<'_>) -> Result<ReduceOutcome, AgentsError> {
+        let before = ExchangeView::split(input.items).exchanges.len();
+        let trimmed = self.trim(input.items, input.reserved_tokens);
+        let after = ExchangeView::split(&trimmed).exchanges.len();
+        Ok(ReduceOutcome::new(&input, trimmed).dropped_exchanges(before - after))
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Head and tail
+
+/// Keeps the first and the most recent exchanges and drops the ones in between.
+///
+/// Useful when the opening exchange states the task and the latest ones hold the current work.
+/// System and developer messages and a history summary always stay. When there are no more
+/// exchanges than `head + tail`, nothing changes. Nothing tells the model that exchanges were
+/// dropped.
+#[derive(Debug, Clone)]
+pub struct HeadTail {
+    head: usize,
+    tail: usize,
+}
+
+impl HeadTail {
+    /// Keep `head` exchanges from the start and `tail` from the end. `tail` is at least 1, so
+    /// the latest exchange always stays.
+    pub fn new(head: usize, tail: usize) -> Self {
+        Self {
+            head,
+            tail: tail.max(1),
+        }
+    }
+
+    /// Reduce `items`; also returns how many exchanges were dropped.
+    pub fn trim(&self, items: &[Value]) -> (Vec<Value>, usize) {
+        let history = ExchangeView::split(items);
+        let total = history.exchanges.len();
+        if total <= self.head + self.tail {
+            return (items.to_vec(), 0);
+        }
+        let mut result = history.pinned.clone();
+        result.extend(history.exchanges[..self.head].iter().flatten().cloned());
+        result.extend(
+            history.exchanges[total - self.tail..]
+                .iter()
+                .flatten()
+                .cloned(),
+        );
+        (result, total - self.head - self.tail)
+    }
+
+    /// Use as `RunConfig.call_model_input_filter`.
+    pub fn into_filter(self) -> CallModelInputFilter {
+        input_filter(move |input, _| self.trim(input).0)
+    }
+}
+
+#[async_trait]
+impl ContextReducer for HeadTail {
+    fn name(&self) -> &str {
+        "head_tail"
+    }
+
+    async fn reduce(&self, input: ReduceInput<'_>) -> Result<ReduceOutcome, AgentsError> {
+        let (items, dropped) = self.trim(input.items);
+        Ok(ReduceOutcome::new(&input, items).dropped_exchanges(dropped))
+    }
+}
+
 // ---------------------------------------------------------------------------------------------
 // Composition
 
@@ -448,4 +537,92 @@ pub fn chain_input_filters(filters: Vec<CallModelInputFilter>) -> CallModelInput
             Ok(data.model_data)
         })
     })
+}
+
+#[cfg(test)]
+mod reducer_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn user(text: &str) -> Value {
+        json!({"role": "user", "content": text})
+    }
+
+    fn call(id: &str) -> Vec<Value> {
+        vec![
+            json!({"type": "function_call", "call_id": id, "name": "t", "arguments": "{}"}),
+            json!({"type": "function_call_output", "call_id": id, "output": "ok"}),
+        ]
+    }
+
+    fn history() -> Vec<Value> {
+        let mut items = vec![json!({"role": "system", "content": "be brief"})];
+        for i in 0..6 {
+            items.push(user(&format!("q{i}")));
+            items.extend(call(&format!("c{i}")));
+        }
+        items
+    }
+
+    fn input<'a>(items: &'a [Value], counter: &'a TokenCounter) -> ReduceInput<'a> {
+        ReduceInput {
+            items,
+            reserved_tokens: 0,
+            counter,
+        }
+    }
+
+    #[test]
+    fn head_tail_keeps_ends_pinned_and_pairs() {
+        let items = history();
+        let (kept, dropped) = HeadTail::new(1, 2).trim(&items);
+        assert_eq!(dropped, 3);
+        let users: Vec<&str> = kept
+            .iter()
+            .filter(|i| role_of(i) == Some("user"))
+            .filter_map(plain_content)
+            .collect();
+        assert_eq!(users, ["q0", "q4", "q5"]);
+        assert_eq!(kept[0]["role"], "system");
+        let calls = kept.iter().filter(|i| i["type"] == "function_call").count();
+        let outputs = kept
+            .iter()
+            .filter(|i| i["type"] == "function_call_output")
+            .count();
+        assert_eq!(calls, outputs);
+    }
+
+    #[test]
+    fn head_tail_is_a_no_op_when_short_and_keeps_the_latest() {
+        let items = history();
+        assert_eq!(HeadTail::new(3, 3).trim(&items).0, items);
+        let (kept, _) = HeadTail::new(0, 0).trim(&items);
+        assert!(kept.iter().any(|i| plain_content(i) == Some("q5")));
+    }
+
+    #[tokio::test]
+    async fn trimmers_report_through_the_reducer_trait() {
+        let counter = default_token_counter();
+        let items = history();
+        let outcome = ContextWindowTrimmer::new()
+            .max_exchanges(2)
+            .reduce(input(&items, &counter))
+            .await
+            .unwrap();
+        assert_eq!(outcome.report.dropped_exchanges, 4);
+        assert!(outcome.report.changed);
+        assert!(outcome.report.tokens_after < outcome.report.tokens_before);
+
+        let outcome = HeadTail::new(1, 1)
+            .reduce(input(&items, &counter))
+            .await
+            .unwrap();
+        assert_eq!(outcome.report.dropped_exchanges, 4);
+
+        let outcome = ToolOutputTrimmer::new()
+            .reduce(input(&items, &counter))
+            .await
+            .unwrap();
+        assert!(!outcome.report.changed);
+    }
 }
