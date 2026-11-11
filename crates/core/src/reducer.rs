@@ -13,8 +13,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde_json::Value;
 
-use crate::context::TokenCounter;
+use crate::context::{default_token_counter, TokenCounter};
 use crate::error::AgentsError;
+use crate::model::{CallModelData, CallModelInputFilter, ModelInputData};
 
 /// What a reducer is given.
 pub struct ReduceInput<'a> {
@@ -163,6 +164,47 @@ impl ContextReducer for ChainReducer {
         }
         Ok(outcome)
     }
+}
+
+/// Use `reducer` as `RunConfig.call_model_input_filter`: it rewrites the input of every model
+/// call and leaves the stored history alone. Tokens are counted with the built-in estimate; see
+/// [`reducer_filter_with_counter`].
+///
+/// The reducer runs before every model call of the run, so one that calls a model (a summarizing
+/// one) costs a model call each time. An error from the reducer fails the model call.
+pub fn reducer_filter(reducer: Arc<dyn ContextReducer>) -> CallModelInputFilter {
+    reducer_filter_with_counter(reducer, default_token_counter())
+}
+
+/// Like [`reducer_filter`], counting tokens with `counter`.
+pub fn reducer_filter_with_counter(
+    reducer: Arc<dyn ContextReducer>,
+    counter: TokenCounter,
+) -> CallModelInputFilter {
+    Arc::new(move |data: CallModelData| {
+        let reducer = Arc::clone(&reducer);
+        let counter = Arc::clone(&counter);
+        Box::pin(async move {
+            let reserved_tokens = data
+                .model_data
+                .instructions
+                .as_ref()
+                .map(|text| counter(&Value::String(text.clone())))
+                .unwrap_or(0);
+            let _span = crate::tracing::custom_span(&format!("context_reduce:{}", reducer.name()));
+            let outcome = reducer
+                .reduce(ReduceInput {
+                    items: &data.model_data.input,
+                    reserved_tokens,
+                    counter: &counter,
+                })
+                .await?;
+            Ok(ModelInputData {
+                input: outcome.items,
+                instructions: data.model_data.instructions,
+            })
+        })
+    })
 }
 
 #[cfg(test)]

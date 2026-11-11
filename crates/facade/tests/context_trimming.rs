@@ -7,7 +7,8 @@ use std::sync::Arc;
 
 use opai_agents::testing::{ItemHelpers, ModelStep, ScriptedModel};
 use opai_agents::{
-    chain_input_filters, Agent, ContextWindowTrimmer, RunOptions, Runner, ToolOutputTrimmer,
+    chain_input_filters, reducer_filter, Agent, ChainReducer, ContextReducer, ContextWindowTrimmer,
+    HeadTail, RunOptions, Runner, ToolOutputTrimmer,
 };
 use serde_json::{json, Value};
 
@@ -275,4 +276,29 @@ async fn filters_apply_to_the_model_call_only_and_chain() {
             .count(),
         2
     );
+}
+
+#[tokio::test]
+async fn reducer_filter_applies_a_chain_of_reducers_to_the_model_call() {
+    let model = Arc::new(ScriptedModel::new([ModelStep::from(
+        ItemHelpers::text_message("done"),
+    )]));
+    let agent = Agent::new("a").model(model.clone());
+    let reducer: Arc<dyn ContextReducer> = Arc::new(ChainReducer::new(vec![
+        Arc::new(ToolOutputTrimmer::new()),
+        Arc::new(HeadTail::new(1, 1)),
+    ]));
+    let mut options = RunOptions::default();
+    options.run_config.model.input_filter = Some(reducer_filter(reducer));
+
+    let input = vec![
+        user("task"),
+        assistant("a"),
+        user("middle"),
+        assistant("b"),
+        user("latest"),
+    ];
+    Runner::run(&agent, input, options).await.expect("run");
+    let sent = model.calls()[0].input.clone();
+    assert_eq!(user_texts(sent.as_array().unwrap()), ["task", "latest"]);
 }

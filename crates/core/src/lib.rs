@@ -96,7 +96,10 @@ pub use model_settings::{
 pub use result::{CancelMode, RunResult, RunResultStreaming, StreamingSnapshot};
 #[cfg(feature = "session-contract")]
 pub mod session_contract;
-pub use reducer::{ChainReducer, ContextReducer, ReduceInput, ReduceOutcome, ReduceReport};
+pub use reducer::{
+    reducer_filter, reducer_filter_with_counter, ChainReducer, ContextReducer, ReduceInput,
+    ReduceOutcome, ReduceReport,
+};
 pub use retry::{
     retry_policies, ModelRetryAdvice, ModelRetryAdviceRequest, ModelRetryBackoffSettings,
     ModelRetryNormalizedError, ModelRetrySettings, ReplaySafety, RetryDecision, RetryPolicy,

@@ -24,6 +24,7 @@ use crate::error::{AgentsError, ModelError};
 use crate::items::extract_message_text;
 use crate::model::{Model, ModelInput, ModelRequest, ModelTracing};
 use crate::model_settings::ModelSettings;
+use crate::reducer::{ContextReducer, ReduceInput};
 use crate::usage::Usage;
 
 /// Estimated tokens of stored history above which compaction starts, when no trigger is set.
@@ -296,7 +297,8 @@ impl Summarizer for ModelSummarizer {
 /// A compaction does not count toward `Usage`, because it happens outside the run.
 pub struct CompactingSession {
     inner: Arc<dyn Session>,
-    summarizer: Arc<dyn Summarizer>,
+    summarizer: Option<Arc<dyn Summarizer>>,
+    reducer: Option<Arc<dyn ContextReducer>>,
     trigger: CompactionTrigger,
     keep_recent_exchanges: usize,
     counter: TokenCounter,
@@ -323,7 +325,8 @@ impl CompactingSession {
     pub fn new(inner: Arc<dyn Session>, summarizer: Arc<dyn Summarizer>) -> Self {
         Self {
             inner,
-            summarizer,
+            summarizer: Some(summarizer),
+            reducer: None,
             trigger: CompactionTrigger::new(),
             keep_recent_exchanges: 2,
             counter: default_token_counter(),
@@ -332,6 +335,20 @@ impl CompactingSession {
             retry_at: Mutex::new(None),
             writes: AsyncMutex::new(()),
         }
+    }
+
+    /// Wrap `inner` and shorten the stored history with `reducer` instead of summarizing.
+    ///
+    /// The triggers, [`keep_recent_exchanges`](Self::keep_recent_exchanges) aside, work as with
+    /// [`new`](Self::new): the reducer runs when the history is long enough, and its result
+    /// replaces the stored history when it changed anything. `summarize_timeout` and the failure
+    /// cooldown apply to the reducer too. `keep_recent_exchanges` has no effect; the reducer
+    /// decides what to keep.
+    pub fn with_reducer(inner: Arc<dyn Session>, reducer: Arc<dyn ContextReducer>) -> Self {
+        let mut session = Self::new(inner, Arc::new(NoSummarizer));
+        session.summarizer = None;
+        session.reducer = Some(reducer);
+        session
     }
 
     /// Give up on a summarization call after `timeout` (default
@@ -395,7 +412,10 @@ impl CompactingSession {
 
     /// Usage of the summaries written so far (see [`Summarizer::usage`]).
     pub fn summarizer_usage(&self) -> Usage {
-        self.summarizer.usage()
+        self.summarizer
+            .as_ref()
+            .map(|summarizer| summarizer.usage())
+            .unwrap_or_default()
     }
 
     /// Wrap in an `Arc`, ready for `RunOptions::session`.
@@ -415,6 +435,12 @@ impl CompactingSession {
         if !force && !self.trigger.fires(&items, &self.counter) {
             return Ok(false);
         }
+        if let Some(reducer) = &self.reducer {
+            return self.reduce_locked(reducer, &items).await;
+        }
+        let Some(summarizer) = &self.summarizer else {
+            return Ok(false);
+        };
         let ExchangeView { pinned, exchanges } = ExchangeView::split(&items);
         if exchanges.len() <= self.keep_recent_exchanges {
             return Ok(false);
@@ -426,7 +452,7 @@ impl CompactingSession {
         let old_items: Vec<Value> = old.iter().flatten().cloned().collect();
         let notes = tokio::time::timeout(
             self.summarize_timeout,
-            self.summarizer.summarize(previous.as_deref(), &old_items),
+            summarizer.summarize(previous.as_deref(), &old_items),
         )
         .await
         .map_err(|_| {
@@ -443,6 +469,46 @@ impl CompactingSession {
         compacted.push(summary_item(&notes));
         compacted.extend(recent.iter().flatten().cloned());
         self.inner.replace_items(compacted).await?;
+        Ok(true)
+    }
+}
+
+/// Placeholder that lets `with_reducer` reuse `new`; never called.
+struct NoSummarizer;
+
+#[async_trait]
+impl Summarizer for NoSummarizer {
+    async fn summarize(&self, _: Option<&str>, _: &[Value]) -> Result<String, AgentsError> {
+        Err(ModelError::Behavior("no summarizer is configured".into()).into())
+    }
+}
+
+impl CompactingSession {
+    async fn reduce_locked(
+        &self,
+        reducer: &Arc<dyn ContextReducer>,
+        items: &[Value],
+    ) -> Result<bool, AgentsError> {
+        let _span = crate::tracing::custom_span(&format!("context_reduce:{}", reducer.name()));
+        let outcome = tokio::time::timeout(
+            self.summarize_timeout,
+            reducer.reduce(ReduceInput {
+                items,
+                reserved_tokens: 0,
+                counter: &self.counter,
+            }),
+        )
+        .await
+        .map_err(|_| {
+            AgentsError::from(ModelError::Behavior(format!(
+                "the reducer did not finish within {:?}",
+                self.summarize_timeout
+            )))
+        })??;
+        if !outcome.report.changed {
+            return Ok(false);
+        }
+        self.inner.replace_items(outcome.items).await?;
         Ok(true)
     }
 }
@@ -533,5 +599,50 @@ mod trigger_tests {
         let trigger = CompactionTrigger::new().tokens(1_000_000).items(100);
         assert!(!trigger.fires(&history(100, "a"), &counter));
         assert!(trigger.fires(&history(101, "a"), &counter));
+    }
+}
+
+#[cfg(test)]
+mod reducer_session_tests {
+    use super::*;
+    use crate::context::HeadTail;
+    use crate::memory::InMemorySession;
+    use serde_json::json;
+
+    fn user(text: &str) -> Value {
+        json!({"role": "user", "content": text})
+    }
+
+    #[tokio::test]
+    async fn with_reducer_replaces_the_stored_history_once_the_trigger_fires() {
+        let inner = Arc::new(InMemorySession::new("s"));
+        let session = CompactingSession::with_reducer(inner.clone(), Arc::new(HeadTail::new(1, 1)))
+            .trigger_items(3);
+
+        session.add_items(vec![user("a"), user("b")]).await.unwrap();
+        assert_eq!(
+            inner.get_items(None).await.unwrap().len(),
+            2,
+            "below trigger"
+        );
+
+        session.add_items(vec![user("c"), user("d")]).await.unwrap();
+        let stored = inner.get_items(None).await.unwrap();
+        assert_eq!(stored, vec![user("a"), user("d")]);
+        assert_eq!(session.summarizer_usage(), Usage::default());
+    }
+
+    #[tokio::test]
+    async fn explicit_compact_runs_the_reducer_and_reports_whether_it_changed_anything() {
+        let inner = Arc::new(InMemorySession::new("s"));
+        let session = CompactingSession::with_reducer(inner.clone(), Arc::new(HeadTail::new(1, 1)));
+        session.add_items(vec![user("a"), user("b")]).await.unwrap();
+        assert!(!session.compact().await.unwrap());
+        session.add_items(vec![user("c")]).await.unwrap();
+        assert!(session.compact().await.unwrap());
+        assert_eq!(
+            inner.get_items(None).await.unwrap(),
+            vec![user("a"), user("c")]
+        );
     }
 }
