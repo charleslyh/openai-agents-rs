@@ -22,7 +22,15 @@ All notable changes are recorded here. The format follows
 - `ExchangeView` (was the private `SplitHistory`), `is_pinned`, `is_summary_item`,
   `summary_item` and `summary_text` are public, for writing a reducer.
 - `reducer_contract` (feature `reducer-contract`): a test suite any reducer can run.
-- Example `context_reducers`.
+- `OffloadToolOutputs` moves the full text of old, bulky tool outputs to a `BlobStore` and leaves
+  a preview and a reference; `offload_read_tool` / `offload_capability` let the model read any part
+  back, from its own namespace only. `InMemoryBlobStore` is built in and `FileBlobStore` (in
+  `opai-agents-sessions`) keeps one file per output. `core` now depends on `sha2` for the
+  references.
+- Long-term fact memory: `FactStore` (`InMemoryFactStore`, keyword search), `FactExtractor`
+  (`ModelFactExtractor`), `FactMemory`, `FactMemorySession` (learns from each save, user messages
+  only) and `FactRecall` (a `ModelMiddleware` that adds relevant facts to the instructions).
+- Examples `context_reducers` and `long_term_memory`.
 
 ### Fixed
 

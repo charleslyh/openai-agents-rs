@@ -222,6 +222,7 @@ Ordered like the web demo's capability checklist, one knowledge point per exampl
 | 46 | `model_retry` | Run control | `ModelRetrySettings`: policies, backoff and `retry-after` (offline) |
 | 47 | `reasoning` | Run control | Typed `Reasoning` effort/summary for either API |
 | 48 | `providers` | Run control | `ProviderRegistry`: route model names to several providers (Rust-only) |
+| 50 | `long_term_memory` | Conversation and memory | `OffloadToolOutputs` with the `read_offloaded` tool, and `FactMemorySession` + `FactRecall` (offline, Rust-only) |
 | 49 | `context_reducers` | Conversation and memory | `ContextReducer`: rewrite, drop and summarize strategies, `ChainReducer`, your own `ExchangeSelector` (offline, Rust-only) |
 
 The rest need `OPENAI_API_KEY` and `OPENAI_MODEL` in the environment; `OPENAI_BASE_URL` and
@@ -377,6 +378,23 @@ let session = CompactingSession::new(
 ```
 
 See the `context_reducers` example for the pieces side by side (no key needed).
+
+### Keeping things outside the prompt
+
+Two more ways to keep information without keeping it in the context (example `long_term_memory`,
+no key needed):
+
+- **Offloaded tool outputs.** `OffloadToolOutputs` (a reducer for a `CompactingSession`) stores the
+  full text of an old, bulky tool output in a `BlobStore` and leaves a preview and a reference.
+  `offload_capability` gives the model a `read_offloaded` tool to read any part back, from its own
+  namespace only. `InMemoryBlobStore` is built in; `FileBlobStore` (feature `sessions`) keeps
+  files under a directory named by a digest of the namespace, with `0600` permissions.
+- **Long-term facts.** `FactMemorySession` extracts short facts from what the *user* said after
+  each save (`ModelFactExtractor`: one model call per save); `FactRecall` is a `ModelMiddleware`
+  that puts the relevant facts into the instructions of later calls, in any conversation of the same
+  scope. Tool output is never a source, recalled facts are marked as data and are not saved to the
+  history, and `FactMemory::list` / `forget` / `forget_all` let a person see and delete what is
+  kept. Retrieval is by keywords; implement `FactStore::search` for anything smarter.
 
 ## Compatibility & deviations
 
