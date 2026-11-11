@@ -209,6 +209,25 @@ mod tests {
         assert!(assert_reducer_contract(&reducer).await.changed);
     }
 
+    /// A selector that asks to keep nothing is still held to the rules by the skeleton.
+    struct KeepNothing;
+
+    impl crate::select::ExchangeSelector for KeepNothing {
+        fn name(&self) -> &str {
+            "keep_nothing"
+        }
+
+        fn select(&self, _: &crate::select::SelectionView<'_>) -> Vec<usize> {
+            Vec::new()
+        }
+    }
+
+    #[tokio::test]
+    async fn a_custom_selector_meets_the_contract_without_effort() {
+        let reducer = crate::select::DropExchanges::new(KeepNothing);
+        assert!(assert_reducer_contract(&reducer).await.changed);
+    }
+
     #[tokio::test]
     async fn a_chain_meets_the_contract() {
         let reducer = ChainReducer::new(vec![

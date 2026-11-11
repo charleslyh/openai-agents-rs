@@ -24,6 +24,7 @@ use serde_json::Value;
 use crate::error::{AgentsError, UserError};
 use crate::model::{CallModelData, CallModelInputFilter, ModelInputData};
 use crate::reducer::{ContextReducer, ReduceInput, ReduceOutcome};
+use crate::select::{select_exchanges, ExchangeSelector, SelectionView};
 
 /// Opening marker of the item that stands in for summarized history.
 pub const SUMMARY_OPEN: &str = "<conversation_summary>";
@@ -363,41 +364,7 @@ impl ContextWindowTrimmer {
 
     /// Trim `items`; `reserved_tokens` is what instructions and tool schemas already use.
     pub fn trim(&self, items: &[Value], reserved_tokens: usize) -> Vec<Value> {
-        let history = ExchangeView::split(items);
-        let Some((latest, earlier)) = history.exchanges.split_last() else {
-            return items.to_vec();
-        };
-        let count = |exchange: &[Value]| {
-            exchange
-                .iter()
-                .map(|item| (self.counter)(item))
-                .sum::<usize>()
-        };
-        let mut used = reserved_tokens
-            + history
-                .pinned
-                .iter()
-                .map(|item| (self.counter)(item))
-                .sum::<usize>()
-            + count(latest);
-        let mut kept = 1;
-        let mut first_kept = earlier.len();
-        for (index, exchange) in earlier.iter().enumerate().rev() {
-            let cost = count(exchange);
-            let fits_tokens = self.max_tokens.is_none_or(|max| used + cost <= max);
-            let fits_exchanges = self.max_exchanges.is_none_or(|max| kept < max);
-            if !(fits_tokens && fits_exchanges) {
-                break;
-            }
-            used += cost;
-            // One exchange per admitted index, walking backwards from the end.
-            kept = 1 + (earlier.len() - index);
-            first_kept = index;
-        }
-        let mut result = history.pinned.clone();
-        result.extend(earlier[first_kept..].iter().flatten().cloned());
-        result.extend(latest.iter().cloned());
-        result
+        select_exchanges(self, items, reserved_tokens, &self.counter).0
     }
 
     /// Use as `RunConfig.call_model_input_filter`.
@@ -434,6 +401,29 @@ impl ContextReducer for ToolOutputTrimmer {
     }
 }
 
+impl ExchangeSelector for ContextWindowTrimmer {
+    fn name(&self) -> &str {
+        "context_window"
+    }
+
+    fn select(&self, view: &SelectionView<'_>) -> Vec<usize> {
+        let latest = view.latest();
+        let mut used = view.fixed_tokens + view.costs[latest];
+        let mut keep = vec![latest];
+        for index in (0..latest).rev() {
+            let cost = view.costs[index];
+            let fits_tokens = self.max_tokens.is_none_or(|max| used + cost <= max);
+            let fits_exchanges = self.max_exchanges.is_none_or(|max| keep.len() < max);
+            if !(fits_tokens && fits_exchanges) {
+                break;
+            }
+            used += cost;
+            keep.push(index);
+        }
+        keep
+    }
+}
+
 #[async_trait]
 impl ContextReducer for ContextWindowTrimmer {
     fn name(&self) -> &str {
@@ -441,10 +431,10 @@ impl ContextReducer for ContextWindowTrimmer {
     }
 
     async fn reduce(&self, input: ReduceInput<'_>) -> Result<ReduceOutcome, AgentsError> {
-        let before = ExchangeView::split(input.items).exchanges.len();
-        let trimmed = self.trim(input.items, input.reserved_tokens);
-        let after = ExchangeView::split(&trimmed).exchanges.len();
-        Ok(ReduceOutcome::new(&input, trimmed).dropped_exchanges(before - after))
+        // Counts with the trimmer's own counter, as `trim` does.
+        let (items, dropped) =
+            select_exchanges(self, input.items, input.reserved_tokens, &self.counter);
+        Ok(ReduceOutcome::new(&input, items).dropped_exchanges(dropped))
     }
 }
 
@@ -475,25 +465,25 @@ impl HeadTail {
 
     /// Reduce `items`; also returns how many exchanges were dropped.
     pub fn trim(&self, items: &[Value]) -> (Vec<Value>, usize) {
-        let history = ExchangeView::split(items);
-        let total = history.exchanges.len();
-        if total <= self.head + self.tail {
-            return (items.to_vec(), 0);
-        }
-        let mut result = history.pinned.clone();
-        result.extend(history.exchanges[..self.head].iter().flatten().cloned());
-        result.extend(
-            history.exchanges[total - self.tail..]
-                .iter()
-                .flatten()
-                .cloned(),
-        );
-        (result, total - self.head - self.tail)
+        select_exchanges(self, items, 0, &default_token_counter())
     }
 
     /// Use as `RunConfig.call_model_input_filter`.
     pub fn into_filter(self) -> CallModelInputFilter {
         input_filter(move |input, _| self.trim(input).0)
+    }
+}
+
+impl ExchangeSelector for HeadTail {
+    fn name(&self) -> &str {
+        "head_tail"
+    }
+
+    fn select(&self, view: &SelectionView<'_>) -> Vec<usize> {
+        let total = view.exchanges.len();
+        (0..self.head.min(total))
+            .chain(total.saturating_sub(self.tail)..total)
+            .collect()
     }
 }
 
@@ -504,7 +494,8 @@ impl ContextReducer for HeadTail {
     }
 
     async fn reduce(&self, input: ReduceInput<'_>) -> Result<ReduceOutcome, AgentsError> {
-        let (items, dropped) = self.trim(input.items);
+        let (items, dropped) =
+            select_exchanges(self, input.items, input.reserved_tokens, input.counter);
         Ok(ReduceOutcome::new(&input, items).dropped_exchanges(dropped))
     }
 }

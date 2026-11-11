@@ -27,6 +27,7 @@ pub mod run;
 pub mod run_context;
 pub mod run_state;
 pub mod runtime;
+pub mod select;
 pub mod stream_events;
 pub mod strict_schema;
 pub(crate) mod support;
@@ -125,6 +126,7 @@ pub use run_state::{
 pub use runtime::{Runtime, RuntimeBuilder};
 /// Re-exported so `#[function_tool]`-generated code does not require a direct dependency.
 pub use schemars;
+pub use select::{select_exchanges, DropExchanges, ExchangeSelector, SelectionView};
 /// Re-exported so `#[function_tool]`-generated code does not require a direct dependency.
 pub use serde;
 /// Re-exported so `#[function_tool]`-generated code does not require a direct dependency.
