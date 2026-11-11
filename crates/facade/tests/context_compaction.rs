@@ -370,3 +370,19 @@ async fn a_long_conversation_stays_short_and_the_model_sees_the_summary() {
     assert!(!last_input.contains("question 1"), "{last_input}");
     assert!(last_input.contains("question 5"));
 }
+
+#[tokio::test]
+async fn structured_summarizer_asks_for_fixed_sections() {
+    let model = Arc::new(ScriptedModel::new([ModelStep::from(
+        ItemHelpers::text_message("Goal: trip"),
+    )]));
+    let notes = ModelSummarizer::structured(model.clone())
+        .summarize(None, &[user("plan a trip"), assistant("sure")])
+        .await
+        .expect("summarize");
+    assert_eq!(notes, "Goal: trip");
+    let instructions = model.calls()[0].system_instructions.clone().unwrap();
+    for section in ["Goal:", "Done:", "Decisions:", "Facts:", "Open:"] {
+        assert!(instructions.contains(section), "missing {section}");
+    }
+}

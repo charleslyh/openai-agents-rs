@@ -83,8 +83,8 @@ pub use mcp::{
 };
 pub use memory::{
     state_store::{finish_load, is_supported_schema, RunStateMigration, RunStateStore},
-    CompactingSession, CompactionTrigger, InMemorySession, ModelSummarizer, Session,
-    SessionInputCallback, SessionSettings, Summarizer, DEFAULT_TRIGGER_TOKENS,
+    CompactingSession, CompactionTrigger, HierarchicalSummarizer, InMemorySession, ModelSummarizer,
+    Session, SessionInputCallback, SessionSettings, Summarize, Summarizer, DEFAULT_TRIGGER_TOKENS,
 };
 pub use model::{
     CallModelData, CallModelInputFilter, MissingProvider, Model, ModelInputData, ModelProvider,

@@ -17,9 +17,7 @@ use serde_json::Value;
 use tokio::sync::Mutex as AsyncMutex;
 
 use super::{Session, SessionSettings};
-use crate::context::{
-    default_token_counter, is_summary_item, summary_item, summary_text, ExchangeView, TokenCounter,
-};
+use crate::context::{default_token_counter, TokenCounter};
 use crate::error::{AgentsError, ModelError};
 use crate::items::extract_message_text;
 use crate::model::{Model, ModelInput, ModelRequest, ModelTracing};
@@ -106,6 +104,18 @@ concrete facts (names, ids, numbers, file paths, URLs), results of tool calls th
 and unfinished tasks. Drop pleasantries and anything already resolved. If existing notes are \
 given, merge them with the new conversation into one set of notes. Be concise.";
 
+const STRUCTURED_SUMMARY_INSTRUCTIONS: &str = "You condense a conversation between a user and an \
+AI assistant into structured notes that let the assistant continue seamlessly. Write plain text, \
+no preamble, using exactly these sections, in this order, leaving a section out only when it is \
+empty:\n\
+Goal: what the user is trying to achieve, and their stated preferences and constraints.\n\
+Done: what has been completed, including results of tool calls that still matter.\n\
+Decisions: choices made and the reasons for them.\n\
+Facts: concrete details to keep verbatim (names, ids, numbers, file paths, URLs).\n\
+Open: unfinished tasks and unanswered questions.\n\
+If existing notes are given, merge them with the new conversation into one set of notes. Be \
+concise.";
+
 /// A [`Summarizer`] that asks a model (any [`Model`], so any provider) to write the notes.
 #[derive(Clone)]
 pub struct ModelSummarizer {
@@ -126,6 +136,12 @@ impl ModelSummarizer {
             max_tool_chars: 1_500,
             usage: Arc::default(),
         }
+    }
+
+    /// Summarize with `model` into fixed sections (goal, done, decisions, facts, open items)
+    /// instead of free text. Easier to scan, and less likely to lose a constraint.
+    pub fn structured(model: Arc<dyn Model>) -> Self {
+        Self::new(model).instructions(STRUCTURED_SUMMARY_INSTRUCTIONS)
     }
 
     /// Settings of the summarization call (for example a low temperature).
@@ -441,33 +457,16 @@ impl CompactingSession {
         let Some(summarizer) = &self.summarizer else {
             return Ok(false);
         };
-        let ExchangeView { pinned, exchanges } = ExchangeView::split(&items);
-        if exchanges.len() <= self.keep_recent_exchanges {
-            return Ok(false);
-        }
-        let (old, recent) = exchanges.split_at(exchanges.len() - self.keep_recent_exchanges);
-
-        let earlier: Vec<String> = pinned.iter().filter_map(summary_text).collect();
-        let previous = (!earlier.is_empty()).then(|| earlier.join("\n\n"));
-        let old_items: Vec<Value> = old.iter().flatten().cloned().collect();
-        let notes = tokio::time::timeout(
-            self.summarize_timeout,
-            summarizer.summarize(previous.as_deref(), &old_items),
+        let Some((compacted, _)) = super::summary::summarize_history(
+            &items,
+            summarizer.as_ref(),
+            self.keep_recent_exchanges,
+            Some(self.summarize_timeout),
         )
-        .await
-        .map_err(|_| {
-            AgentsError::from(ModelError::Behavior(format!(
-                "the summarizer did not answer within {:?}",
-                self.summarize_timeout
-            )))
-        })??;
-
-        let mut compacted: Vec<Value> = pinned
-            .into_iter()
-            .filter(|item| !is_summary_item(item))
-            .collect();
-        compacted.push(summary_item(&notes));
-        compacted.extend(recent.iter().flatten().cloned());
+        .await?
+        else {
+            return Ok(false);
+        };
         self.inner.replace_items(compacted).await?;
         Ok(true)
     }
