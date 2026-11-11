@@ -133,6 +133,9 @@ impl ExchangeView {
 // ---------------------------------------------------------------------------------------------
 // Tool output trimming
 
+/// Start of the note that replaces a shortened tool output.
+const TRIMMED_PREFIX: &str = "[Trimmed:";
+
 /// Shortens large tool outputs of older exchanges (Python: `ToolOutputTrimmer`).
 ///
 /// The last `recent_exchanges` user messages and everything after them are never touched. In older
@@ -261,6 +264,10 @@ impl ToolOutputTrimmer {
     /// Replacement for an oversized string output, or `None` to keep the original.
     fn trim_output(&self, item: &Value, tool: &str) -> Option<Value> {
         let output = item.get("output")?.as_str()?;
+        // Already shortened by an earlier pass; trimming again would nest the markers.
+        if output.starts_with(TRIMMED_PREFIX) {
+            return None;
+        }
         let length = output.chars().count();
         if length <= self.max_output_chars {
             return None;
@@ -272,7 +279,7 @@ impl ToolOutputTrimmer {
             tool
         };
         let summary = format!(
-            "[Trimmed: {name} output \u{2014} {length} chars \u{2192} {} char preview]\n{preview}...",
+            "{TRIMMED_PREFIX} {name} output \u{2014} {length} chars \u{2192} {} char preview]\n{preview}...",
             self.preview_chars
         );
         // Never swap in something longer than what it replaces.
