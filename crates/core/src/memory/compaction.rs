@@ -164,7 +164,7 @@ impl ModelSummarizer {
 }
 
 /// `text` cut to `max` characters, with a note of how much was dropped.
-fn truncate_chars(text: &str, max: usize) -> String {
+pub(crate) fn truncate_chars(text: &str, max: usize) -> String {
     let total = text.chars().count();
     if total <= max {
         return text.to_string();
@@ -174,7 +174,7 @@ fn truncate_chars(text: &str, max: usize) -> String {
 }
 
 /// The text of a message-like item, whatever shape its content has.
-fn message_text(item: &Value) -> Option<String> {
+pub(crate) fn message_text(item: &Value) -> Option<String> {
     if let Some(text) = extract_message_text(item) {
         return Some(text);
     }

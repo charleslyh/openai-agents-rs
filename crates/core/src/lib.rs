@@ -83,9 +83,13 @@ pub use mcp::{
     mcp_function_tools, render_tool_result, McpCallToolResult, McpConfig, McpServer, McpTool,
 };
 pub use memory::{
+    keyword_rank, parse_changes,
     state_store::{finish_load, is_supported_schema, RunStateMigration, RunStateStore},
-    CompactingSession, CompactionTrigger, HierarchicalSummarizer, InMemorySession, ModelSummarizer,
-    Session, SessionInputCallback, SessionSettings, Summarize, Summarizer, DEFAULT_TRIGGER_TOKENS,
+    CompactingSession, CompactionTrigger, Fact, FactChange, FactExtractor, FactMemory,
+    FactMemorySession, FactRecall, FactStore, HierarchicalSummarizer, InMemoryFactStore,
+    InMemorySession, ModelFactExtractor, ModelSummarizer, Session, SessionInputCallback,
+    SessionSettings, Summarize, Summarizer, DEFAULT_MAX_FACTS, DEFAULT_TRIGGER_TOKENS,
+    MAX_FACT_CHARS,
 };
 pub use model::{
     CallModelData, CallModelInputFilter, MissingProvider, Model, ModelInputData, ModelProvider,

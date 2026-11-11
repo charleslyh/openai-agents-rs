@@ -15,11 +15,17 @@ use serde_json::Value;
 use crate::error::AgentsError;
 
 mod compaction;
+mod facts;
 mod history;
 pub mod state_store;
 mod summary;
 pub use compaction::{
     CompactingSession, CompactionTrigger, ModelSummarizer, Summarizer, DEFAULT_TRIGGER_TOKENS,
+};
+pub use facts::{
+    keyword_rank, parse_changes, Fact, FactChange, FactExtractor, FactMemory, FactMemorySession,
+    FactRecall, FactStore, InMemoryFactStore, ModelFactExtractor, DEFAULT_MAX_FACTS,
+    MAX_FACT_CHARS,
 };
 pub use summary::{HierarchicalSummarizer, Summarize};
 
