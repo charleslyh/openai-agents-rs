@@ -38,6 +38,48 @@ pub const DEFAULT_SUMMARIZE_TIMEOUT: Duration = Duration::from_secs(60);
 /// every single run.
 pub const DEFAULT_FAILURE_COOLDOWN: Duration = Duration::from_secs(60);
 
+/// When a stored history is long enough to compact.
+///
+/// With neither limit set the token limit is [`DEFAULT_TRIGGER_TOKENS`]. With both set, either one
+/// fires.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CompactionTrigger {
+    tokens: Option<usize>,
+    items: Option<usize>,
+}
+
+impl CompactionTrigger {
+    /// A trigger with the default token limit.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Fire when the history exceeds this many (estimated) tokens.
+    pub fn tokens(mut self, tokens: usize) -> Self {
+        self.tokens = Some(tokens);
+        self
+    }
+
+    /// Fire when the history exceeds this many items.
+    pub fn items(mut self, items: usize) -> Self {
+        self.items = Some(items);
+        self
+    }
+
+    /// Whether `items` is long enough to compact, counting tokens with `counter`.
+    pub fn fires(&self, items: &[Value], counter: &TokenCounter) -> bool {
+        let tokens = self
+            .tokens
+            .or_else(|| self.items.is_none().then_some(DEFAULT_TRIGGER_TOKENS));
+        if let Some(max) = tokens {
+            if items.iter().map(|item| counter(item)).sum::<usize>() > max {
+                return true;
+            }
+        }
+        self.items.is_some_and(|max| items.len() > max)
+    }
+}
+
 /// Writes the summary that replaces old exchanges.
 #[async_trait]
 pub trait Summarizer: Send + Sync {
@@ -255,8 +297,7 @@ impl Summarizer for ModelSummarizer {
 pub struct CompactingSession {
     inner: Arc<dyn Session>,
     summarizer: Arc<dyn Summarizer>,
-    trigger_tokens: Option<usize>,
-    trigger_items: Option<usize>,
+    trigger: CompactionTrigger,
     keep_recent_exchanges: usize,
     counter: TokenCounter,
     summarize_timeout: Duration,
@@ -270,8 +311,7 @@ impl std::fmt::Debug for CompactingSession {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CompactingSession")
             .field("session_id", &self.inner.session_id())
-            .field("trigger_tokens", &self.trigger_tokens)
-            .field("trigger_items", &self.trigger_items)
+            .field("trigger", &self.trigger)
             .field("keep_recent_exchanges", &self.keep_recent_exchanges)
             .finish()
     }
@@ -284,8 +324,7 @@ impl CompactingSession {
         Self {
             inner,
             summarizer,
-            trigger_tokens: None,
-            trigger_items: None,
+            trigger: CompactionTrigger::new(),
             keep_recent_exchanges: 2,
             counter: default_token_counter(),
             summarize_timeout: DEFAULT_SUMMARIZE_TIMEOUT,
@@ -328,14 +367,14 @@ impl CompactingSession {
 
     /// Compact when the stored history exceeds this many (estimated) tokens.
     pub fn trigger_tokens(mut self, tokens: usize) -> Self {
-        self.trigger_tokens = Some(tokens);
+        self.trigger.tokens = Some(tokens);
         self
     }
 
     /// Compact when the stored history exceeds this many items. With
     /// [`trigger_tokens`](Self::trigger_tokens) also set, either one starts a compaction.
     pub fn trigger_items(mut self, items: usize) -> Self {
-        self.trigger_items = Some(items);
+        self.trigger.items = Some(items);
         self
     }
 
@@ -371,23 +410,9 @@ impl CompactingSession {
         self.compact_locked(true).await
     }
 
-    fn should_compact(&self, items: &[Value]) -> bool {
-        let tokens = self.trigger_tokens.or_else(|| {
-            self.trigger_items
-                .is_none()
-                .then_some(DEFAULT_TRIGGER_TOKENS)
-        });
-        if let Some(max) = tokens {
-            if items.iter().map(|item| (self.counter)(item)).sum::<usize>() > max {
-                return true;
-            }
-        }
-        self.trigger_items.is_some_and(|max| items.len() > max)
-    }
-
     async fn compact_locked(&self, force: bool) -> Result<bool, AgentsError> {
         let items = self.inner.get_items(None).await?;
-        if !force && !self.should_compact(&items) {
+        if !force && !self.trigger.fires(&items, &self.counter) {
             return Ok(false);
         }
         let ExchangeView { pinned, exchanges } = ExchangeView::split(&items);
@@ -470,5 +495,43 @@ impl Session for CompactingSession {
     async fn replace_items(&self, items: Vec<Value>) -> Result<(), AgentsError> {
         let _writes = self.writes.lock().await;
         self.inner.replace_items(items).await
+    }
+}
+
+#[cfg(test)]
+mod trigger_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn history(n: usize, text: &str) -> Vec<Value> {
+        (0..n)
+            .map(|_| json!({"role": "user", "content": text}))
+            .collect()
+    }
+
+    #[test]
+    fn default_limit_is_tokens_only() {
+        let counter = default_token_counter();
+        let trigger = CompactionTrigger::new();
+        assert!(!trigger.fires(&history(100, "hi"), &counter));
+        assert!(trigger.fires(&history(10, &"x".repeat(4_000)), &counter));
+    }
+
+    #[test]
+    fn item_limit_alone_disables_the_default_token_limit() {
+        let counter = default_token_counter();
+        let trigger = CompactionTrigger::new().items(5);
+        assert!(!trigger.fires(&history(5, &"x".repeat(40_000)), &counter));
+        assert!(trigger.fires(&history(6, "hi"), &counter));
+    }
+
+    #[test]
+    fn either_limit_fires() {
+        let counter = default_token_counter();
+        let trigger = CompactionTrigger::new().tokens(50).items(100);
+        assert!(trigger.fires(&history(3, &"x".repeat(400)), &counter));
+        let trigger = CompactionTrigger::new().tokens(1_000_000).items(100);
+        assert!(!trigger.fires(&history(100, "a"), &counter));
+        assert!(trigger.fires(&history(101, "a"), &counter));
     }
 }

@@ -17,7 +17,9 @@ use crate::error::AgentsError;
 mod compaction;
 mod history;
 pub mod state_store;
-pub use compaction::{CompactingSession, ModelSummarizer, Summarizer, DEFAULT_TRIGGER_TOKENS};
+pub use compaction::{
+    CompactingSession, CompactionTrigger, ModelSummarizer, Summarizer, DEFAULT_TRIGGER_TOKENS,
+};
 
 /// Settings for session reads (Python: `SessionSettings`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
