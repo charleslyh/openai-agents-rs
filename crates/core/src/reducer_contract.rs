@@ -1,7 +1,7 @@
 //! The behaviour every [`ContextReducer`] must have, as a test suite any reducer can run.
 //!
 //! A reducer outside this workspace can run it too, so a custom strategy is held to the same rules
-//! as the bundled ones: it never separates a tool call from its output, never drops pinned items,
+//! as the bundled ones: it never separates a tool call from its output, never drops system messages or the summary (a summarizer may merge it into a new one),
 //! keeps the latest exchange, never makes the history longer and gives the same answer when run on
 //! its own output.
 //!
@@ -19,7 +19,9 @@ use std::collections::HashSet;
 
 use serde_json::{json, Value};
 
-use crate::context::{default_token_counter, estimate_item_tokens, summary_item, TokenCounter};
+use crate::context::{
+    default_token_counter, estimate_item_tokens, is_summary_item, summary_item, TokenCounter,
+};
 use crate::reducer::{ContextReducer, ReduceInput, ReduceReport};
 
 /// Run every contract check against `reducer`, panicking with the first failure.
@@ -104,12 +106,12 @@ async fn assert_reduction_rules(
         ids(kept, "function_call_output"),
         "a tool call and its output must stay together"
     );
-    for pinned in [system(), notes()] {
-        assert!(
-            kept.contains(&pinned),
-            "pinned item was dropped or changed: {pinned}"
-        );
-    }
+    assert!(kept.contains(&system()), "the system message must stay");
+    // A summarizing reducer may fold the earlier summary into a new one, but never lose it.
+    assert!(
+        kept.iter().any(is_summary_item),
+        "the earlier summary must stay, or be replaced by a new summary"
+    );
     let latest = history.len() - 4;
     assert!(
         kept.contains(&history[latest]) && kept.contains(&history[latest + 1]),
@@ -226,6 +228,26 @@ mod tests {
     async fn a_custom_selector_meets_the_contract_without_effort() {
         let reducer = crate::select::DropExchanges::new(KeepNothing);
         assert!(assert_reducer_contract(&reducer).await.changed);
+    }
+
+    struct Fixed;
+
+    #[async_trait::async_trait]
+    impl crate::memory::Summarizer for Fixed {
+        async fn summarize(
+            &self,
+            _: Option<&str>,
+            _: &[Value],
+        ) -> Result<String, crate::error::AgentsError> {
+            Ok("short notes".into())
+        }
+    }
+
+    #[tokio::test]
+    async fn summarize_meets_the_contract() {
+        let reducer = crate::memory::Summarize::new(Arc::new(Fixed)).keep_recent_exchanges(2);
+        let report = assert_reducer_contract(&reducer).await;
+        assert!(report.changed && report.summarized);
     }
 
     #[tokio::test]
