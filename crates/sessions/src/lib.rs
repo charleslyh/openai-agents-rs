@@ -13,6 +13,8 @@
 //!   for a history more than one process shares.
 //! * [`SqliteSession`] (`sqlite` feature): a database file or in-memory, with the Python SDK's
 //!   schema so either SDK can read the file.
+//! * [`SqliteFactStore`] (`sqlite` feature): long-term facts for
+//!   [`FactMemory`](opai_agents_core::FactMemory), in the same kind of file.
 //! * [`PostgresSession`] and [`PostgresRunStateStore`] (`postgres` feature): the same, in rows, for
 //!   a deployment that already has a database.
 //!
@@ -27,6 +29,8 @@ pub mod file;
 mod state;
 pub mod state_file;
 
+#[cfg(feature = "sqlite")]
+pub mod facts_sqlite;
 #[cfg(feature = "postgres")]
 pub mod postgres;
 #[cfg(feature = "redis")]
@@ -38,6 +42,8 @@ pub use blob_file::FileBlobStore;
 pub use file::FileSession;
 pub use state_file::{FileRunStateStore, STATE_KEY_ENV};
 
+#[cfg(feature = "sqlite")]
+pub use facts_sqlite::SqliteFactStore;
 #[cfg(feature = "postgres")]
 pub use postgres::{PostgresRunStateStore, PostgresSession};
 #[cfg(feature = "redis")]

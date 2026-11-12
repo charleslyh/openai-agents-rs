@@ -45,7 +45,7 @@ fn storage_error(error: impl std::fmt::Display) -> AgentsError {
 }
 
 /// Table names are spliced into SQL, so only plain identifiers are accepted.
-fn validate_table_name(name: &str) -> Result<(), AgentsError> {
+pub(crate) fn validate_table_name(name: &str) -> Result<(), AgentsError> {
     let valid = !name.is_empty()
         && !name.starts_with(|c: char| c.is_ascii_digit())
         && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
