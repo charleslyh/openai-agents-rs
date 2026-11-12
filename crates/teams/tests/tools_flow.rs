@@ -65,11 +65,12 @@ async fn a_lead_splits_work_between_two_teammates_through_tools() {
             "team_spawn",
             json!({"role": "alpha", "name": "a", "brief": "take t1"}),
         ),
+        // Alpha reports once t1 is done; only then is t2 unblocked for beta to claim.
+        Step::call("team_wait", json!({"timeout_ms": 5000})),
         Step::call(
             "team_spawn",
             json!({"role": "beta", "name": "b", "brief": "take t2 when you can"}),
         ),
-        Step::call("team_wait", json!({"timeout_ms": 5000})),
         Step::say("all assigned"),
     ]);
     let result = Runner::run(
@@ -83,15 +84,12 @@ async fn a_lead_splits_work_between_two_teammates_through_tools() {
 
     let outputs = tool_outputs(&lead);
     assert_eq!(outputs.len(), 5);
+    let wait = &outputs[3];
     assert_eq!(outputs[0]["id"], "t1");
     assert_eq!(outputs[1]["blocked_by"], json!(["t1"]));
     assert_eq!(outputs[2]["member"], "a");
-    assert_eq!(outputs[3]["member"], "b");
-    assert!(
-        outputs[4]["messages"].is_array(),
-        "team_wait answered: {}",
-        outputs[4]
-    );
+    assert_eq!(outputs[4]["member"], "b");
+    assert!(wait["messages"].is_array(), "team_wait answered: {wait}");
 
     // The teammates keep going after the lead's run ended: this is the asynchronous part.
     assert!(team.wait_idle(LONG).await);
@@ -107,7 +105,7 @@ async fn a_lead_splits_work_between_two_teammates_through_tools() {
 
     // The lead can still collect every report afterwards.
     let mut reports = team.handle().take_messages().await;
-    reports.extend(outputs[4]["messages"].as_array().unwrap().iter().map(|m| {
+    reports.extend(wait["messages"].as_array().unwrap().iter().map(|m| {
         Message::new(
             MemberId::new(m["from"].as_str().unwrap()),
             MemberId::lead(),
