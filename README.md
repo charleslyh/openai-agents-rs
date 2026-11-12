@@ -330,6 +330,8 @@ no key needed):
   scope. Tool output is never a source, recalled facts are marked as data and are not saved to the
   history, and `FactMemory::list` / `forget` / `forget_all` let a person see and delete what is
   kept. Retrieval is by keywords; implement `FactStore::search` for anything smarter.
+  `InMemoryFactStore` is built in; `SqliteFactStore` (feature `sqlite`) keeps facts in a database
+  file, one row per fact, scoped by user.
 
 ## Compatibility & deviations
 

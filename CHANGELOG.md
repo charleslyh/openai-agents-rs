@@ -30,6 +30,8 @@ All notable changes are recorded here. The format follows
 - Long-term fact memory: `FactStore` (`InMemoryFactStore`, keyword search), `FactExtractor`
   (`ModelFactExtractor`), `FactMemory`, `FactMemorySession` (learns from each save, user messages
   only) and `FactRecall` (a `ModelMiddleware` that adds relevant facts to the instructions).
+- `SqliteFactStore` (feature `sqlite`): a persistent `FactStore`; facts are scoped, ordered by
+  recency and bound as parameters.
 - Examples `context_reducers` and `long_term_memory`.
 
 ### Fixed
